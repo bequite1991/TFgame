@@ -1,9 +1,10 @@
-// T1 顶部 HUD —— 生命 / 金币 / 波次 / 暂停·2倍速·设置（音量、画质、退出）
+// T1 顶部 HUD —— 生命 / 金币 / 波次 / 暂停·2倍速·设置（音量、画质、3D 视角、退出）
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { motion } from 'framer-motion';
 import type { GameState } from '../types';
 import { audio } from '../audio';
+import { loadSettings, saveSettings, type AppSettings } from '../stats';
 
 interface Props {
   state: GameState;
@@ -12,25 +13,10 @@ interface Props {
   onToggleSpeed: () => void;
 }
 
-interface HudSettings {
-  volume: number; // 0-1
-  quality: 'high' | 'low';
-}
-
-function loadSettings(): HudSettings {
-  try {
-    const raw = localStorage.getItem('srd.settings');
-    if (raw) return { volume: 0.8, quality: 'high', ...(JSON.parse(raw) as Partial<HudSettings>) };
-  } catch {
-    /* ignore */
-  }
-  return { volume: 0.8, quality: 'high' };
-}
-
 let floaterId = 1;
 
 export default function TopHUD({ state, levelName, onTogglePause, onToggleSpeed }: Props) {
-  const [settings, setSettings] = useState<HudSettings>(loadSettings);
+  const [settings, setSettings] = useState<AppSettings>(loadSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [lifeFlash, setLifeFlash] = useState(false);
   const [goldFloats, setGoldFloats] = useState<{ id: number; amount: number }[]>([]);
@@ -58,13 +44,9 @@ export default function TopHUD({ state, levelName, onTogglePause, onToggleSpeed 
     return () => clearTimeout(t);
   }, [state.gold]);
 
-  const saveSettings = (next: HudSettings) => {
+  const updateSettings = (next: AppSettings) => {
     setSettings(next);
-    try {
-      localStorage.setItem('srd.settings', JSON.stringify(next));
-    } catch {
-      /* ignore */
-    }
+    saveSettings(next);
     audio.setVolume(next.volume); // 同步 WebAudio 主音量
   };
 
@@ -165,7 +147,7 @@ export default function TopHUD({ state, levelName, onTogglePause, onToggleSpeed 
                 min={0}
                 max={100}
                 value={Math.round(settings.volume * 100)}
-                onChange={(e) => saveSettings({ ...settings, volume: Number(e.target.value) / 100 })}
+                onChange={(e) => updateSettings({ ...settings, volume: Number(e.target.value) / 100 })}
                 className="mt-1 w-full accent-primary"
                 aria-label="音量"
               />
@@ -175,7 +157,7 @@ export default function TopHUD({ state, levelName, onTogglePause, onToggleSpeed 
                   <button
                     key={q}
                     type="button"
-                    onClick={() => saveSettings({ ...settings, quality: q })}
+                    onClick={() => updateSettings({ ...settings, quality: q })}
                     className={`flex-1 border px-2 py-1.5 text-xs transition ${
                       settings.quality === q
                         ? 'border-primary bg-primary/10 text-primary'
@@ -183,6 +165,23 @@ export default function TopHUD({ state, levelName, onTogglePause, onToggleSpeed 
                     }`}
                   >
                     {q === 'high' ? '高' : '低'}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-3 text-xs text-text-dim">3D 视角</div>
+              <div className="mt-1 flex gap-2">
+                {([true, false] as const).map((v) => (
+                  <button
+                    key={String(v)}
+                    type="button"
+                    onClick={() => updateSettings({ ...settings, render3d: v })}
+                    className={`flex-1 border px-2 py-1.5 text-xs transition ${
+                      settings.render3d === v
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-primary/20 text-text-dim hover:text-text'
+                    }`}
+                  >
+                    {v ? '开' : '关'}
                   </button>
                 ))}
               </div>

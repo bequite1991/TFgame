@@ -82,7 +82,7 @@
 
 ### 2.7 依赖
 
-`react`, `react-dom`, `react-router-dom`, `framer-motion`, `tailwindcss`, 字体 `@fontsource/orbitron` + `@fontsource/noto-sans-sc`（或 Google Fonts link）。Canvas 2D 渲染游戏（不引 Three.js——游戏本体性能优先；首页 hero 可用轻量 canvas 星空粒子，不用重型 3D）。
+`react`, `react-dom`, `react-router-dom`, `framer-motion`, `tailwindcss`, `three`, 字体 `@fontsource/orbitron` + `@fontsource/noto-sans-sc`（或 Google Fonts link）。~~Canvas 2D 渲染游戏~~【修订 2026-09】战斗画面已升级为 Three.js 实时 3D 渲染（`src/game/render3d/`，透视相机 + 程序化 3D 炮塔模型 + 敌人公告板），原 Canvas 2D 渲染器（`src/game/ui/GameCanvas.tsx`）保留为回退，设置面板「3D 视角」开关切换，`srd.settings.render3d` 持久化；微信小游戏版仍用 2D 渲染以控制包体积。首页 hero 用轻量 canvas 星空粒子。
 
 ### 2.8 页面列表
 

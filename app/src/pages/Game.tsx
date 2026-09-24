@@ -5,9 +5,10 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { createEngine } from '@/game/engine';
 import { COLS, ROWS } from '@/game/config';
 import { audio } from '@/game/audio';
-import { recordGame, recordLevelClear } from '@/game/stats';
+import { recordGame, recordLevelClear, loadSettings, SETTINGS_EVENT } from '@/game/stats';
 import type { Difficulty, GameEngine, TowerType } from '@/game/types';
 import GameCanvas from '@/game/ui/GameCanvas';
+import GameCanvas3D from '@/game/render3d/GameCanvas3D';
 import TopHUD from '@/game/ui/TopHUD';
 import WavePreviewBar from '@/game/ui/WavePreviewBar';
 import BuildPanel from '@/game/ui/BuildPanel';
@@ -39,14 +40,7 @@ let commId = 1;
 
 /** 读取设置面板的音量值（与 TopHUD 共享同一存储键） */
 function loadHudVolume(): number {
-  try {
-    const raw = localStorage.getItem('srd.settings');
-    if (raw) {
-      const s = JSON.parse(raw) as { volume?: number };
-      if (typeof s.volume === 'number') return s.volume;
-    }
-  } catch { /* ignore */ }
-  return 0.8;
+  return loadSettings().volume;
 }
 
 export default function Game() {
@@ -62,7 +56,16 @@ export default function Game() {
   const [achievements, setAchievements] = useState<string[]>([]);
   const [briefingOpen, setBriefingOpen] = useState(true);
   const [comms, setComms] = useState<CommItem[]>([]);
+  const [render3d, setRender3d] = useState(() => loadSettings().render3d);
+  const [webglFailed, setWebglFailed] = useState(false); // WebGL 不可用时回退 2D
   const recordedRef = useRef<GameEngine | null>(null); // 防止 recordGame 重复调用
+
+  // 设置面板「3D 视角」开关即时生效
+  useEffect(() => {
+    const onSettings = () => setRender3d(loadSettings().render3d);
+    window.addEventListener(SETTINGS_EVENT, onSettings);
+    return () => window.removeEventListener(SETTINGS_EVENT, onSettings);
+  }, []);
 
   // 难度 / 关卡参数变化 → 重建引擎（渲染期间调整状态，见 react.dev「You Might Not Need an Effect」）
   const [prevParams, setPrevParams] = useState({ difficulty, levelId });
@@ -207,14 +210,26 @@ export default function Game() {
             setSelectedId(null);
           }}
         >
-          <GameCanvas
-            engine={engine}
-            placing={placing}
-            selectedId={selectedId}
-            hoverCell={hoverCell}
-            onCellClick={onCellClick}
-            onHoverCell={(col, row) => setHoverCell(col < 0 ? null : { col, row })}
-          />
+          {render3d && !webglFailed ? (
+            <GameCanvas3D
+              engine={engine}
+              placing={placing}
+              selectedId={selectedId}
+              hoverCell={hoverCell}
+              onCellClick={onCellClick}
+              onHoverCell={(col, row) => setHoverCell(col < 0 ? null : { col, row })}
+              onWebGLFail={() => setWebglFailed(true)}
+            />
+          ) : (
+            <GameCanvas
+              engine={engine}
+              placing={placing}
+              selectedId={selectedId}
+              hoverCell={hoverCell}
+              onCellClick={onCellClick}
+              onHoverCell={(col, row) => setHoverCell(col < 0 ? null : { col, row })}
+            />
+          )}
         </div>
 
         {/* 右栏：波次列表（仅桌面） */}

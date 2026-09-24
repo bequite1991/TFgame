@@ -203,6 +203,42 @@ export function recordGame(state: GameState, difficulty: Difficulty): string[] {
   return newly;
 }
 
+// ---------------- 全局设置（键：srd.settings，TopHUD 与 Game 页共享） ----------------
+
+export interface AppSettings {
+  volume: number; // 0-1
+  quality: 'high' | 'low';
+  render3d: boolean; // 3D 渲染视角（WebGL 不可用或低核数设备回退 2D）
+}
+
+export const SETTINGS_EVENT = 'srd:settings-changed';
+const SETTINGS_KEY = 'srd.settings';
+
+export function defaultSettings(): AppSettings {
+  const cores = typeof navigator !== 'undefined' ? (navigator.hardwareConcurrency ?? 8) : 8;
+  return { volume: 0.8, quality: 'high', render3d: cores > 4 };
+}
+
+/** 旧存档缺字段时以默认值补齐（迁移兼容） */
+export function loadSettings(): AppSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw) return { ...defaultSettings(), ...(JSON.parse(raw) as Partial<AppSettings>) };
+  } catch {
+    /* ignore */
+  }
+  return defaultSettings();
+}
+
+export function saveSettings(next: AppSettings) {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+  } catch {
+    /* ignore */
+  }
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(SETTINGS_EVENT));
+}
+
 /** 指挥官等级：每 500 击杀升 1 级 */
 export function commanderLevel(kills: number) {
   const level = Math.floor(kills / 500) + 1;
