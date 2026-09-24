@@ -1,0 +1,252 @@
+{
+  "frame_size": 256,
+  "fire_frames": 6,
+  "towers": {
+    "laser": {
+      "1": {
+        "base": "laser_lv1_base.png",
+        "idle": "laser_lv1_body_idle.png",
+        "fire": [
+          "laser_lv1_body_fire_0.png",
+          "laser_lv1_body_fire_1.png",
+          "laser_lv1_body_fire_2.png",
+          "laser_lv1_body_fire_3.png",
+          "laser_lv1_body_fire_4.png",
+          "laser_lv1_body_fire_5.png"
+        ],
+        "fire_frames": 6
+      },
+      "2": {
+        "base": "laser_lv2_base.png",
+        "idle": "laser_lv2_body_idle.png",
+        "fire": [
+          "laser_lv2_body_fire_0.png",
+          "laser_lv2_body_fire_1.png",
+          "laser_lv2_body_fire_2.png",
+          "laser_lv2_body_fire_3.png",
+          "laser_lv2_body_fire_4.png",
+          "laser_lv2_body_fire_5.png"
+        ],
+        "fire_frames": 6
+      },
+      "3": {
+        "base": "laser_lv3_base.png",
+        "idle": "laser_lv3_body_idle.png",
+        "fire": [
+          "laser_lv3_body_fire_0.png",
+          "laser_lv3_body_fire_1.png",
+          "laser_lv3_body_fire_2.png",
+          "laser_lv3_body_fire_3.png",
+          "laser_lv3_body_fire_4.png",
+          "laser_lv3_body_fire_5.png"
+        ],
+        "fire_frames": 6
+      }
+    },
+    "missile": {
+      "1": {
+        "base": "missile_lv1_base.png",
+        "idle": "missile_lv1_body_idle.png",
+        "fire": [
+          "missile_lv1_body_fire_0.png",
+          "missile_lv1_body_fire_1.png",
+          "missile_lv1_body_fire_2.png",
+          "missile_lv1_body_fire_3.png",
+          "missile_lv1_body_fire_4.png",
+          "missile_lv1_body_fire_5.png"
+        ],
+        "fire_frames": 6
+      },
+      "2": {
+        "base": "missile_lv2_base.png",
+        "idle": "missile_lv2_body_idle.png",
+        "fire": [
+          "missile_lv2_body_fire_0.png",
+          "missile_lv2_body_fire_1.png",
+          "missile_lv2_body_fire_2.png",
+          "missile_lv2_body_fire_3.png",
+          "missile_lv2_body_fire_4.png",
+          "missile_lv2_body_fire_5.png"
+        ],
+        "fire_frames": 6
+      },
+      "3": {
+        "base": "missile_lv3_base.png",
+        "idle": "missile_lv3_body_idle.png",
+        "fire": [
+          "missile_lv3_body_fire_0.png",
+          "missile_lv3_body_fire_1.png",
+          "missile_lv3_body_fire_2.png",
+          "missile_lv3_body_fire_3.png",
+          "missile_lv3_body_fire_4.png",
+          "missile_lv3_body_fire_5.png"
+        ],
+        "fire_frames": 6
+      }
+    },
+    "frost": {
+      "1": {
+        "base": "frost_lv1_base.png",
+        "idle": "frost_lv1_body_idle.png",
+        "fire": [
+          "frost_lv1_body_fire_0.png",
+          "frost_lv1_body_fire_1.png",
+          "frost_lv1_body_fire_2.png",
+          "frost_lv1_body_fire_3.png",
+          "frost_lv1_body_fire_4.png",
+          "frost_lv1_body_fire_5.png"
+        ],
+        "fire_frames": 6
+      },
+      "2": {
+        "base": "frost_lv2_base.png",
+        "idle": "frost_lv2_body_idle.png",
+        "fire": [
+          "frost_lv2_body_fire_0.png",
+          "frost_lv2_body_fire_1.png",
+          "frost_lv2_body_fire_2.png",
+          "frost_lv2_body_fire_3.png",
+          "frost_lv2_body_fire_4.png",
+          "frost_lv2_body_fire_5.png"
+        ],
+        "fire_frames": 6
+      },
+      "3": {
+        "base": "frost_lv3_base.png",
+        "idle": "frost_lv3_body_idle.png",
+        "fire": [
+          "frost_lv3_body_fire_0.png",
+          "frost_lv3_body_fire_1.png",
+          "frost_lv3_body_fire_2.png",
+          "frost_lv3_body_fire_3.png",
+          "frost_lv3_body_fire_4.png",
+          "frost_lv3_body_fire_5.png"
+        ],
+        "fire_frames": 6
+      }
+    },
+    "railgun": {
+      "1": {
+        "base": "railgun_lv1_base.png",
+        "idle": "railgun_lv1_body_idle.png",
+        "fire": [
+          "railgun_lv1_body_fire_0.png",
+          "railgun_lv1_body_fire_1.png",
+          "railgun_lv1_body_fire_2.png",
+          "railgun_lv1_body_fire_3.png",
+          "railgun_lv1_body_fire_4.png",
+          "railgun_lv1_body_fire_5.png"
+        ],
+        "fire_frames": 6
+      },
+      "2": {
+        "base": "railgun_lv2_base.png",
+        "idle": "railgun_lv2_body_idle.png",
+        "fire": [
+          "railgun_lv2_body_fire_0.png",
+          "railgun_lv2_body_fire_1.png",
+          "railgun_lv2_body_fire_2.png",
+          "railgun_lv2_body_fire_3.png",
+          "railgun_lv2_body_fire_4.png",
+          "railgun_lv2_body_fire_5.png"
+        ],
+        "fire_frames": 6
+      },
+      "3": {
+        "base": "railgun_lv3_base.png",
+        "idle": "railgun_lv3_body_idle.png",
+        "fire": [
+          "railgun_lv3_body_fire_0.png",
+          "railgun_lv3_body_fire_1.png",
+          "railgun_lv3_body_fire_2.png",
+          "railgun_lv3_body_fire_3.png",
+          "railgun_lv3_body_fire_4.png",
+          "railgun_lv3_body_fire_5.png"
+        ],
+        "fire_frames": 6
+      }
+    },
+    "tesla": {
+      "1": {
+        "base": "tesla_lv1_base.png",
+        "idle": "tesla_lv1_body_idle.png",
+        "fire": [
+          "tesla_lv1_body_fire_0.png",
+          "tesla_lv1_body_fire_1.png",
+          "tesla_lv1_body_fire_2.png",
+          "tesla_lv1_body_fire_3.png",
+          "tesla_lv1_body_fire_4.png",
+          "tesla_lv1_body_fire_5.png"
+        ],
+        "fire_frames": 6
+      },
+      "2": {
+        "base": "tesla_lv2_base.png",
+        "idle": "tesla_lv2_body_idle.png",
+        "fire": [
+          "tesla_lv2_body_fire_0.png",
+          "tesla_lv2_body_fire_1.png",
+          "tesla_lv2_body_fire_2.png",
+          "tesla_lv2_body_fire_3.png",
+          "tesla_lv2_body_fire_4.png",
+          "tesla_lv2_body_fire_5.png"
+        ],
+        "fire_frames": 6
+      },
+      "3": {
+        "base": "tesla_lv3_base.png",
+        "idle": "tesla_lv3_body_idle.png",
+        "fire": [
+          "tesla_lv3_body_fire_0.png",
+          "tesla_lv3_body_fire_1.png",
+          "tesla_lv3_body_fire_2.png",
+          "tesla_lv3_body_fire_3.png",
+          "tesla_lv3_body_fire_4.png",
+          "tesla_lv3_body_fire_5.png"
+        ],
+        "fire_frames": 6
+      }
+    },
+    "plasma": {
+      "1": {
+        "base": "plasma_lv1_base.png",
+        "idle": "plasma_lv1_body_idle.png",
+        "fire": [
+          "plasma_lv1_body_fire_0.png",
+          "plasma_lv1_body_fire_1.png",
+          "plasma_lv1_body_fire_2.png",
+          "plasma_lv1_body_fire_3.png",
+          "plasma_lv1_body_fire_4.png",
+          "plasma_lv1_body_fire_5.png"
+        ],
+        "fire_frames": 6
+      },
+      "2": {
+        "base": "plasma_lv2_base.png",
+        "idle": "plasma_lv2_body_idle.png",
+        "fire": [
+          "plasma_lv2_body_fire_0.png",
+          "plasma_lv2_body_fire_1.png",
+          "plasma_lv2_body_fire_2.png",
+          "plasma_lv2_body_fire_3.png",
+          "plasma_lv2_body_fire_4.png",
+          "plasma_lv2_body_fire_5.png"
+        ],
+        "fire_frames": 6
+      },
+      "3": {
+        "base": "plasma_lv3_base.png",
+        "idle": "plasma_lv3_body_idle.png",
+        "fire": [
+          "plasma_lv3_body_fire_0.png",
+          "plasma_lv3_body_fire_1.png",
+          "plasma_lv3_body_fire_2.png",
+          "plasma_lv3_body_fire_3.png",
+          "plasma_lv3_body_fire_4.png",
+          "plasma_lv3_body_fire_5.png"
+        ],
+        "fire_frames": 6
+      }
+    }
+  }
+}
