@@ -878,14 +878,25 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, type: EnemyType, size: 
 
 // ---------------- 地图 ----------------
 
-/** 静态背景（底岩 + 网格 + 陨石坑），每帧绘制但开销小 */
-export function drawMapBackground(ctx: CanvasRenderingContext2D, w: number, h: number) {
-  const g = ctx.createLinearGradient(0, 0, 0, h);
-  g.addColorStop(0, '#0B1226');
-  g.addColorStop(0.5, '#0A0F22');
-  g.addColorStop(1, '#0C1128');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, w, h);
+/** 静态背景（星云底图 + 底岩 + 网格 + 陨石坑），每帧绘制但开销小；nebula 为 null 时回退纯深色底 */
+export function drawMapBackground(ctx: CanvasRenderingContext2D, w: number, h: number, nebula: HTMLImageElement | null = null) {
+  if (nebula) {
+    // 星云拉伸铺底，整体压暗保证 gameplay 可读性
+    ctx.drawImage(nebula, 0, 0, w, h);
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, 'rgba(11,18,38,0.72)');
+    g.addColorStop(0.5, 'rgba(10,15,34,0.78)');
+    g.addColorStop(1, 'rgba(12,17,40,0.72)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+  } else {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, '#0B1226');
+    g.addColorStop(0.5, '#0A0F22');
+    g.addColorStop(1, '#0C1128');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+  }
 
   // 伪随机陨石坑 / 金属板（按格种子，帧间稳定）
   for (let row = 0; row < ROWS; row++) {

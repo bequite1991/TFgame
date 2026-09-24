@@ -3,13 +3,12 @@ import { useEffect, useRef } from 'react';
 import { CELL, COLS, ROWS, W, H, TOWERS, ENEMIES } from '../config';
 import { drawBase, drawEnemy, drawMapBackground, drawPath, drawTower } from '../render';
 import { getTowerSprite } from '../sprites';
+import {
+  BloomLayer, FxLayer, NebulaBg,
+  drawBaseGlow, drawStarfield, drawVignette,
+  hash01, readQualityHigh, SPARKS_PER_HIT,
+} from '../fx';
 import type { GameEngine, TowerType } from '../types';
-
-// 确定性伪随机（环境尘埃用，避免每帧分配随机表）
-const hash01 = (n: number) => {
-  const v = Math.sin(n * 12.9898) * 43758.5453;
-  return v - Math.floor(v);
-};
 
 interface Props {
   engine: GameEngine;
@@ -38,20 +37,36 @@ export default function GameCanvas({ engine, placing, selectedId, onCellClick, o
     const { posAt, isBuildable, exits, paths } = engine.map;
     const pathPixelsList = paths.map((p) => p.pixels);
 
+    // 视觉特效：星云底图 / 模拟 Bloom / 战斗特效层（纯渲染状态，随 engine 重建）
+    const nebula = new NebulaBg();
+    const bloom = new BloomLayer(W, H);
+    const fx = new FxLayer();
+    let qualityHigh = readQualityHigh(); // 设置面板「画质 高/低」，低频轮询 localStorage
+    let frameNo = 0;
+
     let raf = 0;
     const render = () => {
       const s = engine.state;
       const time = s.clock;
       const { placing: pl, selectedId: sel, hoverCell: hc } = live.current;
+      if (++frameNo % 30 === 0) qualityHigh = readQualityHigh();
+      const bloomOn = bloom.hwOk && qualityHigh;
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      // 屏幕震动
+      // 屏幕震动（主画布与辉光层共用同一偏移）
+      let shakeX = 0;
+      let shakeY = 0;
       if (s.shake > 0) {
         const m = s.shake * 6;
-        ctx.translate((Math.random() - 0.5) * m, (Math.random() - 0.5) * m);
+        shakeX = (Math.random() - 0.5) * m;
+        shakeY = (Math.random() - 0.5) * m;
+        ctx.translate(shakeX, shakeY);
       }
 
-      drawMapBackground(ctx, W, H);
+      drawMapBackground(ctx, W, H, nebula.img);
+      drawStarfield(ctx, W, H, time);
+      drawVignette(ctx, W, H);
+      for (const ex of exits) drawBaseGlow(ctx, ex.centerX, ex.centerY, time);
 
       // 环境星尘：缓慢漂浮的微光点（纯 time 驱动、确定性伪随机）
       ctx.save();
@@ -69,6 +84,9 @@ export default function GameCanvas({ engine, placing, selectedId, onCellClick, o
       ctx.globalAlpha = 1;
 
       drawPath(ctx, pathPixelsList, time);
+
+      // 地面灼痕（击杀残留焦痕，贴地、在塔与敌人之下）
+      fx.drawScorches(ctx);
 
       // 放置模式：合法格高亮
       if (pl) {
@@ -252,6 +270,9 @@ export default function GameCanvas({ engine, placing, selectedId, onCellClick, o
         }
       }
 
+      // 导弹烟雾拖尾（画在弹丸本体之下）
+      fx.drawTrails(ctx);
+
       // 导弹 / 等离子弹
       for (const pr of s.projectiles) {
         if (pr.kind === 'plasma') {
@@ -277,25 +298,52 @@ export default function GameCanvas({ engine, placing, selectedId, onCellClick, o
         }
       }
 
-      // 光束
+      // 光束（每帧 1px 随机抖动增加能量感；电磁炮双层结构；激光命中点火花溅射）
       for (const b of s.beams) {
         const a = b.ttl / b.maxTtl;
-        ctx.beginPath();
-        ctx.moveTo(b.x1, b.y1);
-        ctx.lineTo(b.x2, b.y2);
-        ctx.strokeStyle = b.color;
-        ctx.globalAlpha = a;
-        ctx.lineWidth = b.width * (0.5 + a * 0.5);
-        ctx.shadowColor = b.color;
-        ctx.shadowBlur = 12;
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-        ctx.globalAlpha = 1;
-        // 命中点径向光斑（beam 端点即命中点）
+        const isRail = b.color === '#8B5CF6';
+        const isLaser = b.color.startsWith('#22E0FF');
+        const jx = (Math.random() - 0.5) * 2;
+        const jy = (Math.random() - 0.5) * 2;
+        if (isRail) {
+          // 电磁炮：外层紫色光晕（粗、半透明）
+          ctx.beginPath();
+          ctx.moveTo(b.x1 + jx, b.y1 + jy);
+          ctx.lineTo(b.x2 + jx, b.y2 + jy);
+          ctx.strokeStyle = b.color;
+          ctx.globalAlpha = a * 0.35;
+          ctx.lineWidth = b.width * 2.4;
+          ctx.shadowColor = b.color;
+          ctx.shadowBlur = 18;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+          // 内层白芯（细、高亮）
+          ctx.beginPath();
+          ctx.moveTo(b.x1 + jx, b.y1 + jy);
+          ctx.lineTo(b.x2 + jx, b.y2 + jy);
+          ctx.strokeStyle = '#F4F0FF';
+          ctx.globalAlpha = a;
+          ctx.lineWidth = Math.max(1.5, b.width * 0.4);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        } else {
+          ctx.beginPath();
+          ctx.moveTo(b.x1 + jx, b.y1 + jy);
+          ctx.lineTo(b.x2 + jx, b.y2 + jy);
+          ctx.strokeStyle = b.color;
+          ctx.globalAlpha = a;
+          ctx.lineWidth = b.width * (0.5 + a * 0.5);
+          ctx.shadowColor = b.color;
+          ctx.shadowBlur = 12;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+          ctx.globalAlpha = 1;
+        }
+        // 命中点径向光斑（beam 端点即命中点；电磁炮加大加亮）
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
         ctx.globalAlpha = a * 0.9;
-        const gr = 8 + b.width * 1.5;
+        const gr = (8 + b.width * 1.5) * (isRail ? 1.9 : 1);
         const bg = ctx.createRadialGradient(b.x2, b.y2, 0, b.x2, b.y2, gr);
         bg.addColorStop(0, '#FFFFFF');
         bg.addColorStop(0.35, b.color);
@@ -305,6 +353,7 @@ export default function GameCanvas({ engine, placing, selectedId, onCellClick, o
         ctx.arc(b.x2, b.y2, gr, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
+        if (isLaser) fx.spawnSparks(b.x2, b.y2, '#BDF3FF', SPARKS_PER_HIT);
       }
 
       // 粒子
@@ -332,6 +381,13 @@ export default function GameCanvas({ engine, placing, selectedId, onCellClick, o
         ctx.shadowBlur = 0;
       }
       ctx.globalAlpha = 1;
+
+      // 渲染层补充特效：BOSS 多层冲击波环 / 死亡碎片 / 火花 / 击杀白闪
+      fx.drawRings(ctx);
+      fx.drawDebris(ctx);
+      fx.drawSparks(ctx);
+      fx.drawFlashes(ctx);
+
       for (const f of s.floaters) {
         const a = f.ttl / f.maxTtl;
         ctx.globalAlpha = a;
@@ -344,6 +400,21 @@ export default function GameCanvas({ engine, placing, selectedId, onCellClick, o
         ctx.shadowBlur = 0;
       }
       ctx.globalAlpha = 1;
+
+      // 特效层更新（死亡/爆炸 diff + 短寿命特效衰减）
+      fx.update(s, engine.map);
+
+      // 模拟 Bloom：发光元素画入低分辨率离屏层，模糊后以 lighter 叠回
+      if (bloomOn) {
+        const g = bloom.begin(shakeX, shakeY);
+        fx.drawGlow(g, s, pathPixelsList, exits);
+        bloom.composite(ctx, W, H, dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.translate(shakeX, shakeY);
+      }
+
+      // BOSS 死亡全屏白闪（最后绘制，保持纯白不被辉光染色）
+      fx.drawBossFlash(ctx, W, H);
 
       raf = requestAnimationFrame(render);
     };
