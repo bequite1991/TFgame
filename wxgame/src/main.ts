@@ -15,6 +15,7 @@ import {
 import type { Command, Difficulty, GameEngine, TowerType } from '../../app/src/game/types';
 import type { TechId } from '../../app/src/game/types';
 import { sfx } from './audio';
+import { track } from './analytics';
 
 // ---------------- 运行环境 ----------------
 
@@ -48,6 +49,26 @@ declare const wx: {
     success?: (r: { userInfo: { nickName: string; avatarUrl: string } }) => void;
     fail?: (e?: unknown) => void;
   }): void;
+  getUpdateManager?(): {
+    onCheckForUpdate(cb: (r: { hasUpdate: boolean }) => void): void;
+    onUpdateReady(cb: () => void): void;
+    onUpdateFailed(cb: () => void): void;
+    applyUpdate(): void;
+  };
+  showModal?(o: {
+    title: string; content: string; showCancel?: boolean;
+    success?: (r: { confirm: boolean; cancel: boolean }) => void;
+    fail?: (e?: unknown) => void;
+  }): void;
+  showShareMenu?(o: { withShareTicket?: boolean; menus?: string[]; success?: () => void; fail?: (e?: unknown) => void }): void;
+  onShareAppMessage?(cb: () => { title: string; imageUrl?: string }): void;
+  onShareTimeline?(cb: () => { title: string; imageUrl?: string }): void;
+  shareAppMessage?(o: { title: string; imageUrl?: string }): void;
+  openCustomerServiceChat?(o: {
+    extInfo: { url: string }; corpId: string;
+    success?: () => void; fail?: (e?: unknown) => void;
+  }): void;
+  setClipboardData?(o: { data: string; success?: () => void; fail?: (e?: unknown) => void }): void;
 };
 
 const canvas = wx.createCanvas();
@@ -59,6 +80,44 @@ canvas.width = VW * DPR;
 canvas.height = VH * DPR;
 const ctx = canvas.getContext('2d')!;
 ctx.scale(DPR, DPR);
+
+// ---------------- 版本更新提示（启动时检查，全部判空保护） ----------------
+try {
+  const um = wx.getUpdateManager?.();
+  if (um) {
+    um.onCheckForUpdate((r) => { if (r.hasUpdate) console.log('[SRD] 发现新版本，下载中…'); });
+    um.onUpdateReady(() => {
+      wx.showModal?.({
+        title: '更新提示',
+        content: '新版本已就绪，重启后立即生效？',
+        success: (r) => { if (r.confirm) um.applyUpdate(); },
+      });
+    });
+    um.onUpdateFailed(() => { /* 静默：网络异常等场景不打扰玩家 */ });
+  }
+} catch { /* ignore */ }
+
+// ---------------- 分享能力（菜单常驻 + 被动分享回调，判空保护） ----------------
+try {
+  wx.showShareMenu?.({ withShareTicket: true, menus: ['shareAppMessage', 'shareTimeline'] });
+} catch { /* ignore */ }
+/** 被动分享文案：带上当前战役进度（无进度时用默认钩子文案） */
+function shareTitle(): string {
+  const n = Math.max(0, ...loadProgress().cleared);
+  return n > 0
+    ? `我在《高塔防线》守到了第 ${n} 关，你能撑到第几波？`
+    : '虫群压境，星环告急！来《高塔防线》指挥你的第一座炮塔';
+}
+try {
+  wx.onShareAppMessage?.(() => {
+    track('share_click', { channel: 'menu' });
+    return { title: shareTitle(), imageUrl: 'assets/share-cover.jpg' };
+  });
+  wx.onShareTimeline?.(() => ({
+    title: `《高塔防线》—— 十三章星环战役塔防：${shareTitle()}`,
+    imageUrl: 'assets/share-cover.jpg',
+  }));
+} catch { /* ignore */ }
 
 // ---------------- 字体 ----------------
 let fontLoaded = false;
@@ -460,12 +519,33 @@ function drawHeader(title: string, opts: { back?: () => void } = {}) {
   fillText(title, tx, CAP_MID + 8, { size: tSize });
 }
 
+/** 意见反馈：优先企业微信客服会话（需 mp 后台配置），失败/不支持时回退复制反馈邮箱 */
+function copyFeedbackMail() {
+  const mail = 'feedback@example.com'; // TODO 上线前替换为真实反馈邮箱
+  try {
+    wx.setClipboardData?.({ data: mail, success: () => showToast('反馈邮箱已复制') });
+  } catch { /* ignore */ }
+}
+function openFeedback() {
+  try {
+    if (typeof wx.openCustomerServiceChat === 'function') {
+      wx.openCustomerServiceChat({
+        corpId: '', // TODO 替换为 mp 后台「客服」企业微信的 corpId
+        extInfo: { url: '' }, // TODO 替换为客服链接（mp 后台生成）
+        fail: () => copyFeedbackMail(),
+      });
+      return;
+    }
+  } catch { /* fallthrough 到邮箱兜底 */ }
+  copyFeedbackMail();
+}
+
 /** 指挥官档案弹层（画在主页/图鉴之上） */
 function drawProfileOverlay() {
   ctx.fillStyle = 'rgba(7,11,24,0.78)';
   ctx.fillRect(0, 0, VW, VH);
   const pw = VW - 72;
-  const ph = 372;
+  const ph = 420;
   const px = 36;
   const py = VH / 2 - ph / 2;
   panel(px, py, pw, ph, C.panelLine);
@@ -499,7 +579,13 @@ function drawProfileOverlay() {
     cb: () => { setWxQualityHigh(!qHigh); qualityHigh = !qHigh; buzz('light'); },
   });
 
-  let y = py + 246;
+  // 意见反馈（客服会话 → 回退复制邮箱）
+  btn({
+    x: px + 24, y: py + 240, w: pw - 48, h: 40, label: '💬 意见反馈', color: C.gold,
+    cb: () => openFeedback(),
+  });
+
+  let y = py + 292;
   if (!profile.real) {
     btn({
       x: px + 24, y, w: pw - 48, h: 44, label: '同步微信头像昵称', color: C.green, primary: true,
@@ -908,6 +994,7 @@ function startNarration(levelId: number) {
 
 function gotoBriefing(levelId: number) {
   app.levelId = levelId;
+  track('chapter_select', { level_id: levelId });
   goto('briefing');
   startNarration(levelId);
 }
@@ -980,7 +1067,10 @@ function drawHome(time: number) {
   // 难度分段控件（高亮块滑动动画 + 轻震动）
   const segW = VW - MARGIN * 2;
   const segY = TOP_SAFE + 4;
-  segControl(MARGIN, segY, segW, DIFF_LIST.map((d) => DIFFICULTIES[d].name), DIFF_LIST.indexOf(app.difficulty), 'diff', (i) => { app.difficulty = DIFF_LIST[i]; });
+  segControl(MARGIN, segY, segW, DIFF_LIST.map((d) => DIFFICULTIES[d].name), DIFF_LIST.indexOf(app.difficulty), 'diff', (i) => {
+    app.difficulty = DIFF_LIST[i];
+    track('difficulty_select', { difficulty: app.difficulty });
+  });
 
   // 关卡卡片列表（可滚动）
   ctx.save();
@@ -1174,6 +1264,8 @@ let bloom: BloomLayer | null = null;
 let pathPixels: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [];
 let qualityHigh = readWxQualityHigh(); // 低频轮询存储，避免每帧读 storage
 let fxFrame = 0;
+/** 本局开战时间戳（结算埋点算时长） */
+let battleStartAt = 0;
 
 function startBattle() {
   stopNarration();
@@ -1185,6 +1277,8 @@ function startBattle() {
   fx = new FxLayer();
   bloom = new BloomLayer(W, H);
   pathPixels = app.engine.map.paths.map((p) => p.pixels);
+  battleStartAt = Date.now();
+  track('game_start', { level_id: app.levelId, difficulty: app.difficulty });
   goto('battle');
 }
 
@@ -1591,6 +1685,22 @@ function drawResult(time: number) {
     btn({ x: px, y, w: pw, h: 54, label: `▶ 进入第 ${nextId} 章`, color: C.green, primary: true, cb: () => gotoBriefing(nextId) });
     y += 68;
   }
+  // 炫耀战绩：主动拉起分享，标题带本局成绩（不落库，仅分享卡片 + 埋点）
+  btn({
+    x: px, y, w: pw, h: 46, label: '📣 炫耀战绩', color: C.pink,
+    cb: () => {
+      track('share_click', { channel: 'result', result: won ? 'win' : 'lose', wave: st.wave });
+      try {
+        wx.shareAppMessage?.({
+          title: won
+            ? `我在《高塔防线》守住了第 ${app.levelId} 关 · 全 ${st.totalWaves} 波，漏怪 ${st.leaked}！`
+            : `我在《高塔防线》第 ${app.levelId} 关撑到了第 ${st.wave} 波，求支援！`,
+          imageUrl: 'assets/share-cover.jpg',
+        });
+      } catch { /* ignore */ }
+    },
+  });
+  y += 58;
   btn({ x: px, y, w: (pw - 12) / 2, h: 46, label: won ? '再来一局' : '再战本关', color: C.gold, cb: () => gotoBriefing(app.levelId) });
   btn({ x: px + (pw - 12) / 2 + 12, y, w: (pw - 12) / 2, h: 46, label: '返回选关', cb: () => goto('home') });
 }
@@ -2059,6 +2169,17 @@ function frame() {
         sfx.play(ev.won ? 'victory' : 'defeat');
         buzz(ev.won ? 'medium' : 'heavy');
         app.result = { won: ev.won };
+        // 结算埋点（wave_fail 并入：失败时 result=lose + wave_reached 即失败波次，不重复打）
+        const st0 = app.engine.state;
+        track('game_end', {
+          level_id: app.engine.level.id,
+          difficulty: app.difficulty,
+          result: ev.won ? 'win' : 'lose',
+          wave_reached: st0.wave,
+          duration_sec: Math.round((Date.now() - battleStartAt) / 1000),
+          kills: st0.kills,
+          leaks: st0.leaked,
+        });
         if (ev.won) recordLevelClear(app.engine.level.id);
         goto('result');
       }
@@ -2145,7 +2266,10 @@ wx.onTouchStart((e) => {
         engine.map.isBuildable(cx, cy) &&
         !st.towers.some((tw) => tw.col === cx && tw.row === cy)
       ) {
-        if (engine.dispatch({ type: 'BUILD', col: cx, row: cy, tower: app.placing })) { sfx.play('build'); buzz('light'); }
+        if (engine.dispatch({ type: 'BUILD', col: cx, row: cy, tower: app.placing })) {
+          sfx.play('build'); buzz('light');
+          track('tower_build', { tower_type: app.placing, level_id: app.levelId, wave: engine.state.wave });
+        }
       }
       app.placing = null;
       return;
@@ -2231,7 +2355,10 @@ wx.onTouchEnd((e) => {
             app.engine.map.isBuildable(cx, cy) &&
             !st.towers.some((tw) => tw.col === cx && tw.row === cy)
           ) {
-            if (app.engine.dispatch({ type: 'BUILD', col: cx, row: cy, tower: bt.type })) { sfx.play('build'); buzz('light'); }
+            if (app.engine.dispatch({ type: 'BUILD', col: cx, row: cy, tower: bt.type })) {
+              sfx.play('build'); buzz('light');
+              track('tower_build', { tower_type: bt.type, level_id: app.levelId, wave: st.wave });
+            }
           }
         }
         return;

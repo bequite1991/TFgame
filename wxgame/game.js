@@ -4663,6 +4663,16 @@
   };
   var sfx = new SfxEngine();
 
+  // src/analytics.ts
+  function track(eventId, data = {}) {
+    try {
+      const w = globalThis.wx;
+      if (typeof w?.reportEvent === "function") w.reportEvent(eventId, data);
+      else if (typeof w?.reportAnalytics === "function") w.reportAnalytics(eventId, data);
+    } catch {
+    }
+  }
+
   // src/main.ts
   var canvas = wx.createCanvas();
   var info = wx.getSystemInfoSync();
@@ -4673,6 +4683,45 @@
   canvas.height = VH * DPR;
   var ctx = canvas.getContext("2d");
   ctx.scale(DPR, DPR);
+  try {
+    const um = wx.getUpdateManager?.();
+    if (um) {
+      um.onCheckForUpdate((r) => {
+        if (r.hasUpdate) console.log("[SRD] \u53D1\u73B0\u65B0\u7248\u672C\uFF0C\u4E0B\u8F7D\u4E2D\u2026");
+      });
+      um.onUpdateReady(() => {
+        wx.showModal?.({
+          title: "\u66F4\u65B0\u63D0\u793A",
+          content: "\u65B0\u7248\u672C\u5DF2\u5C31\u7EEA\uFF0C\u91CD\u542F\u540E\u7ACB\u5373\u751F\u6548\uFF1F",
+          success: (r) => {
+            if (r.confirm) um.applyUpdate();
+          }
+        });
+      });
+      um.onUpdateFailed(() => {
+      });
+    }
+  } catch {
+  }
+  try {
+    wx.showShareMenu?.({ withShareTicket: true, menus: ["shareAppMessage", "shareTimeline"] });
+  } catch {
+  }
+  function shareTitle() {
+    const n = Math.max(0, ...loadProgress().cleared);
+    return n > 0 ? `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u5B88\u5230\u4E86\u7B2C ${n} \u5173\uFF0C\u4F60\u80FD\u6491\u5230\u7B2C\u51E0\u6CE2\uFF1F` : "\u866B\u7FA4\u538B\u5883\uFF0C\u661F\u73AF\u544A\u6025\uFF01\u6765\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u6307\u6325\u4F60\u7684\u7B2C\u4E00\u5EA7\u70AE\u5854";
+  }
+  try {
+    wx.onShareAppMessage?.(() => {
+      track("share_click", { channel: "menu" });
+      return { title: shareTitle(), imageUrl: "assets/share-cover.jpg" };
+    });
+    wx.onShareTimeline?.(() => ({
+      title: `\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u2014\u2014 \u5341\u4E09\u7AE0\u661F\u73AF\u6218\u5F79\u5854\u9632\uFF1A${shareTitle()}`,
+      imageUrl: "assets/share-cover.jpg"
+    }));
+  } catch {
+  }
   var fontLoaded = false;
   try {
     wx.loadFontFace({
@@ -5042,11 +5091,34 @@
     fillText("TOWER LINE DEFENSE", tx, CAP_MID - 11, { size: 9, color: "rgba(34,224,255,0.7)", weight: "600" });
     fillText(title, tx, CAP_MID + 8, { size: tSize });
   }
+  function copyFeedbackMail() {
+    const mail = "feedback@example.com";
+    try {
+      wx.setClipboardData?.({ data: mail, success: () => showToast("\u53CD\u9988\u90AE\u7BB1\u5DF2\u590D\u5236") });
+    } catch {
+    }
+  }
+  function openFeedback() {
+    try {
+      if (typeof wx.openCustomerServiceChat === "function") {
+        wx.openCustomerServiceChat({
+          corpId: "",
+          // TODO 替换为 mp 后台「客服」企业微信的 corpId
+          extInfo: { url: "" },
+          // TODO 替换为客服链接（mp 后台生成）
+          fail: () => copyFeedbackMail()
+        });
+        return;
+      }
+    } catch {
+    }
+    copyFeedbackMail();
+  }
   function drawProfileOverlay() {
     ctx.fillStyle = "rgba(7,11,24,0.78)";
     ctx.fillRect(0, 0, VW, VH);
     const pw = VW - 72;
-    const ph = 372;
+    const ph = 420;
     const px = 36;
     const py = VH / 2 - ph / 2;
     panel(px, py, pw, ph, C.panelLine);
@@ -5084,7 +5156,16 @@
         buzz("light");
       }
     });
-    let y = py + 246;
+    btn({
+      x: px + 24,
+      y: py + 240,
+      w: pw - 48,
+      h: 40,
+      label: "\u{1F4AC} \u610F\u89C1\u53CD\u9988",
+      color: C.gold,
+      cb: () => openFeedback()
+    });
+    let y = py + 292;
     if (!profile.real) {
       btn({
         x: px + 24,
@@ -5474,6 +5555,7 @@
   }
   function gotoBriefing(levelId) {
     app.levelId = levelId;
+    track("chapter_select", { level_id: levelId });
     goto("briefing");
     startNarration(levelId);
   }
@@ -5540,6 +5622,7 @@
     const segY = TOP_SAFE + 4;
     segControl(MARGIN, segY, segW, DIFF_LIST.map((d) => DIFFICULTIES[d].name), DIFF_LIST.indexOf(app.difficulty), "diff", (i) => {
       app.difficulty = DIFF_LIST[i];
+      track("difficulty_select", { difficulty: app.difficulty });
     });
     ctx.save();
     ctx.beginPath();
@@ -5719,6 +5802,7 @@
   var pathPixels = [];
   var qualityHigh = readWxQualityHigh();
   var fxFrame = 0;
+  var battleStartAt = 0;
   function startBattle() {
     stopNarration();
     app.engine = createEngine(app.difficulty, app.levelId);
@@ -5729,6 +5813,8 @@
     fx = new FxLayer();
     bloom = new BloomLayer(W, H);
     pathPixels = app.engine.map.paths.map((p) => p.pixels);
+    battleStartAt = Date.now();
+    track("game_start", { level_id: app.levelId, difficulty: app.difficulty });
     goto("battle");
   }
   function drawBattle() {
@@ -6114,6 +6200,25 @@
       btn({ x: px, y, w: pw, h: 54, label: `\u25B6 \u8FDB\u5165\u7B2C ${nextId} \u7AE0`, color: C.green, primary: true, cb: () => gotoBriefing(nextId) });
       y += 68;
     }
+    btn({
+      x: px,
+      y,
+      w: pw,
+      h: 46,
+      label: "\u{1F4E3} \u70AB\u8000\u6218\u7EE9",
+      color: C.pink,
+      cb: () => {
+        track("share_click", { channel: "result", result: won ? "win" : "lose", wave: st.wave });
+        try {
+          wx.shareAppMessage?.({
+            title: won ? `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u5B88\u4F4F\u4E86\u7B2C ${app.levelId} \u5173 \xB7 \u5168 ${st.totalWaves} \u6CE2\uFF0C\u6F0F\u602A ${st.leaked}\uFF01` : `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u7B2C ${app.levelId} \u5173\u6491\u5230\u4E86\u7B2C ${st.wave} \u6CE2\uFF0C\u6C42\u652F\u63F4\uFF01`,
+            imageUrl: "assets/share-cover.jpg"
+          });
+        } catch {
+        }
+      }
+    });
+    y += 58;
     btn({ x: px, y, w: (pw - 12) / 2, h: 46, label: won ? "\u518D\u6765\u4E00\u5C40" : "\u518D\u6218\u672C\u5173", color: C.gold, cb: () => gotoBriefing(app.levelId) });
     btn({ x: px + (pw - 12) / 2 + 12, y, w: (pw - 12) / 2, h: 46, label: "\u8FD4\u56DE\u9009\u5173", cb: () => goto("home") });
   }
@@ -6568,6 +6673,16 @@
             sfx.play(ev.won ? "victory" : "defeat");
             buzz(ev.won ? "medium" : "heavy");
             app.result = { won: ev.won };
+            const st0 = app.engine.state;
+            track("game_end", {
+              level_id: app.engine.level.id,
+              difficulty: app.difficulty,
+              result: ev.won ? "win" : "lose",
+              wave_reached: st0.wave,
+              duration_sec: Math.round((Date.now() - battleStartAt) / 1e3),
+              kills: st0.kills,
+              leaks: st0.leaked
+            });
             if (ev.won) recordLevelClear(app.engine.level.id);
             goto("result");
           }
@@ -6640,6 +6755,7 @@
           if (engine.dispatch({ type: "BUILD", col: cx, row: cy, tower: app.placing })) {
             sfx.play("build");
             buzz("light");
+            track("tower_build", { tower_type: app.placing, level_id: app.levelId, wave: engine.state.wave });
           }
         }
         app.placing = null;
@@ -6716,6 +6832,7 @@
               if (app.engine.dispatch({ type: "BUILD", col: cx, row: cy, tower: bt.type })) {
                 sfx.play("build");
                 buzz("light");
+                track("tower_build", { tower_type: bt.type, level_id: app.levelId, wave: st.wave });
               }
             }
           }
