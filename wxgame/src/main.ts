@@ -8,6 +8,10 @@ import { createEngine } from '../../app/src/game/engine';
 import {
   drawTower, drawEnemy, drawMapBackground, drawPath, drawBase,
 } from '../../app/src/game/render';
+import {
+  BloomLayer, FxLayer, NebulaBg, setFxPlatform,
+  drawBaseGlow, drawStarfield, drawVignette, hash01, readQualityHigh, SPARKS_PER_HIT,
+} from '../../app/src/game/fx';
 import type { Command, Difficulty, GameEngine, TowerType } from '../../app/src/game/types';
 import type { TechId } from '../../app/src/game/types';
 import { sfx } from './audio';
@@ -87,6 +91,25 @@ function recordLevelClear(levelId: number) {
   p.cleared.push(levelId);
   store.set('srd.progress', p);
 }
+
+// 画质设置（与 H5 版共用键名）：微信端默认低画质（关闭 Bloom 辉光），档案页可切换
+function readWxQualityHigh(): boolean {
+  const s = store.get('srd.settings') as { quality?: string } | undefined;
+  return s?.quality === 'high';
+}
+function setWxQualityHigh(high: boolean) {
+  store.set('srd.settings', { quality: high ? 'high' : 'low' });
+}
+
+// 特效层平台适配：fx.ts 的浏览器 API 全部替换为 wx 等价实现
+// 注意：首个 wx.createCanvas() 是屏幕主画布（上方已创建），此后调用均为离屏画布
+setFxPlatform({
+  createCanvas: () => wx.createCanvas(),
+  createImage: () => wx.createImage(),
+  readQualityHigh: readWxQualityHigh,
+  hardwareConcurrency: () => null, // 微信无核数 API：不硬关 Bloom，交由画质开关控制（默认低画质=关）
+  nebulaUrl: () => 'assets/nebula-texture.jpg',
+});
 
 // ---------------- 用户信息 ----------------
 
@@ -442,7 +465,7 @@ function drawProfileOverlay() {
   ctx.fillStyle = 'rgba(7,11,24,0.78)';
   ctx.fillRect(0, 0, VW, VH);
   const pw = VW - 72;
-  const ph = 316;
+  const ph = 372;
   const px = 36;
   const py = VH / 2 - ph / 2;
   panel(px, py, pw, ph, C.panelLine);
@@ -468,7 +491,15 @@ function drawProfileOverlay() {
     ctx.fill();
   }
 
-  let y = py + 196;
+  // 画质开关（低画质关闭 Bloom 辉光，战斗内每 30 帧轮询一次生效）
+  const qHigh = readWxQualityHigh();
+  btn({
+    x: px + 24, y: py + 192, w: pw - 48, h: 40,
+    label: qHigh ? '画质：高（辉光）' : '画质：低', color: qHigh ? C.cyan : C.sub, active: qHigh,
+    cb: () => { setWxQualityHigh(!qHigh); qualityHigh = !qHigh; buzz('light'); },
+  });
+
+  let y = py + 246;
   if (!profile.real) {
     btn({
       x: px + 24, y, w: pw - 48, h: 44, label: '同步微信头像昵称', color: C.green, primary: true,
@@ -1133,6 +1164,17 @@ function drawBriefing(time: number) {
   btn({ x: VW / 2 - 100, y: afterY + 118, w: 200, h: 46, label: '返回选关', color: C.sub, cb: () => { stopNarration(); goto('home'); } });
 }
 
+// ---------------- 战斗视觉特效（与 H5 版共用 app/src/game/fx.ts） ----------------
+
+// 星云底图：异步加载，未就绪时 drawMapBackground 自动回退程序化深色底
+const nebulaBg = new NebulaBg('assets/nebula-texture.jpg');
+// 每场战斗重建（随 engine 生命周期），击杀检测与 H5 一致：diff 敌人列表
+let fx: FxLayer | null = null;
+let bloom: BloomLayer | null = null;
+let pathPixels: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [];
+let qualityHigh = readWxQualityHigh(); // 低频轮询存储，避免每帧读 storage
+let fxFrame = 0;
+
 function startBattle() {
   stopNarration();
   app.engine = createEngine(app.difficulty, app.levelId);
@@ -1140,6 +1182,9 @@ function startBattle() {
   app.selectedId = null;
   app.result = null;
   barScroll = 0;
+  fx = new FxLayer();
+  bloom = new BloomLayer(W, H);
+  pathPixels = app.engine.map.paths.map((p) => p.pixels);
   goto('battle');
 }
 
@@ -1557,6 +1602,18 @@ function drawBattleScene() {
   const st = engine.state;
   const time = st.clock;
 
+  if (++fxFrame % 30 === 0) qualityHigh = readWxQualityHigh();
+  const bloomOn = bloom !== null && bloom.hwOk && qualityHigh;
+
+  // 屏幕震动（主画布与辉光层共用同一偏移；偏移量以地图逻辑像素计，随 mapScale 缩放）
+  let shakeX = 0;
+  let shakeY = 0;
+  if (st.shake > 0) {
+    const m = st.shake * 6;
+    shakeX = (Math.random() - 0.5) * m;
+    shakeY = (Math.random() - 0.5) * m;
+  }
+
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, TOP_SAFE - 2, VW, VH - BAR_H - TOP_SAFE + 2);
@@ -1564,10 +1621,28 @@ function drawBattleScene() {
   ctx.fillStyle = '#070B18';
   ctx.fillRect(0, TOP_SAFE - 2, VW, VH - BAR_H - TOP_SAFE + 2);
   ctx.save();
-  ctx.translate(mapOX, mapOY + mapPan);
+  ctx.translate(mapOX + shakeX * mapScale, mapOY + mapPan + shakeY * mapScale);
   ctx.scale(mapScale, mapScale);
 
-  drawMapBackground(ctx, W, H);
+  drawMapBackground(ctx, W, H, nebulaBg.img);
+  drawStarfield(ctx, W, H, time);
+  drawVignette(ctx, W, H);
+  for (const ex of engine.map.exits) drawBaseGlow(ctx, ex.centerX, ex.centerY, time);
+
+  // 环境星尘：缓慢漂浮的微光点（纯 time 驱动、确定性伪随机）
+  ctx.save();
+  ctx.fillStyle = '#A9C7FF';
+  for (let i = 0; i < 26; i++) {
+    const sx = (hash01(i * 3 + 1) * W + time * (2 + hash01(i + 40) * 6)) % W;
+    const sy = (hash01(i * 7 + 2) * H + Math.sin(time * 0.15 + i * 1.7) * 14 + H) % H;
+    const sr = 0.6 + hash01(i * 5 + 3) * 1.1;
+    ctx.globalAlpha = 0.04 + 0.09 * (0.5 + 0.5 * Math.sin(time * 0.7 + i * 2.3));
+    ctx.beginPath();
+    ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
   // 进攻路线走廊：宽半透明底 + 青色虚线中线（比 drawPath 更醒目）
   ctx.save();
   ctx.lineJoin = 'round';
@@ -1591,6 +1666,8 @@ function drawBattleScene() {
     ctx.setLineDash([]);
   }
   drawPath(ctx, engine.level.paths, time);
+  // 地面灼痕（击杀残留焦痕，贴地、在基地/塔/敌人之下）
+  fx?.drawScorches(ctx);
   for (const ex of engine.map.exits) drawBase(ctx, time, st.lives / st.maxLives, ex.centerX, ex.centerY);
 
   if (app.placing) {
@@ -1655,6 +1732,9 @@ function drawBattleScene() {
     }
   }
 
+  // 导弹烟雾拖尾（画在弹丸本体之下）
+  fx?.drawTrails(ctx);
+
   for (const pr of st.projectiles) {
     ctx.save();
     ctx.fillStyle = pr.kind === 'plasma' ? '#FF6B3D' : '#FF9F43';
@@ -1663,13 +1743,48 @@ function drawBattleScene() {
     ctx.restore();
   }
 
+  // 光束（每帧 1px 随机抖动；电磁炮双层结构；命中点径向光斑；激光命中火花溅射）
   for (const b of st.beams) {
+    const a = Math.max(0, b.ttl / b.maxTtl);
+    const isRail = b.color === '#8B5CF6';
+    const isLaser = b.color.startsWith('#22E0FF');
+    const jx = (Math.random() - 0.5) * 2;
+    const jy = (Math.random() - 0.5) * 2;
+    if (isRail) {
+      // 电磁炮：外层紫色光晕（粗、半透明）
+      ctx.save();
+      ctx.globalAlpha = a * 0.35;
+      ctx.strokeStyle = b.color; ctx.lineWidth = b.width * 2.4;
+      ctx.shadowColor = b.color; ctx.shadowBlur = 18;
+      ctx.beginPath(); ctx.moveTo(b.x1 + jx, b.y1 + jy); ctx.lineTo(b.x2 + jx, b.y2 + jy); ctx.stroke();
+      ctx.restore();
+      // 内层白芯（细、高亮）
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = '#F4F0FF'; ctx.lineWidth = Math.max(1.5, b.width * 0.4);
+      ctx.beginPath(); ctx.moveTo(b.x1 + jx, b.y1 + jy); ctx.lineTo(b.x2 + jx, b.y2 + jy); ctx.stroke();
+      ctx.restore();
+    } else {
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = b.color; ctx.lineWidth = b.width * (0.5 + a * 0.5);
+      ctx.shadowColor = b.color; ctx.shadowBlur = 12;
+      ctx.beginPath(); ctx.moveTo(b.x1 + jx, b.y1 + jy); ctx.lineTo(b.x2 + jx, b.y2 + jy); ctx.stroke();
+      ctx.restore();
+    }
+    // 命中点径向光斑（beam 端点即命中点；电磁炮加大加亮）
     ctx.save();
-    ctx.globalAlpha = Math.max(0, b.ttl / b.maxTtl);
-    ctx.strokeStyle = b.color; ctx.lineWidth = b.width;
-    ctx.shadowColor = b.color; ctx.shadowBlur = 8;
-    ctx.beginPath(); ctx.moveTo(b.x1, b.y1); ctx.lineTo(b.x2, b.y2); ctx.stroke();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = a * 0.9;
+    const gr = (8 + b.width * 1.5) * (isRail ? 1.9 : 1);
+    const bg = ctx.createRadialGradient(b.x2, b.y2, 0, b.x2, b.y2, gr);
+    bg.addColorStop(0, '#FFFFFF');
+    bg.addColorStop(0.35, b.color);
+    bg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = bg;
+    ctx.beginPath(); ctx.arc(b.x2, b.y2, gr, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
+    if (isLaser) fx?.spawnSparks(b.x2, b.y2, '#BDF3FF', SPARKS_PER_HIT);
   }
 
   for (const r of st.rings) {
@@ -1689,12 +1804,41 @@ function drawBattleScene() {
     ctx.restore();
   }
 
+  // 渲染层补充特效：BOSS 多层冲击波环 / 死亡碎片 / 火花 / 击杀白闪
+  fx?.drawRings(ctx);
+  fx?.drawDebris(ctx);
+  fx?.drawSparks(ctx);
+  fx?.drawFlashes(ctx);
+
   for (const f of st.floaters) {
     ctx.save();
     ctx.globalAlpha = Math.min(1, f.ttl / 0.2);
     fillText(f.text, f.x, f.y, { size: 14, color: f.color, align: 'center' });
     ctx.restore();
   }
+
+  // 特效层更新（敌人/弹丸 diff 检测击杀与爆炸 + 短寿命特效衰减）
+  fx?.update(st, engine.map);
+
+  // 模拟 Bloom：发光元素画入低分辨率离屏层，模糊后以 lighter 叠回（默认低画质关闭）
+  if (bloomOn && fx) {
+    const g = bloom!.begin(shakeX, shakeY);
+    fx.drawGlow(g, st, pathPixels, engine.map.exits);
+    // composite 会把主画布变换重置为单位矩阵（设备像素），故以设备像素指定地图区域
+    bloom!.composite(
+      ctx, W, H, DPR,
+      (mapOX + shakeX * mapScale) * DPR,
+      (mapOY + mapPan + shakeY * mapScale) * DPR,
+      W * mapScale * DPR, H * mapScale * DPR,
+    );
+    // 恢复地图坐标系，供 BOSS 白闪继续绘制
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.translate(mapOX + shakeX * mapScale, mapOY + mapPan + shakeY * mapScale);
+    ctx.scale(mapScale, mapScale);
+  }
+
+  // BOSS 死亡全屏白闪（最后绘制，保持纯白不被辉光染色）
+  fx?.drawBossFlash(ctx, W, H);
 
   ctx.restore();
   ctx.restore();

@@ -3743,13 +3743,23 @@
     }
     ctx2.restore();
   }
-  function drawMapBackground(ctx2, w, h) {
-    const g = ctx2.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, "#0B1226");
-    g.addColorStop(0.5, "#0A0F22");
-    g.addColorStop(1, "#0C1128");
-    ctx2.fillStyle = g;
-    ctx2.fillRect(0, 0, w, h);
+  function drawMapBackground(ctx2, w, h, nebula = null) {
+    if (nebula) {
+      ctx2.drawImage(nebula, 0, 0, w, h);
+      const g = ctx2.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0, "rgba(11,18,38,0.72)");
+      g.addColorStop(0.5, "rgba(10,15,34,0.78)");
+      g.addColorStop(1, "rgba(12,17,40,0.72)");
+      ctx2.fillStyle = g;
+      ctx2.fillRect(0, 0, w, h);
+    } else {
+      const g = ctx2.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0, "#0B1226");
+      g.addColorStop(0.5, "#0A0F22");
+      g.addColorStop(1, "#0C1128");
+      ctx2.fillStyle = g;
+      ctx2.fillRect(0, 0, w, h);
+    }
     for (let row = 0; row < ROWS; row++) {
       for (let col = 0; col < COLS; col++) {
         const seed = (row * 31 + col * 17) % 97;
@@ -3857,6 +3867,600 @@
     ctx2.fill();
     ctx2.shadowBlur = 0;
   }
+
+  // ../app/src/game/fx.ts
+  var import_meta = {};
+  var BLOOM_SCALE = 0.25;
+  var BLOOM_INTENSITY = 0.6;
+  var BLOOM_BLUR_PASSES = 2;
+  var BLOOM_MIN_CORES = 5;
+  var STAR_FAR_COUNT = 46;
+  var STAR_FAR_SPEED = 3;
+  var STAR_NEAR_COUNT = 22;
+  var STAR_NEAR_SPEED = 9;
+  var VIGNETTE_ALPHA = 0.52;
+  var BASE_GLOW_R = 130;
+  var BASE_GLOW_ALPHA = 0.1;
+  var SCORCH_TTL = 3;
+  var SCORCH_MAX = 24;
+  var KILL_FLASH_TTL = 0.1;
+  var KILL_FLASH_MAX = 16;
+  var BOSS_FLASH_TTL = 0.15;
+  var TRAIL_LEN = 10;
+  var DEBRIS_MAX = 90;
+  var DEBRIS_GRAVITY = 320;
+  var DEBRIS_DRAG = 2.4;
+  var SPARK_MAX = 70;
+  var SPARKS_PER_HIT = 4;
+  var FX_RING_MAX = 12;
+  var LEAK_MARGIN = 10;
+  var hash01 = (n) => {
+    const v = Math.sin(n * 12.9898) * 43758.5453;
+    return v - Math.floor(v);
+  };
+  var browserPlatform = {
+    createCanvas: () => document.createElement("canvas"),
+    createImage: () => typeof Image === "undefined" ? null : new Image(),
+    readQualityHigh: () => {
+      try {
+        const raw = localStorage.getItem("srd.settings");
+        if (raw) return (JSON.parse(raw).quality ?? "high") === "high";
+      } catch {
+      }
+      return true;
+    },
+    hardwareConcurrency: () => navigator.hardwareConcurrency ?? 8,
+    nebulaUrl: () => {
+      try {
+        const base = import_meta.env?.BASE_URL ?? "/";
+        return `${base}nebula-texture.png`;
+      } catch {
+        return "nebula-texture.png";
+      }
+    }
+  };
+  var platform = browserPlatform;
+  function setFxPlatform(p) {
+    platform = p;
+  }
+  var NebulaBg = class {
+    constructor(url) {
+      __publicField(this, "img", null);
+      const im = platform.createImage();
+      if (!im) return;
+      im.onload = () => {
+        this.img = im;
+      };
+      im.src = url ?? platform.nebulaUrl();
+    }
+  };
+  function drawStarfield(ctx2, w, h, time) {
+    ctx2.save();
+    ctx2.fillStyle = "#8FA8E8";
+    for (let i = 0; i < STAR_FAR_COUNT; i++) {
+      const sx = (hash01(i * 7 + 11) * w + time * STAR_FAR_SPEED) % w;
+      const sy = (hash01(i * 13 + 5) * h + time * STAR_FAR_SPEED * 0.4) % h;
+      ctx2.globalAlpha = 0.1 + 0.14 * (0.5 + 0.5 * Math.sin(time * 0.5 + i * 1.9));
+      ctx2.fillRect(sx, sy, 1, 1);
+    }
+    for (let i = 0; i < STAR_NEAR_COUNT; i++) {
+      const sx = (hash01(i * 17 + 31) * w + time * STAR_NEAR_SPEED) % w;
+      const sy = (hash01(i * 23 + 47) * h + Math.sin(time * 0.1 + i) * 8 + time * STAR_NEAR_SPEED * 0.25 + h) % h;
+      const r = 0.8 + hash01(i * 29 + 3) * 1.1;
+      ctx2.fillStyle = i % 5 === 0 ? "#BDF3FF" : "#D8E4FF";
+      ctx2.globalAlpha = 0.16 + 0.22 * (0.5 + 0.5 * Math.sin(time * 0.8 + i * 2.7));
+      ctx2.beginPath();
+      ctx2.arc(sx, sy, r, 0, Math.PI * 2);
+      ctx2.fill();
+    }
+    ctx2.restore();
+    ctx2.globalAlpha = 1;
+  }
+  function drawVignette(ctx2, w, h) {
+    const g = ctx2.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.42, w / 2, h / 2, Math.hypot(w, h) * 0.62);
+    g.addColorStop(0, "rgba(3,5,12,0)");
+    g.addColorStop(1, `rgba(3,5,12,${VIGNETTE_ALPHA})`);
+    ctx2.fillStyle = g;
+    ctx2.fillRect(0, 0, w, h);
+  }
+  function drawBaseGlow(ctx2, x, y, time) {
+    const pulse = 0.75 + 0.25 * Math.sin(time * 1.6);
+    const g = ctx2.createRadialGradient(x, y, 0, x, y, BASE_GLOW_R);
+    g.addColorStop(0, `rgba(34,224,255,${BASE_GLOW_ALPHA * pulse})`);
+    g.addColorStop(1, "rgba(34,224,255,0)");
+    ctx2.fillStyle = g;
+    ctx2.beginPath();
+    ctx2.arc(x, y, BASE_GLOW_R, 0, Math.PI * 2);
+    ctx2.fill();
+  }
+  var BloomLayer = class {
+    constructor(w, h) {
+      __publicField(this, "glow");
+      __publicField(this, "tiny");
+      __publicField(this, "gctx");
+      __publicField(this, "tctx");
+      /** 硬件允许（核数足够或平台无法探测）；画质开关由调用方另行控制 */
+      __publicField(this, "hwOk");
+      this.glow = platform.createCanvas();
+      this.glow.width = Math.max(1, Math.round(w * BLOOM_SCALE));
+      this.glow.height = Math.max(1, Math.round(h * BLOOM_SCALE));
+      this.tiny = platform.createCanvas();
+      this.tiny.width = Math.max(1, this.glow.width >> 1);
+      this.tiny.height = Math.max(1, this.glow.height >> 1);
+      this.gctx = this.glow.getContext("2d");
+      this.tctx = this.tiny.getContext("2d");
+      const cores = platform.hardwareConcurrency();
+      this.hwOk = cores === null || cores >= BLOOM_MIN_CORES;
+    }
+    /** 清层并套用与主画布一致的坐标系（含震屏偏移），返回绘制上下文 */
+    begin(shakeX, shakeY) {
+      const g = this.gctx;
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.clearRect(0, 0, this.glow.width, this.glow.height);
+      g.setTransform(BLOOM_SCALE, 0, 0, BLOOM_SCALE, shakeX * BLOOM_SCALE, shakeY * BLOOM_SCALE);
+      return g;
+    }
+    /** 降采样-升采样近似高斯模糊，然后以 lighter 拉伸叠回主画布（调用后主画布变换被重置为单位矩阵）。
+     *  默认铺满 w*dpr × h*dpr；竖屏端可用 dx/dy/dw/dh 指定设备像素下的目标区域（地图偏移/缩放） */
+    composite(dst, w, h, dpr, dx = 0, dy = 0, dw = w * dpr, dh = h * dpr) {
+      const g = this.gctx;
+      for (let i = 0; i < BLOOM_BLUR_PASSES; i++) {
+        this.tctx.setTransform(1, 0, 0, 1, 0, 0);
+        this.tctx.clearRect(0, 0, this.tiny.width, this.tiny.height);
+        this.tctx.drawImage(this.glow, 0, 0, this.tiny.width, this.tiny.height);
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.drawImage(this.tiny, 0, 0, this.glow.width, this.glow.height);
+      }
+      dst.setTransform(1, 0, 0, 1, 0, 0);
+      dst.globalCompositeOperation = "lighter";
+      dst.globalAlpha = BLOOM_INTENSITY;
+      dst.drawImage(this.glow, dx, dy, dw, dh);
+      dst.globalAlpha = 1;
+      dst.globalCompositeOperation = "source-over";
+    }
+  };
+  var FxLayer = class {
+    constructor() {
+      /** BOSS 死亡全屏白闪剩余时间（秒），由 GameCanvas 读取绘制 */
+      __publicField(this, "bossFlash", 0);
+      __publicField(this, "prevEnemies", /* @__PURE__ */ new Map());
+      __publicField(this, "seenIds", /* @__PURE__ */ new Set());
+      __publicField(this, "lastClock", -1);
+      __publicField(this, "scorches", []);
+      __publicField(this, "flashes", []);
+      __publicField(this, "debris", []);
+      __publicField(this, "sparks", []);
+      __publicField(this, "rings", []);
+      __publicField(this, "trails", /* @__PURE__ */ new Map());
+      for (let i = 0; i < SCORCH_MAX; i++) this.scorches.push({ x: 0, y: 0, r: 1, rot: 0, ttl: 0 });
+      for (let i = 0; i < KILL_FLASH_MAX; i++) this.flashes.push({ x: 0, y: 0, r: 1, ttl: 0 });
+      for (let i = 0; i < DEBRIS_MAX; i++) this.debris.push({ x: 0, y: 0, vx: 0, vy: 0, size: 1, color: "#FFF", ttl: 0, maxTtl: 1 });
+      for (let i = 0; i < SPARK_MAX; i++) this.sparks.push({ x: 0, y: 0, vx: 0, vy: 0, size: 1, color: "#FFF", ttl: 0, maxTtl: 1 });
+      for (let i = 0; i < FX_RING_MAX; i++) this.rings.push({ x: 0, y: 0, color: "#FFF", r0: 0, r1: 1, ttl: 0, maxTtl: 1 });
+    }
+    /** 每帧调用：同步敌人/弹丸列表做死亡 diff，并按引擎时钟衰减所有短寿命特效 */
+    update(s, map) {
+      const dt = this.lastClock < 0 ? 0 : Math.min(0.1, Math.max(0, s.clock - this.lastClock));
+      this.lastClock = s.clock;
+      const seen = this.seenIds;
+      seen.clear();
+      for (const e of s.enemies) {
+        seen.add(e.id);
+        const pos = map.posAt(e.path, e.dist);
+        const prev = this.prevEnemies.get(e.id);
+        if (prev) {
+          prev.x = pos.x;
+          prev.y = pos.y;
+          prev.dist = e.dist;
+        } else {
+          this.prevEnemies.set(e.id, {
+            x: pos.x,
+            y: pos.y,
+            dist: e.dist,
+            path: e.path,
+            isBoss: e.isBoss,
+            size: ENEMIES[e.type].size,
+            color: ENEMIES[e.type].color
+          });
+        }
+      }
+      for (const [id, p] of this.prevEnemies) {
+        if (seen.has(id)) continue;
+        this.prevEnemies.delete(id);
+        if (p.dist >= map.paths[p.path].length - LEAK_MARGIN) continue;
+        this.onEnemyDeath(p);
+      }
+      seen.clear();
+      for (const pr of s.projectiles) {
+        seen.add(pr.id);
+        let tr = this.trails.get(pr.id);
+        if (!tr) {
+          tr = { kind: pr.kind, pts: [] };
+          this.trails.set(pr.id, tr);
+        }
+        const last2 = tr.pts[tr.pts.length - 1];
+        if (!last2 || last2.x !== pr.x || last2.y !== pr.y) {
+          tr.pts.push({ x: pr.x, y: pr.y });
+          if (tr.pts.length > TRAIL_LEN) tr.pts.shift();
+        }
+      }
+      for (const [id, tr] of this.trails) {
+        if (seen.has(id)) continue;
+        this.trails.delete(id);
+        if (tr.kind === "missile" && tr.pts.length > 0) {
+          const end = tr.pts[tr.pts.length - 1];
+          this.burst(end.x, end.y, "#FFC978", 9, 220, 0.45);
+        }
+      }
+      if (dt > 0) {
+        for (const sc of this.scorches) if (sc.ttl > 0) sc.ttl -= dt;
+        for (const f of this.flashes) if (f.ttl > 0) f.ttl -= dt;
+        for (const r of this.rings) if (r.ttl > 0) r.ttl -= dt;
+        if (this.bossFlash > 0) this.bossFlash -= dt;
+        const dragK = 1 / (1 + DEBRIS_DRAG * dt);
+        for (const d of this.debris) {
+          if (d.ttl <= 0) continue;
+          d.ttl -= dt;
+          d.vy += DEBRIS_GRAVITY * dt;
+          d.vx *= dragK;
+          d.vy *= dragK;
+          d.x += d.vx * dt;
+          d.y += d.vy * dt;
+        }
+        for (const sp of this.sparks) {
+          if (sp.ttl <= 0) continue;
+          sp.ttl -= dt;
+          sp.vy += 200 * dt;
+          sp.x += sp.vx * dt;
+          sp.y += sp.vy * dt;
+        }
+      }
+    }
+    onEnemyDeath(p) {
+      this.spawnScorch(p.x, p.y, p.size * 1.7);
+      this.spawnFlash(p.x, p.y, p.size * 2.4);
+      const n = p.isBoss ? 16 : 7;
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const v = (p.isBoss ? 130 : 70) * (0.5 + Math.random());
+        this.spawnMote(this.debris, p.x, p.y, Math.cos(a) * v, Math.sin(a) * v - 50, 1.5 + Math.random() * 2.5, p.color, 0.5 + Math.random() * 0.4);
+      }
+      if (p.isBoss) {
+        this.bossFlash = BOSS_FLASH_TTL;
+        this.spawnRing(p.x, p.y, "#FFFFFF", 12, 170, 0.5);
+        this.spawnRing(p.x, p.y, "#FF3D81", 8, 250, 0.9);
+        this.spawnRing(p.x, p.y, "#FFC94D", 4, 330, 1.3);
+      }
+    }
+    /** 激光命中点火花溅射 */
+    spawnSparks(x, y, color, count) {
+      for (let i = 0; i < count; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const v = 40 + Math.random() * 90;
+        this.spawnMote(this.sparks, x, y, Math.cos(a) * v, Math.sin(a) * v - 30, 1 + Math.random() * 1.2, color, 0.16 + Math.random() * 0.14);
+      }
+    }
+    /** 亮火花喷发（导弹爆炸补花） */
+    burst(x, y, color, count, speed, ttl) {
+      for (let i = 0; i < count; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const v = speed * (0.35 + Math.random() * 0.65);
+        this.spawnMote(this.sparks, x, y, Math.cos(a) * v, Math.sin(a) * v - 40, 1.2 + Math.random() * 1.6, i % 3 === 0 ? "#FFFFFF" : color, ttl * (0.7 + Math.random() * 0.6));
+      }
+    }
+    spawnMote(pool, x, y, vx, vy, size, color, ttl) {
+      let slot = null;
+      for (const m of pool) {
+        if (m.ttl <= 0) {
+          slot = m;
+          break;
+        }
+      }
+      if (!slot) return;
+      slot.x = x;
+      slot.y = y;
+      slot.vx = vx;
+      slot.vy = vy;
+      slot.size = size;
+      slot.color = color;
+      slot.ttl = ttl;
+      slot.maxTtl = ttl;
+    }
+    spawnScorch(x, y, r) {
+      let slot = null;
+      for (const s of this.scorches) {
+        if (s.ttl <= 0) {
+          slot = s;
+          break;
+        }
+      }
+      if (!slot) {
+        slot = this.scorches[0];
+        for (const s of this.scorches) if (s.ttl < slot.ttl) slot = s;
+      }
+      slot.x = x;
+      slot.y = y;
+      slot.r = r;
+      slot.rot = Math.random() * Math.PI;
+      slot.ttl = SCORCH_TTL;
+    }
+    spawnFlash(x, y, r) {
+      for (const f of this.flashes) {
+        if (f.ttl > 0) continue;
+        f.x = x;
+        f.y = y;
+        f.r = r;
+        f.ttl = KILL_FLASH_TTL;
+        return;
+      }
+    }
+    spawnRing(x, y, color, r0, r1, ttl) {
+      for (const r of this.rings) {
+        if (r.ttl > 0) continue;
+        r.x = x;
+        r.y = y;
+        r.color = color;
+        r.r0 = r0;
+        r.r1 = r1;
+        r.ttl = ttl;
+        r.maxTtl = ttl;
+        return;
+      }
+    }
+    /** 地面灼痕：暗色椭圆焦痕贴地，3s 淡出（画在路径之上、塔之下） */
+    drawScorches(ctx2) {
+      for (const s of this.scorches) {
+        if (s.ttl <= 0) continue;
+        const a = s.ttl / SCORCH_TTL;
+        ctx2.save();
+        ctx2.translate(s.x, s.y);
+        ctx2.rotate(s.rot);
+        ctx2.scale(1, 0.55);
+        const g = ctx2.createRadialGradient(0, 0, 0, 0, 0, s.r);
+        g.addColorStop(0, `rgba(8,6,12,${0.6 * a})`);
+        g.addColorStop(0.6, `rgba(24,12,8,${0.35 * a})`);
+        g.addColorStop(1, "rgba(20,10,6,0)");
+        ctx2.fillStyle = g;
+        ctx2.beginPath();
+        ctx2.arc(0, 0, s.r, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.restore();
+      }
+    }
+    /** 导弹烟雾拖尾：历史位置渐隐圆点链（越旧越大越淡） */
+    drawTrails(ctx2) {
+      for (const tr of this.trails.values()) {
+        if (tr.kind !== "missile") continue;
+        const n = tr.pts.length;
+        for (let i = 0; i < n; i++) {
+          const f = (i + 1) / n;
+          const pt = tr.pts[i];
+          ctx2.globalAlpha = 0.04 + 0.15 * f;
+          ctx2.fillStyle = "#C9CEDA";
+          ctx2.beginPath();
+          ctx2.arc(pt.x, pt.y, 1.6 + (1 - f) * 3.2, 0, Math.PI * 2);
+          ctx2.fill();
+        }
+      }
+      ctx2.globalAlpha = 1;
+    }
+    /** 死亡碎片（方块，与引擎粒子同风格，带重力） */
+    drawDebris(ctx2) {
+      for (const d of this.debris) {
+        if (d.ttl <= 0) continue;
+        ctx2.globalAlpha = Math.max(0, d.ttl / d.maxTtl);
+        ctx2.fillStyle = d.color;
+        ctx2.fillRect(d.x - d.size / 2, d.y - d.size / 2, d.size, d.size);
+      }
+      ctx2.globalAlpha = 1;
+    }
+    /** 火花（激光命中 / 导弹爆炸，加色混合更亮） */
+    drawSparks(ctx2) {
+      ctx2.save();
+      ctx2.globalCompositeOperation = "lighter";
+      for (const sp of this.sparks) {
+        if (sp.ttl <= 0) continue;
+        ctx2.globalAlpha = Math.max(0, sp.ttl / sp.maxTtl);
+        ctx2.fillStyle = sp.color;
+        ctx2.beginPath();
+        ctx2.arc(sp.x, sp.y, sp.size, 0, Math.PI * 2);
+        ctx2.fill();
+      }
+      ctx2.restore();
+      ctx2.globalAlpha = 1;
+    }
+    /** 击杀瞬间白闪（径向渐变，0.1s） */
+    drawFlashes(ctx2) {
+      ctx2.save();
+      ctx2.globalCompositeOperation = "lighter";
+      for (const f of this.flashes) {
+        if (f.ttl <= 0) continue;
+        const a = f.ttl / KILL_FLASH_TTL;
+        const r = f.r * (1 + (1 - a) * 0.6);
+        const g = ctx2.createRadialGradient(f.x, f.y, 0, f.x, f.y, r);
+        g.addColorStop(0, `rgba(255,255,255,${0.85 * a})`);
+        g.addColorStop(0.5, `rgba(255,240,210,${0.4 * a})`);
+        g.addColorStop(1, "rgba(255,240,210,0)");
+        ctx2.fillStyle = g;
+        ctx2.beginPath();
+        ctx2.arc(f.x, f.y, r, 0, Math.PI * 2);
+        ctx2.fill();
+      }
+      ctx2.restore();
+    }
+    /** 渲染层补充冲击波环（BOSS 多层环），风格同引擎 rings */
+    drawRings(ctx2) {
+      for (const r of this.rings) {
+        if (r.ttl <= 0) continue;
+        const life = Math.max(0, r.ttl / r.maxTtl);
+        const k = 1 - life;
+        const rad = r.r0 + (r.r1 - r.r0) * (1 - (1 - k) * (1 - k));
+        ctx2.beginPath();
+        ctx2.arc(r.x, r.y, rad, 0, Math.PI * 2);
+        ctx2.globalAlpha = life * 0.8;
+        ctx2.strokeStyle = r.color;
+        ctx2.lineWidth = Math.max(1, 7 * life);
+        ctx2.shadowColor = r.color;
+        ctx2.shadowBlur = 14;
+        ctx2.stroke();
+        ctx2.shadowBlur = 0;
+      }
+      ctx2.globalAlpha = 1;
+    }
+    /** BOSS 全屏白闪（在 Bloom 合成之后绘制，保持纯白） */
+    drawBossFlash(ctx2, w, h) {
+      if (this.bossFlash <= 0) return;
+      const a = Math.max(0, this.bossFlash / BOSS_FLASH_TTL);
+      ctx2.fillStyle = `rgba(255,255,255,${0.85 * a})`;
+      ctx2.fillRect(-24, -24, w + 48, h + 48);
+    }
+    /** 辉光层绘制：发光元素的简化加色形状（低分辨率，主画布已有清晰版） */
+    drawGlow(g, s, paths, exits) {
+      g.lineCap = "round";
+      g.lineJoin = "round";
+      g.strokeStyle = "rgba(34,224,255,0.4)";
+      g.lineWidth = 2.5;
+      for (const px of paths) {
+        g.beginPath();
+        px.forEach(([x, y], i) => i === 0 ? g.moveTo(x, y) : g.lineTo(x, y));
+        g.stroke();
+      }
+      for (const z of s.zones) {
+        g.globalAlpha = 0.5 * Math.max(0, z.ttl / z.maxTtl);
+        g.fillStyle = "#FF6B3D";
+        g.beginPath();
+        g.arc(z.x, z.y, z.r * 0.8, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.globalAlpha = 1;
+      for (const ex of exits) {
+        g.globalAlpha = 0.45;
+        g.fillStyle = "#22E0FF";
+        g.beginPath();
+        g.arc(ex.centerX, ex.centerY, 26, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.globalAlpha = 1;
+      for (const t of s.towers) {
+        const cx = (t.col + 0.5) * CELL;
+        const cy = (t.row + 0.5) * CELL;
+        g.globalAlpha = 0.3;
+        g.fillStyle = TOWERS[t.type].color;
+        g.beginPath();
+        g.arc(cx, cy, CELL * 0.24, 0, Math.PI * 2);
+        g.fill();
+        if (t.charging) {
+          const charge = 1 - t.chargeT / (TOWERS.railgun.charge ?? 1.2);
+          g.globalAlpha = 0.35 + charge * 0.4;
+          g.fillStyle = "#8B5CF6";
+          g.beginPath();
+          g.arc(cx, cy, 12 + charge * 18, 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+      g.globalAlpha = 1;
+      for (const pr of s.projectiles) {
+        if (pr.kind === "plasma") {
+          g.globalAlpha = 0.8;
+          g.fillStyle = "#FF6B3D";
+          g.beginPath();
+          g.arc(pr.x, pr.y, 7, 0, Math.PI * 2);
+          g.fill();
+          g.fillStyle = "#FFF3D6";
+          g.beginPath();
+          g.arc(pr.x, pr.y, 3, 0, Math.PI * 2);
+          g.fill();
+        } else {
+          g.globalAlpha = 0.7;
+          g.fillStyle = "#FF9F43";
+          g.beginPath();
+          g.arc(pr.x, pr.y, 4.5, 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+      g.globalAlpha = 1;
+      for (const b of s.beams) {
+        const a = b.ttl / b.maxTtl;
+        if (b.color === "#8B5CF6") {
+          g.globalAlpha = a * 0.6;
+          g.strokeStyle = b.color;
+          g.lineWidth = b.width * 2.4;
+          g.beginPath();
+          g.moveTo(b.x1, b.y1);
+          g.lineTo(b.x2, b.y2);
+          g.stroke();
+        }
+        g.globalAlpha = a;
+        g.strokeStyle = b.color;
+        g.lineWidth = b.width;
+        g.beginPath();
+        g.moveTo(b.x1, b.y1);
+        g.lineTo(b.x2, b.y2);
+        g.stroke();
+      }
+      g.globalAlpha = 1;
+      for (const pt of s.particles) {
+        g.globalAlpha = pt.ttl / pt.maxTtl * 0.8;
+        g.fillStyle = pt.color;
+        g.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
+      }
+      g.globalAlpha = 1;
+      for (const r of s.rings) {
+        g.globalAlpha = Math.max(0, r.ttl / r.maxTtl) * 0.7;
+        g.strokeStyle = r.color;
+        g.lineWidth = 3;
+        const k = 1 - Math.max(0, r.ttl / r.maxTtl);
+        const rad = r.r0 + (r.r1 - r.r0) * (1 - (1 - k) * (1 - k));
+        g.beginPath();
+        g.arc(r.x, r.y, rad, 0, Math.PI * 2);
+        g.stroke();
+      }
+      for (const r of this.rings) {
+        if (r.ttl <= 0) continue;
+        g.globalAlpha = Math.max(0, r.ttl / r.maxTtl) * 0.7;
+        g.strokeStyle = r.color;
+        g.lineWidth = 4;
+        const k = 1 - Math.max(0, r.ttl / r.maxTtl);
+        const rad = r.r0 + (r.r1 - r.r0) * (1 - (1 - k) * (1 - k));
+        g.beginPath();
+        g.arc(r.x, r.y, rad, 0, Math.PI * 2);
+        g.stroke();
+      }
+      g.globalAlpha = 1;
+      for (const f of this.flashes) {
+        if (f.ttl <= 0) continue;
+        g.globalAlpha = f.ttl / KILL_FLASH_TTL * 0.9;
+        g.fillStyle = "#FFF6E0";
+        g.beginPath();
+        g.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+        g.fill();
+      }
+      for (const sp of this.sparks) {
+        if (sp.ttl <= 0) continue;
+        g.globalAlpha = Math.max(0, sp.ttl / sp.maxTtl) * 0.8;
+        g.fillStyle = sp.color;
+        g.beginPath();
+        g.arc(sp.x, sp.y, sp.size, 0, Math.PI * 2);
+        g.fill();
+      }
+      for (const d of this.debris) {
+        if (d.ttl <= 0) continue;
+        g.globalAlpha = Math.max(0, d.ttl / d.maxTtl) * 0.5;
+        g.fillStyle = d.color;
+        g.fillRect(d.x - d.size / 2, d.y - d.size / 2, d.size, d.size);
+      }
+      g.globalAlpha = 1;
+      g.fillStyle = "#FFFFFF";
+      g.font = "700 14px Orbitron, sans-serif";
+      g.textAlign = "center";
+      for (const f of s.floaters) {
+        g.globalAlpha = f.ttl / f.maxTtl * 0.6;
+        g.fillStyle = f.color;
+        g.fillText(f.text, f.x, f.y);
+      }
+      g.globalAlpha = 1;
+    }
+  };
 
   // src/audio.ts
   var SFX_VOL = {
@@ -4110,6 +4714,21 @@
     p.cleared.push(levelId);
     store.set("srd.progress", p);
   }
+  function readWxQualityHigh() {
+    const s = store.get("srd.settings");
+    return s?.quality === "high";
+  }
+  function setWxQualityHigh(high) {
+    store.set("srd.settings", { quality: high ? "high" : "low" });
+  }
+  setFxPlatform({
+    createCanvas: () => wx.createCanvas(),
+    createImage: () => wx.createImage(),
+    readQualityHigh: readWxQualityHigh,
+    hardwareConcurrency: () => null,
+    // 微信无核数 API：不硬关 Bloom，交由画质开关控制（默认低画质=关）
+    nebulaUrl: () => "assets/nebula-texture.jpg"
+  });
   var profile = (() => {
     const raw = store.get("srd.profile");
     return { nick: raw?.nick ?? "", avatarUrl: raw?.avatarUrl ?? "", real: raw?.real === true };
@@ -4427,7 +5046,7 @@
     ctx.fillStyle = "rgba(7,11,24,0.78)";
     ctx.fillRect(0, 0, VW, VH);
     const pw = VW - 72;
-    const ph = 316;
+    const ph = 372;
     const px = 36;
     const py = VH / 2 - ph / 2;
     panel(px, py, pw, ph, C.panelLine);
@@ -4450,7 +5069,22 @@
       ctx.fillStyle = g;
       ctx.fill();
     }
-    let y = py + 196;
+    const qHigh = readWxQualityHigh();
+    btn({
+      x: px + 24,
+      y: py + 192,
+      w: pw - 48,
+      h: 40,
+      label: qHigh ? "\u753B\u8D28\uFF1A\u9AD8\uFF08\u8F89\u5149\uFF09" : "\u753B\u8D28\uFF1A\u4F4E",
+      color: qHigh ? C.cyan : C.sub,
+      active: qHigh,
+      cb: () => {
+        setWxQualityHigh(!qHigh);
+        qualityHigh = !qHigh;
+        buzz("light");
+      }
+    });
+    let y = py + 246;
     if (!profile.real) {
       btn({
         x: px + 24,
@@ -5079,6 +5713,12 @@
       goto("home");
     } });
   }
+  var nebulaBg = new NebulaBg("assets/nebula-texture.jpg");
+  var fx = null;
+  var bloom = null;
+  var pathPixels = [];
+  var qualityHigh = readWxQualityHigh();
+  var fxFrame = 0;
   function startBattle() {
     stopNarration();
     app.engine = createEngine(app.difficulty, app.levelId);
@@ -5086,6 +5726,9 @@
     app.selectedId = null;
     app.result = null;
     barScroll = 0;
+    fx = new FxLayer();
+    bloom = new BloomLayer(W, H);
+    pathPixels = app.engine.map.paths.map((p) => p.pixels);
     goto("battle");
   }
   function drawBattle() {
@@ -5478,6 +6121,15 @@
     const engine = app.engine;
     const st = engine.state;
     const time = st.clock;
+    if (++fxFrame % 30 === 0) qualityHigh = readWxQualityHigh();
+    const bloomOn = bloom !== null && bloom.hwOk && qualityHigh;
+    let shakeX = 0;
+    let shakeY = 0;
+    if (st.shake > 0) {
+      const m = st.shake * 6;
+      shakeX = (Math.random() - 0.5) * m;
+      shakeY = (Math.random() - 0.5) * m;
+    }
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, TOP_SAFE - 2, VW, VH - BAR_H - TOP_SAFE + 2);
@@ -5485,9 +6137,25 @@
     ctx.fillStyle = "#070B18";
     ctx.fillRect(0, TOP_SAFE - 2, VW, VH - BAR_H - TOP_SAFE + 2);
     ctx.save();
-    ctx.translate(mapOX, mapOY + mapPan);
+    ctx.translate(mapOX + shakeX * mapScale, mapOY + mapPan + shakeY * mapScale);
     ctx.scale(mapScale, mapScale);
-    drawMapBackground(ctx, W, H);
+    drawMapBackground(ctx, W, H, nebulaBg.img);
+    drawStarfield(ctx, W, H, time);
+    drawVignette(ctx, W, H);
+    for (const ex of engine.map.exits) drawBaseGlow(ctx, ex.centerX, ex.centerY, time);
+    ctx.save();
+    ctx.fillStyle = "#A9C7FF";
+    for (let i = 0; i < 26; i++) {
+      const sx = (hash01(i * 3 + 1) * W + time * (2 + hash01(i + 40) * 6)) % W;
+      const sy = (hash01(i * 7 + 2) * H + Math.sin(time * 0.15 + i * 1.7) * 14 + H) % H;
+      const sr = 0.6 + hash01(i * 5 + 3) * 1.1;
+      ctx.globalAlpha = 0.04 + 0.09 * (0.5 + 0.5 * Math.sin(time * 0.7 + i * 2.3));
+      ctx.beginPath();
+      ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
     ctx.save();
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
@@ -5510,6 +6178,7 @@
       ctx.setLineDash([]);
     }
     drawPath(ctx, engine.level.paths, time);
+    fx?.drawScorches(ctx);
     for (const ex of engine.map.exits) drawBase(ctx, time, st.lives / st.maxLives, ex.centerX, ex.centerY);
     if (app.placing) {
       for (let c = 0; c < COLS; c++) {
@@ -5576,6 +6245,7 @@
         }
       }
     }
+    fx?.drawTrails(ctx);
     for (const pr of st.projectiles) {
       ctx.save();
       ctx.fillStyle = pr.kind === "plasma" ? "#FF6B3D" : "#FF9F43";
@@ -5587,17 +6257,59 @@
       ctx.restore();
     }
     for (const b of st.beams) {
+      const a = Math.max(0, b.ttl / b.maxTtl);
+      const isRail = b.color === "#8B5CF6";
+      const isLaser = b.color.startsWith("#22E0FF");
+      const jx = (Math.random() - 0.5) * 2;
+      const jy = (Math.random() - 0.5) * 2;
+      if (isRail) {
+        ctx.save();
+        ctx.globalAlpha = a * 0.35;
+        ctx.strokeStyle = b.color;
+        ctx.lineWidth = b.width * 2.4;
+        ctx.shadowColor = b.color;
+        ctx.shadowBlur = 18;
+        ctx.beginPath();
+        ctx.moveTo(b.x1 + jx, b.y1 + jy);
+        ctx.lineTo(b.x2 + jx, b.y2 + jy);
+        ctx.stroke();
+        ctx.restore();
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.strokeStyle = "#F4F0FF";
+        ctx.lineWidth = Math.max(1.5, b.width * 0.4);
+        ctx.beginPath();
+        ctx.moveTo(b.x1 + jx, b.y1 + jy);
+        ctx.lineTo(b.x2 + jx, b.y2 + jy);
+        ctx.stroke();
+        ctx.restore();
+      } else {
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.strokeStyle = b.color;
+        ctx.lineWidth = b.width * (0.5 + a * 0.5);
+        ctx.shadowColor = b.color;
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.moveTo(b.x1 + jx, b.y1 + jy);
+        ctx.lineTo(b.x2 + jx, b.y2 + jy);
+        ctx.stroke();
+        ctx.restore();
+      }
       ctx.save();
-      ctx.globalAlpha = Math.max(0, b.ttl / b.maxTtl);
-      ctx.strokeStyle = b.color;
-      ctx.lineWidth = b.width;
-      ctx.shadowColor = b.color;
-      ctx.shadowBlur = 8;
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = a * 0.9;
+      const gr = (8 + b.width * 1.5) * (isRail ? 1.9 : 1);
+      const bg = ctx.createRadialGradient(b.x2, b.y2, 0, b.x2, b.y2, gr);
+      bg.addColorStop(0, "#FFFFFF");
+      bg.addColorStop(0.35, b.color);
+      bg.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = bg;
       ctx.beginPath();
-      ctx.moveTo(b.x1, b.y1);
-      ctx.lineTo(b.x2, b.y2);
-      ctx.stroke();
+      ctx.arc(b.x2, b.y2, gr, 0, Math.PI * 2);
+      ctx.fill();
       ctx.restore();
+      if (isLaser) fx?.spawnSparks(b.x2, b.y2, "#BDF3FF", SPARKS_PER_HIT);
     }
     for (const r of st.rings) {
       ctx.save();
@@ -5619,12 +6331,35 @@
       ctx.fill();
       ctx.restore();
     }
+    fx?.drawRings(ctx);
+    fx?.drawDebris(ctx);
+    fx?.drawSparks(ctx);
+    fx?.drawFlashes(ctx);
     for (const f of st.floaters) {
       ctx.save();
       ctx.globalAlpha = Math.min(1, f.ttl / 0.2);
       fillText(f.text, f.x, f.y, { size: 14, color: f.color, align: "center" });
       ctx.restore();
     }
+    fx?.update(st, engine.map);
+    if (bloomOn && fx) {
+      const g = bloom.begin(shakeX, shakeY);
+      fx.drawGlow(g, st, pathPixels, engine.map.exits);
+      bloom.composite(
+        ctx,
+        W,
+        H,
+        DPR,
+        (mapOX + shakeX * mapScale) * DPR,
+        (mapOY + mapPan + shakeY * mapScale) * DPR,
+        W * mapScale * DPR,
+        H * mapScale * DPR
+      );
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      ctx.translate(mapOX + shakeX * mapScale, mapOY + mapPan + shakeY * mapScale);
+      ctx.scale(mapScale, mapScale);
+    }
+    fx?.drawBossFlash(ctx, W, H);
     ctx.restore();
     ctx.restore();
   }

@@ -41,15 +41,60 @@ export const hash01 = (n: number) => {
   return v - Math.floor(v);
 };
 
-/** 读取设置面板的画质开关（TopHUD 写入 localStorage，这里低频轮询） */
+// ---------------- 平台适配层 ----------------
+
+/** 平台无关的图片句柄（浏览器 Image / wx.createImage 均满足该结构） */
+export interface FxImage {
+  src: string;
+  onload: (() => void) | null;
+  onerror: ((e?: unknown) => void) | null;
+}
+
+/** 跨平台抽象：离屏 canvas / 图片加载 / 画质设置 / 硬件核数 / 星云贴图 URL。默认实现为浏览器 API，微信小游戏端通过 setFxPlatform 注入 wx 实现 */
+export interface FxPlatform {
+  createCanvas(): HTMLCanvasElement;
+  createImage(): FxImage | null;
+  /** 画质开关：高画质返回 true（浏览器读 localStorage，微信读 wx.getStorageSync） */
+  readQualityHigh(): boolean;
+  /** CPU 逻辑核数；平台无法获取时返回 null（视为有能力，由画质开关控制 Bloom） */
+  hardwareConcurrency(): number | null;
+  nebulaUrl(): string;
+}
+
+const browserPlatform: FxPlatform = {
+  createCanvas: () => document.createElement('canvas'),
+  createImage: () => (typeof Image === 'undefined' ? null : (new Image() as unknown as FxImage)),
+  readQualityHigh: () => {
+    try {
+      const raw = localStorage.getItem('srd.settings');
+      if (raw) return ((JSON.parse(raw) as { quality?: string }).quality ?? 'high') === 'high';
+    } catch {
+      /* ignore */
+    }
+    return true;
+  },
+  hardwareConcurrency: () => navigator.hardwareConcurrency ?? 8,
+  nebulaUrl: () => {
+    try {
+      // Vite 注入 BASE_URL；非浏览器打包环境（iife 下 import.meta 为空对象）回退相对路径
+      const base = (import.meta as ImportMeta & { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
+      return `${base}nebula-texture.png`;
+    } catch {
+      return 'nebula-texture.png';
+    }
+  },
+};
+
+let platform = browserPlatform;
+
+/** 非浏览器端（微信小游戏）在创建任何特效对象之前调用，注入平台实现 */
+export function setFxPlatform(p: FxPlatform) {
+  platform = p;
+}
+
+/** 读取画质开关（浏览器端为 TopHUD 写入 localStorage 的设置，这里低频轮询） */
 export function readQualityHigh(): boolean {
-  try {
-    const raw = localStorage.getItem('srd.settings');
-    if (raw) return ((JSON.parse(raw) as { quality?: string }).quality ?? 'high') === 'high';
-  } catch {
-    /* ignore */
-  }
-  return true;
+  return platform.readQualityHigh();
 }
 
 // ---------------- 星云纹理 ----------------
@@ -58,13 +103,13 @@ export function readQualityHigh(): boolean {
 export class NebulaBg {
   img: HTMLImageElement | null = null;
 
-  constructor() {
-    if (typeof Image === 'undefined') return;
-    const im = new Image();
+  constructor(url?: string) {
+    const im = platform.createImage();
+    if (!im) return;
     im.onload = () => {
-      this.img = im;
+      this.img = im as unknown as HTMLImageElement;
     };
-    im.src = `${import.meta.env.BASE_URL}nebula-texture.png`;
+    im.src = url ?? platform.nebulaUrl();
   }
 }
 
@@ -125,19 +170,20 @@ export class BloomLayer {
   private tiny: HTMLCanvasElement;
   private gctx: CanvasRenderingContext2D;
   private tctx: CanvasRenderingContext2D;
-  /** 硬件允许（核数足够）；画质开关由调用方另行控制 */
+  /** 硬件允许（核数足够或平台无法探测）；画质开关由调用方另行控制 */
   readonly hwOk: boolean;
 
   constructor(w: number, h: number) {
-    this.glow = document.createElement('canvas');
+    this.glow = platform.createCanvas();
     this.glow.width = Math.max(1, Math.round(w * BLOOM_SCALE));
     this.glow.height = Math.max(1, Math.round(h * BLOOM_SCALE));
-    this.tiny = document.createElement('canvas');
+    this.tiny = platform.createCanvas();
     this.tiny.width = Math.max(1, this.glow.width >> 1);
     this.tiny.height = Math.max(1, this.glow.height >> 1);
     this.gctx = this.glow.getContext('2d') as CanvasRenderingContext2D;
     this.tctx = this.tiny.getContext('2d') as CanvasRenderingContext2D;
-    this.hwOk = (navigator.hardwareConcurrency ?? 8) >= BLOOM_MIN_CORES;
+    const cores = platform.hardwareConcurrency();
+    this.hwOk = cores === null || cores >= BLOOM_MIN_CORES;
   }
 
   /** 清层并套用与主画布一致的坐标系（含震屏偏移），返回绘制上下文 */
@@ -149,8 +195,9 @@ export class BloomLayer {
     return g;
   }
 
-  /** 降采样-升采样近似高斯模糊，然后以 lighter 拉伸叠回主画布（调用后主画布变换被重置为单位矩阵） */
-  composite(dst: CanvasRenderingContext2D, w: number, h: number, dpr: number) {
+  /** 降采样-升采样近似高斯模糊，然后以 lighter 拉伸叠回主画布（调用后主画布变换被重置为单位矩阵）。
+   *  默认铺满 w*dpr × h*dpr；竖屏端可用 dx/dy/dw/dh 指定设备像素下的目标区域（地图偏移/缩放） */
+  composite(dst: CanvasRenderingContext2D, w: number, h: number, dpr: number, dx = 0, dy = 0, dw = w * dpr, dh = h * dpr) {
     const g = this.gctx;
     for (let i = 0; i < BLOOM_BLUR_PASSES; i++) {
       this.tctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -162,7 +209,7 @@ export class BloomLayer {
     dst.setTransform(1, 0, 0, 1, 0, 0);
     dst.globalCompositeOperation = 'lighter';
     dst.globalAlpha = BLOOM_INTENSITY;
-    dst.drawImage(this.glow, 0, 0, w * dpr, h * dpr);
+    dst.drawImage(this.glow, dx, dy, dw, dh);
     dst.globalAlpha = 1;
     dst.globalCompositeOperation = 'source-over';
   }
