@@ -1,21 +1,23 @@
-// 高塔防线 · 微信小游戏版 —— 引擎层直接复用 H5 版（纯 TS 零 DOM）
+// 高塔防线 · 微信小游戏版 —— 引擎层位于 src/game（纯 TS 零 DOM）
 // UI 层以 Canvas 自绘实现：开场动画 / 选关(带宣传图) / 简报 / 战斗 / 科技三选一 / 结算
 import {
   CELL, COLS, ROWS, W, H, TOWERS, ENEMIES, DIFFICULTIES, SELL_RATE, TECHS, TOWER_LIST, ENEMY_LIST,
-} from '../../app/src/game/config';
-import { LEVELS } from '../../app/src/game/levels';
-import { createEngine } from '../../app/src/game/engine';
+} from './game/config';
+import { LEVELS } from './game/levels';
+import { createEngine } from './game/engine';
 import {
   drawTower, drawEnemy, drawMapBackground, drawPath, drawBase,
-} from '../../app/src/game/render';
+} from './game/render';
 import {
   BloomLayer, FxLayer, NebulaBg, setFxPlatform,
   drawBaseGlow, drawStarfield, drawVignette, hash01, readQualityHigh, SPARKS_PER_HIT,
-} from '../../app/src/game/fx';
-import type { Command, Difficulty, GameEngine, TowerType } from '../../app/src/game/types';
-import type { TechId } from '../../app/src/game/types';
+} from './game/fx';
+import type { Command, Difficulty, GameEngine, TowerType } from './game/types';
+import type { TechId } from './game/types';
 import { sfx } from './audio';
 import { track } from './analytics';
+import { SKIN_MODULES } from './skins';
+import type { SkinEnv } from './skins/types';
 
 // ---------------- 运行环境 ----------------
 
@@ -27,6 +29,9 @@ interface WxImage {
   onload: (() => void) | null; onerror: ((e?: unknown) => void) | null;
 }
 
+/** 打包注入的构建号（build.mjs define；非构建环境为 undefined） */
+declare const __BUILD_ID__: string | undefined;
+
 declare const wx: {
   createCanvas(): HTMLCanvasElement;
   getSystemInfoSync(): { windowWidth: number; windowHeight: number; pixelRatio: number };
@@ -36,6 +41,7 @@ declare const wx: {
   setStorageSync(key: string, value: unknown): void;
   getStorageSync(key: string): unknown;
   getMenuButtonBoundingClientRect?(): { top: number; bottom: number; left: number; right: number };
+  getAccountInfoSync?(): { miniProgram?: { envVersion?: string } };
   createImage(): WxImage;
   createInnerAudioContext(): {
     src: string; volume: number; autoplay: boolean; obeyMuteSwitch: boolean; loop: boolean;
@@ -44,7 +50,7 @@ declare const wx: {
     onCanplay(cb: () => void): void;
   };
   loadSubpackage(o: { name: string; success?: () => void; fail?: (e?: unknown) => void }): void;
-  vibrateShort?(o: { type?: 'heavy' | 'medium' | 'light' }): void;
+  vibrateShort?(o: { type?: 'heavy' | 'medium' | 'light'; success?: () => void; fail?: (e?: { errMsg?: string }) => void }): void;
   getUserInfo?(o: {
     success?: (r: { userInfo: { nickName: string; avatarUrl: string } }) => void;
     fail?: (e?: unknown) => void;
@@ -255,13 +261,17 @@ function drawAvatar(cx: number, cy: number, r: number) {
 
 // ---------------- 视口布局 ----------------
 
-const BAR_H = 122;
+const BAR_H = 92;
 // 顶部让位微信胶囊按钮：胶囊底 + 8（内容安全线；战斗 HUD 等用）
 const capsule = wx.getMenuButtonBoundingClientRect?.();
 const TOP_SAFE = capsule ? Math.ceil(capsule.bottom) + 8 : 96;
 // 页头与胶囊同一水平线排布，消除胶囊左侧的空白带
 const CAP_MID = capsule ? (capsule.top + capsule.bottom) / 2 : 48;
 const CAP_LEFT = capsule ? capsule.left : VW - 94;
+// 体验版/开发版中，胶囊左侧可能出现微信自带的「游戏中心」手柄入口
+// （客户端行为，代码无法关闭，且不计入胶囊矩形），页头右侧按钮需额外让位
+const envVersion = (() => { try { return wx.getAccountInfoSync?.().miniProgram?.envVersion; } catch { return undefined; } })();
+const GAME_CENTER_PAD = envVersion === 'develop' || envVersion === 'trial' ? 46 : 0;
 // 地图宽度铺满屏幕两侧；高度超出可视区时允许垂直拖动平移
 const mapScale = VW / W;
 const mapViewH = VH - BAR_H - TOP_SAFE;
@@ -285,11 +295,69 @@ const C = {
   text: '#E8F1FF',
   sub: '#8DA0C6',
   dim: '#5A6B8C',
-  panelBg: 'rgba(15,23,46,0.92)',
   panelLine: 'rgba(34,224,255,0.25)',
 };
 const MARGIN = 16;
 const RADIUS = 14;
+
+// ---------------- 界面皮肤（参考市面塔防/科幻游戏的视觉语言；只换 UI 外观，不动战斗地图配色） ----------------
+
+interface Skin {
+  id: string; name: string; ref: string;
+  accent: string;                  // 主强调色
+  rgb: [number, number, number];   // accent 的 rgb 分量（拼 rgba 用）
+  danger: string; gold: string; green: string; red: string;
+  text: string; sub: string; dim: string;
+  panelTop: string; panelBottom: string;  // 面板渐变两端
+  panelSolid: string;                     // 按钮/Toast 的纯色底
+  chrome: 'round' | 'chamfer';            // 圆角 / 切角（布局语言差异）
+  pressFx: 'scale' | 'stamp' | 'glitch';  // 按钮按压反馈：缩放 / 盖章 / 故障错位
+  transition: 'fade' | 'wipe' | 'glitch'; // 页面切换过渡：淡入 / 切角挡板横扫 / 故障色带
+}
+const SKINS: Skin[] = [
+  {
+    id: 'abyss', name: '深空全息', ref: '原作 · 全息科幻',
+    accent: '#22E0FF', rgb: [34, 224, 255], danger: '#FF3D81',
+    gold: '#FFC94D', green: '#3DF08C', red: '#FF5A5A',
+    text: '#E8F1FF', sub: '#8DA0C6', dim: '#5A6B8C',
+    panelTop: 'rgba(20,30,58,0.94)', panelBottom: 'rgba(11,17,36,0.94)', panelSolid: 'rgba(15,23,46,0.94)', chrome: 'round',
+    pressFx: 'scale', transition: 'fade',
+  },
+  {
+    id: 'ember', name: '琥珀工业', ref: '参考《明日方舟》工业指挥风',
+    accent: '#FFB020', rgb: [255, 176, 32], danger: '#FF5A3D',
+    gold: '#FFC94D', green: '#7ED957', red: '#FF5A5A',
+    text: '#FFF3E2', sub: '#C0A98A', dim: '#8A765C',
+    panelTop: 'rgba(40,30,18,0.94)', panelBottom: 'rgba(22,16,10,0.94)', panelSolid: 'rgba(26,19,10,0.94)', chrome: 'chamfer',
+    pressFx: 'stamp', transition: 'wipe',
+  },
+  {
+    id: 'matrix', name: '紫晶矩阵', ref: '参考《赛博朋克2077》霓虹风',
+    accent: '#B16CFF', rgb: [177, 108, 255], danger: '#FF3D81',
+    gold: '#FFD75E', green: '#3DF08C', red: '#FF5A5A',
+    text: '#F1E9FF', sub: '#A48FC8', dim: '#6E5C8E',
+    panelTop: 'rgba(34,20,54,0.94)', panelBottom: 'rgba(16,9,30,0.94)', panelSolid: 'rgba(20,12,36,0.94)', chrome: 'round',
+    pressFx: 'glitch', transition: 'glitch',
+  },
+];
+let skin: Skin = SKINS[0];
+/** 当前主题色 + alpha 拼 rgba() */
+const ac = (a: number) => `rgba(${skin.rgb[0]},${skin.rgb[1]},${skin.rgb[2]},${a})`;
+function applySkin(id: string) {
+  skin = SKINS.find((s) => s.id === id) ?? SKINS[0];
+  C.cyan = skin.accent;
+  C.pink = skin.danger;
+  C.gold = skin.gold;
+  C.green = skin.green;
+  C.red = skin.red;
+  C.text = skin.text;
+  C.sub = skin.sub;
+  C.dim = skin.dim;
+  C.panelLine = ac(0.25);
+  store.set('srd.skin', skin.id);
+}
+// 启动恢复上次选择的皮肤
+applySkin(String(store.get('srd.skin') || 'abyss'));
 
 // ---------------- 简易 UI 框架 ----------------
 
@@ -311,6 +379,9 @@ function showToast(text: string) {
   toast = { text, at: Date.now() };
 }
 function drawToast() {
+  // 皮肤模块可插拔：接管 Toast 绘制
+  const m = SKIN_MODULES[skin.id];
+  if (m?.drawToast) { m.drawToast(env); return; }
   if (!toast) return;
   const t = (Date.now() - toast.at) / 1000;
   if (t > 1.6) { toast = null; return; }
@@ -320,7 +391,7 @@ function drawToast() {
   ctx.font = 'bold 12px sans-serif';
   const w = ctx.measureText(toast.text).width + 34;
   rr(VW / 2 - w / 2, VH * 0.4, w, 34, 17);
-  ctx.fillStyle = 'rgba(15,23,46,0.95)';
+  ctx.fillStyle = skin.panelSolid;
   ctx.fill();
   ctx.strokeStyle = 'rgba(255,201,77,0.5)';
   ctx.lineWidth = 1.2;
@@ -345,10 +416,22 @@ function fillText(str: string, x: number, y: number, o: {
   ctx.restore();
 }
 
-/** 圆角矩形路径 */
+/** 圆角矩形路径（琥珀工业皮肤切换为切角八边形，呈现硬派工业布局语言） */
 function rr(x: number, y: number, w: number, h: number, r: number) {
   const rad = Math.min(r, w / 2, h / 2);
   ctx.beginPath();
+  if (skin.chrome === 'chamfer') {
+    ctx.moveTo(x + rad, y);
+    ctx.lineTo(x + w - rad, y);
+    ctx.lineTo(x + w, y + rad);
+    ctx.lineTo(x + w, y + h - rad);
+    ctx.lineTo(x + w - rad, y + h);
+    ctx.lineTo(x + rad, y + h);
+    ctx.lineTo(x, y + h - rad);
+    ctx.lineTo(x, y + rad);
+    ctx.closePath();
+    return;
+  }
   ctx.moveTo(x + rad, y);
   ctx.arcTo(x + w, y, x + w, y + h, rad);
   ctx.arcTo(x + w, y + h, x, y + h, rad);
@@ -374,8 +457,8 @@ function wrapBlock(str: string, x: number, y: number, w: number, o?: { size?: nu
 function panel(x: number, y: number, w: number, h: number, stroke = C.panelLine, r = RADIUS) {
   ctx.save();
   const g = ctx.createLinearGradient(x, y, x, y + h);
-  g.addColorStop(0, 'rgba(20,30,58,0.94)');
-  g.addColorStop(1, 'rgba(11,17,36,0.94)');
+  g.addColorStop(0, skin.panelTop);
+  g.addColorStop(1, skin.panelBottom);
   rr(x, y, w, h, r);
   ctx.fillStyle = g;
   ctx.fill();
@@ -391,11 +474,23 @@ function drawButton(b: Button) {
   const pressed = pressedBtn !== null
     && pressedBtn.x === b.x && pressedBtn.y === b.y && pressedBtn.w === b.w && pressedBtn.label === b.label;
   if (pressed) {
+    // 按压反馈随皮肤：scale 缩放 / stamp 盖章下移变暗 / glitch 故障抖动（错位残影在标签绘制处叠加）
     ctx.save();
-    ctx.translate(b.x + b.w / 2, b.y + b.h / 2);
-    ctx.scale(0.93, 0.93);
-    ctx.translate(-(b.x + b.w / 2), -(b.y + b.h / 2));
-    ctx.globalAlpha = 0.82;
+    if (skin.pressFx === 'stamp') {
+      // 琥珀工业 · 盖章：整体下移 2px + 压暗
+      ctx.translate(0, 2);
+      ctx.globalAlpha = 0.72;
+    } else if (skin.pressFx === 'glitch') {
+      // 紫晶矩阵 · 故障：轻微水平抖动（量化时间 + hash01，帧间确定性）
+      ctx.translate((hash01(Math.floor(Date.now() / 60)) - 0.5) * 4, 0);
+      ctx.globalAlpha = 0.9;
+    } else {
+      // 深空全息 · 缩放
+      ctx.translate(b.x + b.w / 2, b.y + b.h / 2);
+      ctx.scale(0.93, 0.93);
+      ctx.translate(-(b.x + b.w / 2), -(b.y + b.h / 2));
+      ctx.globalAlpha = 0.82;
+    }
   }
   ctx.save();
   ctx.globalAlpha = b.disabled ? 0.38 : 1;
@@ -407,7 +502,7 @@ function drawButton(b: Button) {
     ctx.fillStyle = g;
     ctx.fill();
   } else {
-    ctx.fillStyle = b.active ? `${c}30` : 'rgba(15,23,46,0.92)';
+    ctx.fillStyle = b.active ? `${c}30` : skin.panelSolid;
     ctx.fill();
     ctx.strokeStyle = b.active ? c : `${c}77`;
     ctx.lineWidth = 1.2;
@@ -416,7 +511,13 @@ function drawButton(b: Button) {
   ctx.restore();
   if (b.label) {
     const labelColor = b.primary && !b.disabled ? '#081226' : b.active ? c : b.disabled ? '#9AA7C2' : C.text;
-    fillText(b.label, b.x + b.w / 2, b.y + (b.sub ? b.h / 2 - 9 : b.h / 2), {
+    const labelY = b.y + (b.sub ? b.h / 2 - 9 : b.h / 2);
+    if (pressed && skin.pressFx === 'glitch') {
+      // 故障错位残影：红/青各偏 2px，压在主标签之下
+      fillText(b.label, b.x + b.w / 2 - 2, labelY, { size: 14, color: 'rgba(255,61,129,0.7)', align: 'center' });
+      fillText(b.label, b.x + b.w / 2 + 2, labelY, { size: 14, color: ac(0.7), align: 'center' });
+    }
+    fillText(b.label, b.x + b.w / 2, labelY, {
       size: 14, color: labelColor, align: 'center',
     });
     if (b.sub) fillText(b.sub, b.x + b.w / 2, b.y + b.h / 2 + 11, { size: 11, color: b.disabled ? '#C77A34' : C.gold, align: 'center' });
@@ -468,9 +569,10 @@ function chip(x: number, y: number, text: string, color: string) {
   fillText(text, x - w / 2, y + 0.5, { size: 10, color, align: 'center' });
 }
 
-// ---------------- 统一页头：与胶囊按钮同一水平线，标题 + 返回/图鉴 + 用户信息 + 静音 ----------------
+// ---------------- 统一页头：与胶囊按钮同一水平线；主页仅标题，子页面为 标题 + 返回 + 设置 ----------------
 
 let showProfile = false;
+let showSettings = false;
 
 function drawHeader(title: string, opts: { back?: () => void } = {}) {
   const btnS = 36;
@@ -478,11 +580,11 @@ function drawHeader(title: string, opts: { back?: () => void } = {}) {
   // 背景条（从胶囊行上缘延伸到内容安全线）+ 底部细线
   ctx.save();
   const g = ctx.createLinearGradient(0, top - 6, 0, TOP_SAFE);
-  g.addColorStop(0, 'rgba(10,16,34,0.92)');
-  g.addColorStop(1, 'rgba(10,16,34,0.6)');
+  g.addColorStop(0, skin.panelTop);
+  g.addColorStop(1, skin.panelBottom);
   ctx.fillStyle = g;
   ctx.fillRect(0, top - 6, VW, TOP_SAFE - top + 6);
-  ctx.strokeStyle = 'rgba(34,224,255,0.15)';
+  ctx.strokeStyle = ac(0.15);
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(0, TOP_SAFE - 0.5);
@@ -490,23 +592,16 @@ function drawHeader(title: string, opts: { back?: () => void } = {}) {
   ctx.stroke();
   ctx.restore();
 
-  // 左：返回（有上级页面）或图鉴入口（主页）
+  // 页头只保留 返回 + 标题（设置入口仅保留在欢迎页菜单）
+  let tx = MARGIN;
+  const rightLimit = CAP_LEFT - 8 - GAME_CENTER_PAD;
   if (opts.back) {
     btn({ x: MARGIN, y: top, w: btnS, h: btnS, label: '‹', cb: opts.back });
-  } else {
-    btn({ x: MARGIN, y: top, w: btnS, h: btnS, label: '📖', color: C.gold, cb: () => { codex.scroll = 0; goto('codex'); } });
+    tx = MARGIN + btnS + 12;
   }
 
-  // 右：静音 + 用户头像（贴胶囊左侧）
-  const muteX = CAP_LEFT - 8 - btnS;
-  btn({ x: muteX, y: top, w: btnS, h: btnS, label: musicMuted ? '🔇' : '🔊', cb: toggleMusicMuted });
-  const ax = muteX - 8 - 15;
-  drawAvatar(ax, CAP_MID, 15);
-  hitBox({ x: ax - 17, y: top, w: 34, h: btnS, label: '', cb: () => { showProfile = true; } });
-
-  // 标题：左对齐于返回键右侧，随可用宽度自动缩字号
-  const tx = MARGIN + btnS + 12;
-  const maxW = ax - 17 - tx - 8;
+  // 标题：左对齐，随可用宽度自动缩字号
+  const maxW = rightLimit - tx - 8;
   let tSize = 16;
   ctx.save();
   while (tSize > 11) {
@@ -515,7 +610,7 @@ function drawHeader(title: string, opts: { back?: () => void } = {}) {
     tSize--;
   }
   ctx.restore();
-  fillText('TOWER LINE DEFENSE', tx, CAP_MID - 11, { size: 9, color: 'rgba(34,224,255,0.7)', weight: '600' });
+  fillText('TOWER LINE DEFENSE', tx, CAP_MID - 11, { size: 9, color: ac(0.7), weight: '600' });
   fillText(title, tx, CAP_MID + 8, { size: tSize });
 }
 
@@ -542,10 +637,13 @@ function openFeedback() {
 
 /** 指挥官档案弹层（画在主页/图鉴之上） */
 function drawProfileOverlay() {
+  // 皮肤模块可插拔：接管档案弹层
+  const m = SKIN_MODULES[skin.id];
+  if (m?.drawProfile) { m.drawProfile(env); return; }
   ctx.fillStyle = 'rgba(7,11,24,0.78)';
   ctx.fillRect(0, 0, VW, VH);
   const pw = VW - 72;
-  const ph = 420;
+  const ph = 380;
   const px = 36;
   const py = VH / 2 - ph / 2;
   panel(px, py, pw, ph, C.panelLine);
@@ -560,7 +658,7 @@ function drawProfileOverlay() {
   const by = py + 162;
   fillText(`战役进度 ${cleared} / ${LEVELS.length}`, VW / 2, by - 8, { size: 11, color: C.sub, align: 'center', weight: 'normal' });
   rr(bx, by + 6, bw, 10, 5);
-  ctx.fillStyle = 'rgba(34,224,255,0.12)';
+  ctx.fillStyle = ac(0.12);
   ctx.fill();
   if (cleared > 0) {
     rr(bx, by + 6, Math.max(10, bw * (cleared / LEVELS.length)), 10, 5);
@@ -571,21 +669,13 @@ function drawProfileOverlay() {
     ctx.fill();
   }
 
-  // 画质开关（低画质关闭 Bloom 辉光，战斗内每 30 帧轮询一次生效）
-  const qHigh = readWxQualityHigh();
-  btn({
-    x: px + 24, y: py + 192, w: pw - 48, h: 40,
-    label: qHigh ? '画质：高（辉光）' : '画质：低', color: qHigh ? C.cyan : C.sub, active: qHigh,
-    cb: () => { setWxQualityHigh(!qHigh); qualityHigh = !qHigh; buzz('light'); },
-  });
-
   // 意见反馈（客服会话 → 回退复制邮箱）
   btn({
-    x: px + 24, y: py + 240, w: pw - 48, h: 40, label: '💬 意见反馈', color: C.gold,
+    x: px + 24, y: py + 192, w: pw - 48, h: 40, label: '💬 意见反馈', color: C.gold,
     cb: () => openFeedback(),
   });
 
-  let y = py + 292;
+  let y = py + 244;
   if (!profile.real) {
     btn({
       x: px + 24, y, w: pw - 48, h: 44, label: '同步微信头像昵称', color: C.green, primary: true,
@@ -594,6 +684,98 @@ function drawProfileOverlay() {
     y += 56;
   }
   btn({ x: px + 24, y, w: pw - 48, h: 40, label: '关闭', cb: () => { showProfile = false; } });
+}
+
+// ---------------- 设置中心（音效/音乐/旁白/震动/画质，欢迎页菜单「⚙ 设置」进入） ----------------
+
+/** 开关控件：46×26 胶囊滑块，(x,y) 为左上角 */
+function drawSwitch(x: number, y: number, on: boolean) {
+  ctx.save();
+  rr(x, y, 46, 26, 13);
+  ctx.fillStyle = on ? ac(0.85) : 'rgba(90,107,140,0.45)';
+  ctx.fill();
+  ctx.strokeStyle = on ? C.cyan : 'rgba(124,141,176,0.4)';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(x + (on ? 32 : 14), y + 13, 9.5, 0, Math.PI * 2);
+  ctx.fillStyle = on ? '#081226' : '#C7D2EA';
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawSettingsOverlay() {
+  // 皮肤模块可插拔：接管设置中心
+  const m = SKIN_MODULES[skin.id];
+  if (m?.drawSettings) { m.drawSettings(env); return; }
+  ctx.fillStyle = 'rgba(7,11,24,0.78)';
+  ctx.fillRect(0, 0, VW, VH);
+  // 全屏透明热区：吞掉面板外的点击，避免穿透到底层页面
+  hitBox({ x: 0, y: 0, w: VW, h: VH, label: '', cb: () => {} });
+  const pw = VW - 72;
+  const px = 36;
+  const rowH = 56;
+  const rows: [icon: string, label: string, desc: string, on: boolean, cb: () => void][] = [
+    ['🔊', '音效', '攻击 / 爆炸 / 金币等战斗音效', !sfx.muted, () => sfx.setMuted(!sfx.muted)],
+    ['🎵', '音乐', '主页与战斗背景音乐', !musicMuted, toggleMusicMuted],
+    ['🎙', '旁白', '任务简报语音解说', !narrationMuted, toggleNarrationMuted],
+    ['📳', '震动', '建造 / 漏怪 / BOSS 战触感反馈', !vibrateMuted, toggleVibrateMuted],
+    ['✨', '高画质', 'Bloom 辉光特效，低端机建议关闭', readWxQualityHigh(), () => {
+      const q = !readWxQualityHigh();
+      setWxQualityHigh(q);
+      qualityHigh = q;
+    }],
+  ];
+  const skinH = 74; // 皮肤切换区高度
+  const ph = 72 + rows.length * rowH + skinH + 68;
+  const py = VH / 2 - ph / 2;
+  panel(px, py, pw, ph, C.panelLine);
+  fillText('SETTINGS', VW / 2, py + 24, { size: 9, color: ac(0.7), weight: '600', align: 'center' });
+  fillText('设置中心', VW / 2, py + 46, { size: 17, align: 'center' });
+  rows.forEach(([icon, label, desc, on, cb], i) => {
+    const y = py + 66 + i * rowH;
+    if (i > 0) {
+      ctx.save();
+      ctx.strokeStyle = ac(0.1);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(px + 20, y + 0.5);
+      ctx.lineTo(px + pw - 20, y + 0.5);
+      ctx.stroke();
+      ctx.restore();
+    }
+    fillText(icon, px + 34, y + rowH / 2, { size: 16, align: 'center' });
+    fillText(label, px + 56, y + 19, { size: 14 });
+    fillText(desc, px + 56, y + 39, { size: 10, color: C.sub, weight: 'normal' });
+    drawSwitch(px + pw - 20 - 46, y + rowH / 2 - 13, on);
+    hitBox({ x: px + 16, y, w: pw - 32, h: rowH, label: '', cb: () => { cb(); buzz('light'); } });
+  });
+  // —— 界面皮肤：三套主题色卡，点选即换并持久化 ——
+  const skY = py + 66 + rows.length * rowH;
+  fillText('🎨', px + 34, skY + 15, { size: 16, align: 'center' });
+  fillText('界面皮肤', px + 56, skY + 10, { size: 14 });
+  fillText(SKINS.find((s) => s.id === skin.id)?.ref ?? '', px + 56, skY + 30, { size: 10, color: C.sub, weight: 'normal' });
+  const chipW = (pw - 40 - 12) / SKINS.length;
+  SKINS.forEach((s, i) => {
+    const cx0 = px + 20 + i * (chipW + 6);
+    const cy0 = skY + 38;
+    const on = s.id === skin.id;
+    ctx.save();
+    rr(cx0, cy0, chipW, 30, 8);
+    ctx.fillStyle = on ? ac(0.18) : 'rgba(90,107,140,0.12)';
+    ctx.fill();
+    ctx.strokeStyle = on ? s.accent : 'rgba(124,141,176,0.35)';
+    ctx.lineWidth = on ? 1.6 : 1;
+    ctx.stroke();
+    ctx.fillStyle = s.accent;
+    ctx.beginPath();
+    ctx.arc(cx0 + 13, cy0 + 15, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    fillText(s.name, cx0 + 23, cy0 + 15, { size: 11, color: on ? C.text : C.sub });
+    hitBox({ x: cx0, y: cy0, w: chipW, h: 30, label: '', cb: () => { applySkin(s.id); buzz('light'); showToast(`已切换「${s.name}」`); } });
+  });
+  btn({ x: px + 24, y: py + 66 + rows.length * rowH + skinH + 12, w: pw - 48, h: 40, label: '关闭', cb: () => { showSettings = false; } });
 }
 
 // ---------------- 章节宣传图（MiniMax 生成，本地资产） ----------------
@@ -912,7 +1094,13 @@ interface InnerAudio {
 
 let bgmAc: { ac: InnerAudio; name: string } | null = null;
 let musicTarget = ''; // '' 表示不播
-let musicMuted = store.get('srd.muted') === '1';
+// 旧版 'srd.muted' 是音效+音乐总开关：拆分为独立开关时按旧值各迁移一次
+const legacyMuted = store.get('srd.muted') === '1';
+if (legacyMuted) {
+  if (store.get('srd.musicMuted') === '') store.set('srd.musicMuted', '1');
+  if (store.get('srd.sfxMuted') === '') sfx.setMuted(true);
+}
+let musicMuted = store.get('srd.musicMuted') === '1';
 
 function stopMusic() {
   if (!bgmAc) return;
@@ -938,10 +1126,9 @@ function playMusic(name: 'home' | 'battle') {
   });
 }
 
-/** 每帧调用：按当前界面切换音乐（splash 无声，战斗 battle，其余 home） */
+/** 每帧调用：按当前界面切换音乐（战斗 battle，其余界面含欢迎页 home） */
 function syncMusic() {
   const want = musicMuted ? ''
-    : app.screen === 'splash' ? ''
     : app.screen === 'battle' ? 'battle' : 'home';
   if (want === musicTarget) return;
   musicTarget = want;
@@ -951,16 +1138,37 @@ function syncMusic() {
 
 function toggleMusicMuted() {
   musicMuted = !musicMuted;
-  sfx.setMuted(musicMuted);
-  store.set('srd.muted', musicMuted ? '1' : '0');
+  store.set('srd.musicMuted', musicMuted ? '1' : '0');
   // syncMusic 对 ''→'' 会短路，静音时必须立即停掉当前 BGM
   if (musicMuted) stopMusic();
   musicTarget = ''; // 强制 syncMusic 重新评估
 }
 
-/** 触感反馈（不支持的端静默降级） */
+/** 触感反馈（不支持的端静默降级；设置中心可关闭） */
+let vibrateMuted = store.get('srd.vibrateMuted') === '1';
+let vibrateLastError = '';
+function toggleVibrateMuted() {
+  vibrateMuted = !vibrateMuted;
+  store.set('srd.vibrateMuted', vibrateMuted ? '1' : '0');
+  // 开启时立即试震一次，并把 API 结果反馈出来（iOS 上失败通常是静默的，需要主动诊断）
+  if (!vibrateMuted) {
+    vibrateLastError = '';
+    lastBuzzAt = 0;
+    buzz('medium');
+    setTimeout(() => {
+      showToast(vibrateLastError ? `震动调用失败：${vibrateLastError}` : '已试震一次 · 若无震感请检查「设置-声音与触感-系统触感反馈」');
+    }, 350);
+  }
+}
+let lastBuzzAt = 0;
 function buzz(type: 'heavy' | 'medium' | 'light') {
-  try { wx.vibrateShort?.({ type }); } catch { /* ignore */ }
+  if (vibrateMuted) return;
+  const now = Date.now();
+  if (now - lastBuzzAt < 90) return; // iOS 会静默丢弃过于密集的触感调用
+  lastBuzzAt = now;
+  try {
+    wx.vibrateShort?.({ type, fail: (e?: { errMsg?: string }) => { vibrateLastError = e?.errMsg || 'fail'; } });
+  } catch { vibrateLastError = 'exception'; }
 }
 
 // ---------------- 简报旁白（MiniMax TTS 生成的本地音频，缺失时静默降级） ----------------
@@ -992,6 +1200,13 @@ function startNarration(levelId: number) {
   });
 }
 
+function toggleNarrationMuted() {
+  narrationMuted = !narrationMuted;
+  store.set('srd.narrationMuted', narrationMuted ? '1' : '0');
+  if (narrationMuted) stopNarration();
+  else if (app.screen === 'briefing') startNarration(app.levelId);
+}
+
 function gotoBriefing(levelId: number) {
   app.levelId = levelId;
   track('chapter_select', { level_id: levelId });
@@ -999,55 +1214,340 @@ function gotoBriefing(levelId: number) {
   startNarration(levelId);
 }
 
-// ---------------- 开场动画 ----------------
+// ---------------- 开场动画（深空星海恐怖风 · 最后信号） ----------------
+
+/** 欢迎页专属死寂星野（部分恒星会被"吞噬"般周期性熄灭） */
+const splashStars = makeStars(97, 110, VW, VH);
+/** 欢迎页背景图（tools/gen-welcome-bg.mjs 程序化渲染；加载完成前用程序化底图兜底） */
+const welcomeBgImg = wx.createImage();
+const welcomeBg = { ok: false };
+welcomeBgImg.onload = () => { welcomeBg.ok = true; };
+welcomeBgImg.onerror = () => { welcomeBg.ok = false; };
+welcomeBgImg.src = 'assets/welcome-bg.jpg';
+/** 虫群孢子：从右上星云渗向蚀星，轨迹全部确定性伪随机 */
+const splashSwarm = Array.from({ length: 42 }, (_, i) => ({
+  ox: hash01(i * 3 + 11), oy: hash01(i * 7 + 23),
+  sp: 0.5 + hash01(i * 13 + 5) * 0.9,
+  wob: hash01(i * 17 + 3) * Math.PI * 2,
+  big: hash01(i * 29 + 7) < 0.18,
+}));
 
 function drawSplash(time: number) {
   hooks = [];
-  drawSpaceBg(time);
   const t = (Date.now() - app.splashAt) / 1000;
-  // 中央星环
-  const cx = VW / 2;
-  const cy = VH * 0.36;
-  const ringR = Math.min(1.6, Math.sin(Math.min(1, t * 1.2) * Math.PI * 0.5) * VW * 0.26 + 8);
+
+  // 深渊底色：任何情况下先铺底，杜绝边缘露白
+  ctx.fillStyle = '#04060E';
+  ctx.fillRect(0, 0, VW, VH);
+  if (welcomeBg.ok) {
+    // 生成的深空恐怖背景（等比铺满，居中裁剪；外加 2px 过扫防止浮点缝隙露白边）
+    const iw = welcomeBgImg.width || 720;
+    const ih = welcomeBgImg.height || 1280;
+    const sc = Math.max(VW / iw, VH / ih);
+    const dw = iw * sc;
+    const dh = ih * sc;
+    ctx.drawImage(welcomeBgImg as unknown as CanvasImageSource, (VW - dw) / 2 - 1, (VH - dh) / 2 - 1, dw + 2, dh + 2);
+  } else {
+    // 兜底程序化底图（图片未加载完成时）：深渊底色 + 渗血星云 + 蚀星剪影
+    const bg = ctx.createLinearGradient(0, 0, 0, VH);
+    bg.addColorStop(0, '#04060E');
+    bg.addColorStop(0.5, '#060A18');
+    bg.addColorStop(1, '#02040A');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, VW, VH);
+    const nebPulse = 0.75 + 0.25 * Math.sin(t * 0.4);
+    const neb1 = ctx.createRadialGradient(VW * 1.05, -VH * 0.08, 0, VW * 1.05, -VH * 0.08, VW * 1.15);
+    neb1.addColorStop(0, `rgba(255,61,129,${0.14 * nebPulse})`);
+    neb1.addColorStop(0.55, `rgba(122,79,208,${0.07 * nebPulse})`);
+    neb1.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = neb1;
+    ctx.fillRect(0, 0, VW, VH);
+    const neb2 = ctx.createRadialGradient(VW * 0.1, VH * 0.85, 0, VW * 0.1, VH * 0.85, VW * 0.9);
+    neb2.addColorStop(0, 'rgba(139,92,246,0.05)');
+    neb2.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = neb2;
+    ctx.fillRect(0, 0, VW, VH);
+
+    // 蚀星：右下角被侵染的殖民行星剪影，裂痕随呼吸脉动
+    const px = VW * 1.28;
+    const py = VH * 1.12;
+    const pr = VW * 0.95;
+    ctx.save();
+    const pg = ctx.createRadialGradient(px - pr * 0.35, py - pr * 0.35, pr * 0.1, px, py, pr);
+    pg.addColorStop(0, '#0B1124');
+    pg.addColorStop(1, '#02040A');
+    ctx.fillStyle = pg;
+    ctx.beginPath(); ctx.arc(px, py, pr, 0, Math.PI * 2); ctx.fill();
+    const crackA = 0.35 + 0.3 * Math.sin(t * 0.9);
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 5; i++) {
+      const a0 = Math.PI * (1.02 + hash01(i * 41) * 0.44);
+      const r0 = pr * (0.55 + hash01(i * 17) * 0.35);
+      let tx = px + Math.cos(a0) * r0;
+      let ty = py + Math.sin(a0) * r0;
+      ctx.strokeStyle = i % 2 ? `rgba(184,255,61,${crackA * 0.5})` : `rgba(255,61,129,${crackA * 0.45})`;
+      ctx.lineWidth = 1.2 + hash01(i * 5) * 1.4;
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      for (let k = 1; k <= 4; k++) {
+        tx += Math.cos(a0 + k) * (6 + hash01(i * 53 + k) * 14);
+        ty += Math.sin(a0 + k * 1.7) * (6 + hash01(i * 71 + k) * 14);
+        ctx.lineTo(tx, ty);
+      }
+      ctx.stroke();
+    }
+    // 轮廓冷光：上缘一线，青 → 品红（正被侵蚀的一侧）
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = ac(0.28);
+    ctx.beginPath(); ctx.arc(px, py, pr, Math.PI, Math.PI * 1.25); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,61,129,0.34)';
+    ctx.beginPath(); ctx.arc(px, py, pr, Math.PI * 1.25, Math.PI * 1.5); ctx.stroke();
+    ctx.restore();
+  }
+
+  // —— 死寂星野：零星恒星周期性熄灭，像被什么东西吃掉 ——
   ctx.save();
-  ctx.strokeStyle = C.cyan;
-  ctx.globalAlpha = Math.min(1, t) * 0.8;
+  for (let i = 0; i < splashStars.length; i++) {
+    const s = splashStars[i];
+    let a = 0.25 + 0.5 * Math.abs(Math.sin(t * s.speed * 0.6 + s.tw));
+    if (hash01(i * 31 + 1) < 0.12) {
+      const cycle = 9 + hash01(i * 7 + 2) * 8;
+      const ph = (t + hash01(i * 13 + 4) * 30) % cycle;
+      if (ph < 0.9) a *= Math.abs(ph / 0.45 - 1); // 暗灭 → 复明
+    }
+    ctx.globalAlpha = a * 0.8;
+    ctx.fillStyle = '#CFE0FF';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // —— 虫群孢子：从星云渗出的细小剪影，缓缓压向蚀星 ——
+  ctx.save();
+  for (let i = 0; i < splashSwarm.length; i++) {
+    const sp = splashSwarm[i];
+    const prog = (t * 0.03 * sp.sp + sp.ox) % 1.15;
+    const sx = VW * (1.12 - prog * 1.05) + Math.sin(t * 0.7 + sp.wob) * 14;
+    const sy = VH * (-0.06 + prog * 0.78 + sp.oy * 0.12) + Math.cos(t * 0.5 + sp.wob * 1.3) * 10;
+    const tw = 0.5 + 0.5 * Math.sin(t * (2 + sp.sp * 3) + sp.wob * 5);
+    ctx.globalAlpha = 0.2 + 0.45 * tw;
+    ctx.fillStyle = sp.big ? '#B8FF3D' : '#FF3D81';
+    ctx.beginPath();
+    ctx.arc(sx, sy, sp.big ? 2.1 : 1.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // —— 信号干扰：每 6.5s 左右一次短促 glitch（暗带 + 扫描线 + 全局变暗） ——
+  const gSeed = Math.floor(t / 6.5);
+  const gT = t - gSeed * 6.5;
+  const glitch = t > 0.8 && hash01(gSeed * 13 + 7) > 0.25 && gT < 0.3;
+  if (glitch) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.fillRect(0, 0, VW, VH);
+    for (let i = 0; i < 3; i++) {
+      const gy = hash01(gSeed * 31 + i * 7) * VH;
+      ctx.fillStyle = `rgba(2,4,10,${0.25 + hash01(gSeed + i) * 0.3})`;
+      ctx.fillRect(0, gy, VW, 6 + hash01(gSeed * 7 + i) * 26);
+      ctx.fillStyle = ac(0.05 + hash01(gSeed * 11 + i) * 0.08);
+      ctx.fillRect(0, gy - 1, VW, 1.5);
+    }
+    ctx.restore();
+  }
+
+  // —— 破碎星环徽标：断裂的轨道环残段缓缓旋转，中心只剩一粒电压不稳的信标 ——
+  const cx = VW / 2;
+  const cy = VH * 0.28;
+  const ringR = Math.sin(Math.min(1, t * 1.2) * Math.PI * 0.5) * VW * 0.17 + 8;
+  const stutter = hash01(Math.floor(t * 6) * 3 + 1) < 0.12 ? 0.15 : 1;
+  const emA = Math.min(1, t);
+  ctx.save();
+  ctx.lineCap = 'round';
+  // 主环三段残弧，缓慢转动，弧间是「被咬掉」的缺口
+  const rot = t * 0.12;
+  for (let i = 0; i < 3; i++) {
+    const a0 = rot + i * (Math.PI * 2 / 3) + hash01(i * 7 + 1) * 0.3;
+    const span = Math.PI * 2 / 3 - 0.55 - hash01(i * 13 + 2) * 0.25;
+    const arcColor = glitch ? C.pink : C.cyan;
+    ctx.globalAlpha = emA * 0.85;
+    ctx.strokeStyle = arcColor;
+    ctx.shadowColor = arcColor;
+    ctx.shadowBlur = 10;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(cx, cy, ringR, a0, a0 + span);
+    ctx.stroke();
+  }
+  ctx.shadowBlur = 0;
+  // 侵蚀弧：外侧品红残段，反向缓转，暗示环已被染指
+  ctx.globalAlpha = emA * 0.5;
+  ctx.strokeStyle = C.pink;
   ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, ringR * 1.18, -rot * 1.6 + 0.6, -rot * 1.6 + 1.5);
+  ctx.stroke();
+  // 倾斜轨道细线
+  ctx.globalAlpha = emA * 0.32;
+  ctx.strokeStyle = C.cyan;
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.ellipse(cx, cy, ringR * 1.7, ringR * 0.42, -0.5, 0, Math.PI * 2);
   ctx.stroke();
-  const pg = ctx.createRadialGradient(cx - 12, cy - 12, 4, cx, cy, ringR);
-  pg.addColorStop(0, '#1C3D66');
-  pg.addColorStop(0.7, '#0D1836');
-  pg.addColorStop(1, '#070B18');
-  ctx.globalAlpha = Math.min(1, t * 1.6);
-  ctx.fillStyle = pg;
-  ctx.beginPath(); ctx.arc(cx, cy, ringR, 0, Math.PI * 2); ctx.fill();
-  // 盾徽激光
-  ctx.globalAlpha = Math.min(1, Math.max(0, t - 0.35)) * (0.7 + 0.3 * Math.sin(t * 4));
+  // 中心信标：柔光晕 + 脉动亮点
+  const pulse = 0.6 + 0.4 * Math.sin(t * 3.2);
+  const beaconGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, ringR * 0.55);
+  beaconGlow.addColorStop(0, ac(0.26 * pulse * emA));
+  beaconGlow.addColorStop(1, ac(0));
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = beaconGlow;
+  ctx.beginPath();
+  ctx.arc(cx, cy, ringR * 0.55, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = emA * stutter;
+  ctx.fillStyle = '#EAFBFF';
+  ctx.shadowColor = C.cyan;
+  ctx.shadowBlur = 14;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 3.2 + pulse * 1.6, 0, Math.PI * 2);
+  ctx.fill();
+  // 求救光束：从信标向上打出，带「电压不稳」的抽动
+  ctx.globalAlpha = Math.min(1, Math.max(0, t - 0.35)) * stutter * (0.5 + 0.3 * Math.sin(t * 4));
   ctx.strokeStyle = C.cyan;
-  ctx.shadowColor = C.cyan; ctx.shadowBlur = 16;
-  ctx.lineWidth = 2.5;
-  ctx.beginPath(); ctx.moveTo(cx, cy - ringR * 1.6); ctx.lineTo(cx, cy + ringR * 0.9); ctx.stroke();
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - ringR * 1.45);
+  ctx.lineTo(cx, cy - 8);
+  ctx.stroke();
   ctx.restore();
 
-  // 标题渐显
-  const fade = Math.min(1, Math.max(0, (t - 0.5) / 0.8));
-  ctx.globalAlpha = fade;
-  fillText('TOWER LINE DEFENSE', VW / 2, cy + ringR * 1.15, { size: 13, color: C.cyan, align: 'center', weight: '600' });
+  // —— 标题：glitch 瞬间红青抖色；副题为"最后信号" ——
+  const titleY = cy + ringR * 1.9;
   const titleSize = Math.min(30, VW * 0.082);
-  fillText('高 塔 防 线', VW / 2, cy + ringR * 1.15 + 34, { size: titleSize, align: 'center' });
-  fillText('TACTICAL TOWER DEFENSE', VW / 2, cy + ringR * 1.15 + 58, { size: 10, color: C.sub, align: 'center' });
-  ctx.globalAlpha = 1;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, Math.max(0, (t - 0.5) / 0.8));
+  if (glitch) {
+    fillText('高 塔 防 线', VW / 2 - 2, titleY + 34, { size: titleSize, color: 'rgba(255,61,129,0.65)', align: 'center' });
+    fillText('高 塔 防 线', VW / 2 + 2, titleY + 34, { size: titleSize, color: ac(0.65), align: 'center' });
+  }
+  fillText('TOWER LINE DEFENSE', VW / 2, titleY, { size: 13, color: C.cyan, align: 'center', weight: '600' });
+  fillText('高 塔 防 线', VW / 2, titleY + 34, { size: titleSize, align: 'center' });
+  fillText('LAST SIGNAL FROM THE RIM', VW / 2, titleY + 58, { size: 9, color: 'rgba(255,61,129,0.8)', align: 'center', weight: '600' });
+  ctx.restore();
 
-  // 点击提示（1s 后）
-  if (t > 1.0) {
-    const pulse = 0.55 + 0.45 * Math.sin(t * 3.4);
-    fillText('— 点击开始巡逻 —', VW / 2, cy + ringR * 1.15 + 92, {
-      size: 13, color: `rgba(255,201,77,${pulse})`, align: 'center',
+  // —— 失联讯息：终端打字效果逐行浮现 ——
+  const msgs: [text: string, color: string][] = [
+    ['» 外环预警网 …… 已失联', 'rgba(61,240,140,0.75)'],
+    ['» 它们正从星海深处而来', 'rgba(255,61,129,0.85)'],
+  ];
+  msgs.forEach(([m, color], i) => {
+    const start = 1.2 + i * 1.1;
+    const n = Math.max(0, Math.min(m.length, Math.floor((t - start) * 12)));
+    if (n > 0) fillText(m.slice(0, n) + (n < m.length ? '▌' : ''), VW / 2, titleY + 82 + i * 20, { size: 11, color, align: 'center', weight: 'normal' });
+  });
+
+  // —— 呼吸暗角：四周边缘的黑暗缓慢收缩逼近 ——
+  const vg = ctx.createRadialGradient(VW / 2, VH * 0.42, Math.min(VW, VH) * 0.25, VW / 2, VH * 0.42, Math.max(VW, VH) * 0.75);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, `rgba(1,2,6,${(welcomeBg.ok ? 0.45 : 0.8) + 0.08 * Math.sin(t * 0.5)})`);
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, VW, VH);
+
+  // —— 底部监听站标识 ——
+  const dim = 0.4 + 0.3 * Math.sin(t * 1.1);
+  fillText('深空监听站 · 第 41 轨道周期', VW / 2, VH - 46, { size: 9, color: `rgba(124,141,176,${dim})`, align: 'center', weight: 'normal' });
+  fillText('SIGNAL FADING', VW / 2, VH - 30, { size: 8, color: `rgba(255,61,129,${dim * 0.8})`, align: 'center', weight: '600' });
+  // 构建号水印：确认真机/预览跑的是哪次打包
+  fillText(typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'dev', VW - 10, VH - 10, { size: 8, color: 'rgba(124,141,176,0.4)', align: 'right', weight: 'normal' });
+
+  // 主菜单（动画放完后上滑浮现）：开始战役 + 图鉴/设置/档案
+  const menuA = Math.min(1, Math.max(0, (t - 1.0) / 0.5));
+  if (menuA <= 0) {
+    // 动画未放完：点击跳过直接进菜单
+    if (t > 0.2) hitBox({ x: 0, y: 0, w: VW, h: VH, label: '', cb: () => { app.splashAt = Date.now() - 1500; } });
+    return;
+  }
+  const slide = (1 - menuA) * 16;
+  // 皮肤模块可插拔：仅接管主菜单区（开场动画与背景仍由主文件统一绘制；menuA>0 才会走到这里）
+  const sm = SKIN_MODULES[skin.id];
+  if (sm?.drawSplashMenu) {
+    sm.drawSplashMenu(env, time, menuA);
+  } else {
+  const entries: [icon: string, label: string, color: string, cb: () => void][] = [
+    ['📖', '图鉴', C.gold, () => { codex.scroll = 0; goto('codex'); }],
+    ['⚙', '设置', C.cyan, () => { showProfile = false; showSettings = true; }],
+    ['', '档案', C.green, () => { showSettings = false; showProfile = true; }],
+  ];
+  ctx.save();
+  ctx.globalAlpha = menuA;
+  if (skin.id === 'ember') {
+    // 琥珀工业 · 指挥台布局：四条全宽切角指令条竖排堆叠，左侧色块引导
+    const x0 = MARGIN;
+    const w0 = VW - MARGIN * 2;
+    const y0 = titleY + 100 + slide;
+    panel(x0, y0, w0, 52, `${C.gold}66`);
+    ctx.fillStyle = C.gold;
+    ctx.fillRect(x0, y0, 6, 52);
+    fillText('▶', x0 + 30, y0 + 26, { size: 16, color: C.gold, align: 'center' });
+    fillText('开始战役', x0 + 56, y0 + 26, { size: 16 });
+    fillText('START OPERATION', x0 + w0 - 16, y0 + 26, { size: 9, color: C.sub, align: 'right', weight: 'normal' });
+    hitBox({ x: x0, y: y0, w: w0, h: 52, label: '', cb: () => goto('home') });
+    entries.forEach(([icon, label, color, cb], i) => {
+      const y = y0 + 62 + i * 54;
+      panel(x0, y, w0, 44, `${color}44`);
+      ctx.fillStyle = color;
+      ctx.fillRect(x0, y, 6, 44);
+      if (icon) fillText(icon, x0 + 30, y + 22, { size: 15, align: 'center' });
+      else drawAvatar(x0 + 30, y + 22, 11);
+      fillText(label, x0 + 56, y + 22, { size: 14 });
+      fillText('›', x0 + w0 - 20, y + 22, { size: 15, color: C.sub, align: 'center' });
+      hitBox({ x: x0, y, w: w0, h: 44, label: '', cb });
+    });
+  } else if (skin.id === 'matrix') {
+    // 紫晶矩阵 · 放射轮盘布局：主按钮居中，三个霓虹卫星按钮弧线环绕
+    const menuY = titleY + 118 + slide;
+    btn({ x: VW / 2 - 110, y: menuY, w: 220, h: 54, label: '▶ 开始战役', color: C.gold, primary: true, cb: () => goto('home') });
+    const offs: [number, number][] = [[-108, -4], [0, 18], [108, -4]];
+    entries.forEach(([icon, label, color, cb], i) => {
+      const bx = VW / 2 + offs[i][0];
+      const by = menuY + 122 + offs[i][1];
+      ctx.save();
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.arc(bx, by, 26, 0, Math.PI * 2);
+      ctx.fillStyle = skin.panelSolid;
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.restore();
+      if (icon) fillText(icon, bx, by, { size: 16, align: 'center' });
+      else drawAvatar(bx, by, 11);
+      fillText(label, bx, by + 40, { size: 11, color: C.sub, align: 'center' });
+      hitBox({ x: bx - 28, y: by - 28, w: 56, h: 56, label: '', cb });
+    });
+  } else {
+    // 深空全息 · 舞台布局：主按钮居中 + 三入口卡横排
+    const menuY = titleY + 124 + slide;
+    btn({ x: VW / 2 - 110, y: menuY, w: 220, h: 54, label: '▶ 开始战役', color: C.gold, primary: true, cb: () => goto('home') });
+    const entryY = menuY + 54 + 16;
+    const entryW = (VW - MARGIN * 2 - 20) / 3;
+    entries.forEach(([icon, label, color, cb], i) => {
+      const x = MARGIN + i * (entryW + 10);
+      panel(x, entryY, entryW, 60, `${color}44`);
+      if (icon) fillText(icon, x + entryW / 2, entryY + 22, { size: 18, align: 'center' });
+      else drawAvatar(x + entryW / 2, entryY + 22, 12);
+      fillText(label, x + entryW / 2, entryY + 45, { size: 12, color: C.sub, align: 'center' });
+      hitBox({ x, y: entryY, w: entryW, h: 60, label: '', cb });
     });
   }
-  hitBox({ x: 0, y: 0, w: VW, h: VH, label: '', cb: () => goto('home') });
+  ctx.restore();
+  }
+
+  if (showProfile) drawProfileOverlay();
+  if (showSettings) drawSettingsOverlay();
 }
 
 // ---------------- 主页：选关 + 难度 ----------------
@@ -1060,9 +1560,12 @@ const totalScrollMax = () => Math.max(0, LEVELS.length * (CARD_H + CARD_GAP) - (
 
 function drawHome(time: number) {
   hooks = [];
+  // 皮肤模块可插拔：整屏接管（模块自绘背景与页头）
+  const m = SKIN_MODULES[skin.id];
+  if (m?.drawHome) { m.drawHome(env, time); return; }
   drawSpaceBg(time);
 
-  drawHeader('高塔防线 · 战役选择');
+  drawHeader('高塔防线 · 战役选择', { back: () => goto('splash') });
 
   // 难度分段控件（高亮块滑动动画 + 轻震动）
   const segW = VW - MARGIN * 2;
@@ -1167,7 +1670,7 @@ function drawHome(time: number) {
     const thumbH = Math.max(30, viewH * (viewH / (viewH + smax)));
     const ty = homeTop + (viewH - thumbH) * (app.scroll / smax);
     ctx.save();
-    ctx.fillStyle = 'rgba(34,224,255,0.25)';
+    ctx.fillStyle = ac(0.25);
     rr(VW - 4, ty, 3, thumbH, 1.5);
     ctx.fill();
     ctx.restore();
@@ -1176,6 +1679,7 @@ function drawHome(time: number) {
   fillText('微信小游戏 · 试运营包', VW / 2, VH - 12, { size: 10, color: 'rgba(124,141,176,0.7)', align: 'center' });
 
   if (showProfile) drawProfileOverlay();
+  if (showSettings) drawSettingsOverlay();
 }
 
 
@@ -1183,6 +1687,9 @@ function drawHome(time: number) {
 
 function drawBriefing(time: number) {
   hooks = [];
+  // 皮肤模块可插拔：整屏接管（模块自绘背景与页头）
+  const m = SKIN_MODULES[skin.id];
+  if (m?.drawBriefing) { m.drawBriefing(env, time); return; }
   drawSpaceBg(time);
   const lv = LEVELS.find((l) => l.id === app.levelId) ?? LEVELS[0];
 
@@ -1211,16 +1718,11 @@ function drawBriefing(time: number) {
   fillText(`第 ${lv.id} 章`, bx + 16, by + bannerH - 44, { size: 11, color: C.cyan, weight: '600' });
   fillText(lv.name, bx + 16, by + bannerH - 20, { size: 19 });
   fillText(lv.sub, bx + bw - 16, by + bannerH - 20, { size: 11, color: C.sub, align: 'right', weight: 'normal' });
-  // 旁白开关（带文字，与页头的全局音乐/音效静音区分开）
+  // 旁白开关（与设置中心共享同一状态）
   btn({
     x: bx + bw - 88, y: by + 10, w: 78, h: 30,
     label: narrationMuted ? '🔇 旁白' : '🔊 旁白', color: narrationMuted ? C.sub : C.cyan,
-    cb: () => {
-      narrationMuted = !narrationMuted;
-      store.set('srd.narrationMuted', narrationMuted ? '1' : '0');
-      if (narrationMuted) stopNarration();
-      else startNarration(app.levelId);
-    },
+    cb: toggleNarrationMuted,
   });
 
   // 简报卡片（行数测量与绘制共用同一字号，防溢出）
@@ -1252,9 +1754,11 @@ function drawBriefing(time: number) {
 
   btn({ x: VW / 2 - 100, y: afterY + 42, w: 200, h: 54, label: '▶ 出 击', primary: true, cb: startBattle });
   btn({ x: VW / 2 - 100, y: afterY + 118, w: 200, h: 46, label: '返回选关', color: C.sub, cb: () => { stopNarration(); goto('home'); } });
+
+  if (showSettings) drawSettingsOverlay();
 }
 
-// ---------------- 战斗视觉特效（与 H5 版共用 app/src/game/fx.ts） ----------------
+// ---------------- 战斗视觉特效（引擎层 game/fx.ts） ----------------
 
 // 星云底图：异步加载，未就绪时 drawMapBackground 自动回退程序化深色底
 const nebulaBg = new NebulaBg('assets/nebula-texture.jpg');
@@ -1293,24 +1797,81 @@ function drawBattle() {
 
   drawBattleScene();
 
-  // 顶部 HUD（位于胶囊下方安全区）：左面板 + 右侧三个方形按钮，垂直居中对齐
+  // 皮肤模块可插拔：HUD+prep / 底部塔栏 / 拖拽幽灵 / 科技三选一 可分别接管
+  const bm = SKIN_MODULES[skin.id];
+
+  // 顶部 HUD（位于胶囊下方安全区）：34px 整体悬浮横条，从左到右 生命 / 金币 / 波次+进度线 / 三个内嵌指令按钮
+  if (bm?.drawBattleHUD) {
+    bm.drawBattleHUD(env, engine);
+  } else {
   const hudY = TOP_SAFE;
-  const btnSize = 40;
-  const btnGap = 8;
-  const btnsW = btnSize * 3 + btnGap * 2;
-  const px = 12;
-  const pw = VW - px - btnsW - 20;
-  panel(px, hudY, pw, 44, C.panelLine, 12);
-  fillText(`❤ ${st.lives}`, px + 16, hudY + 22, { size: 14, color: C.red, font: RES_FONT() });
-  fillText(`◈ ${st.gold}`, px + 92, hudY + 22, { size: 14, color: C.gold, font: RES_FONT() });
-  fillText(`${st.wave}/${st.totalWaves} 波`, px + pw - 14, hudY + 22, { size: 12, color: C.cyan, align: 'right', font: RES_FONT() });
-  const bxs = VW - 12 - btnsW;
-  btn({ x: bxs, y: hudY + 2, w: btnSize, h: btnSize, label: st.paused ? '▶' : '⏸', cb: () => engineCmd({ type: 'TOGGLE_PAUSE' }) });
-  btn({ x: bxs + btnSize + btnGap, y: hudY + 2, w: btnSize, h: btnSize, label: st.speed === 2 ? '2x' : '1x', active: st.speed === 2, cb: () => engineCmd({ type: 'SET_SPEED', speed: st.speed === 2 ? 1 : 2 }) });
-  btn({ x: bxs + (btnSize + btnGap) * 2, y: hudY + 2, w: btnSize, h: btnSize, label: '≡', cb: () => { app.engine = null; goto('home'); } });
+  const hudH = 34;
+  const hudX = 12;
+  const hudR = Math.min(VW - 12, CAP_LEFT - 8 - GAME_CENTER_PAD); // 右缘避让胶囊
+  const hudW = hudR - hudX;
+  panel(hudX, hudY, hudW, hudH, C.panelLine, 10);
+  const midY = hudY + hudH / 2;
+  const vDiv = (x: number, inset = 8) => {
+    ctx.save();
+    ctx.strokeStyle = ac(0.2);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + 0.5, hudY + inset);
+    ctx.lineTo(x + 0.5, hudY + hudH - inset);
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  // 右侧：三个 30×34 内嵌指令按钮（⏸/▶、1x/2x、≡ 返回选关）
+  const segW = 30;
+  const btnX0 = hudR - segW * 3;
+  const segBtns: [label: string, color: string, cb: () => void][] = [
+    [st.paused ? '▶' : '⏸', C.text, () => engineCmd({ type: 'TOGGLE_PAUSE' })],
+    [st.speed === 2 ? '2x' : '1x', st.speed === 2 ? C.gold : C.text, () => engineCmd({ type: 'SET_SPEED', speed: st.speed === 2 ? 1 : 2 })],
+    ['≡', C.text, () => { app.engine = null; goto('home'); }],
+  ];
+  segBtns.forEach(([label, color, cb], i) => {
+    fillText(label, btnX0 + i * segW + segW / 2, midY, { size: 12, color, align: 'center', font: RES_FONT() });
+    if (i > 0) vDiv(btnX0 + i * segW, 10);
+    hitBox({ x: btnX0 + i * segW, y: hudY, w: segW, h: hudH, label: '', cb });
+  });
+  vDiv(btnX0 - 8);
+
+  // 左侧状态段：❤ 生命（≤5 闪烁告警）/ ◈ 金币 / 波次+2px 进度线，细分隔线相隔
+  const livesTxt = `❤ ${st.lives}`;
+  const goldTxt = `◈ ${st.gold}`;
+  const waveTxt = `${st.wave}/${st.totalWaves}`;
+  ctx.save();
+  ctx.font = `bold 12px ${RES_FONT()}`;
+  const livesW = ctx.measureText(livesTxt).width;
+  const goldW = ctx.measureText(goldTxt).width;
+  const waveW = ctx.measureText(waveTxt).width;
+  ctx.restore();
+  const blinkOff = st.lives <= 5 && Math.floor(Date.now() / 400) % 2 === 1;
+  let cx = hudX + 12;
+  fillText(livesTxt, cx, midY, { size: 12, color: blinkOff ? 'rgba(255,61,90,0.35)' : C.red, font: RES_FONT() });
+  cx += livesW + 8;
+  vDiv(cx);
+  cx += 8;
+  fillText(goldTxt, cx, midY, { size: 12, color: C.gold, font: RES_FONT() });
+  cx += goldW + 8;
+  vDiv(cx);
+  cx += 8;
+  const waveCx = Math.min(cx + (btnX0 - 16 - cx) / 2, btnX0 - 16 - waveW / 2);
+  fillText(waveTxt, waveCx, midY - 2, { size: 12, color: C.cyan, align: 'center', font: RES_FONT() });
+  const progW = waveW + 10;
+  const progX = waveCx - progW / 2;
+  const progY = hudY + hudH - 5;
+  ctx.save();
+  ctx.fillStyle = ac(0.18);
+  ctx.fillRect(progX, progY, progW, 2);
+  ctx.fillStyle = C.cyan;
+  ctx.fillRect(progX, progY, progW * Math.min(1, st.wave / st.totalWaves), 2);
+  ctx.restore();
 
   if (st.phase === 'prep') {
-    const by2 = hudY + 56;
+    // prep 面板尺寸不变，y 按新横条底边重排（34 高 + 8px 缝）
+    const by2 = hudY + hudH + 8;
     panel(VW / 2 - 118, by2, 236, 56, C.panelLine, 19);
     fillText(`第 ${st.wave} 波 · ${Math.max(0, Math.ceil(st.prepT))}s 后来袭`, VW / 2, by2 + 15, { size: 13, align: 'center', font: RES_FONT() });
     // 下一波敌情预告（数量统计 + BOSS 警示）
@@ -1322,11 +1883,17 @@ function drawBattle() {
     fillText(isBossWave ? '建议留好金币与穿甲火力' : '据此提前调整布防', VW / 2, by2 + 47, { size: 9, color: C.sub, align: 'center', weight: 'normal' });
     btn({ x: VW / 2 - 62, y: by2 + 66, w: 124, h: 36, label: '▶ 立即开战', color: C.gold, primary: true, cb: () => engineCmd({ type: 'SKIP_PREP' }) });
   }
+  }
 
-  drawBottomBar(st);
+  // 底部塔栏 / 选中升级出售栏
+  if (bm?.drawBottomBar) bm.drawBottomBar(env, engine);
+  else drawBottomBar(st);
 
   // 拖拽建塔幽灵预览
-  if (barTouch?.mode === 'drag' && dragPos && barTouch.type) drawDragGhost(st, barTouch.type, dragPos);
+  if (barTouch?.mode === 'drag' && dragPos && barTouch.type) {
+    if (bm?.drawDragGhost) bm.drawDragGhost(env, engine, barTouch.type, dragPos);
+    else drawDragGhost(st, barTouch.type, dragPos);
+  }
 
   if (st.paused) {
     ctx.fillStyle = 'rgba(7,11,24,0.6)';
@@ -1336,7 +1903,7 @@ function drawBattle() {
     const px2 = VW / 2 - pw2 / 2;
     const py2 = (VH - BAR_H) / 2 - ph2 / 2;
     panel(px2, py2, pw2, ph2, 'rgba(255,201,77,0.5)');
-    fillText('已暂停', VW / 2, py2 + 30, { size: 16, color: C.gold, align: 'center' });
+    fillText('已暂停', VW / 2, py2 + 32, { size: 16, color: C.gold, align: 'center' });
     fillText('点击 ▶ 继续战斗', VW / 2, py2 + 58, { size: 12, color: C.sub, align: 'center', weight: 'normal' });
   }
 
@@ -1355,10 +1922,13 @@ function drawBattle() {
 
   if (st.phase === 'tech' && st.techChoices) {
     if (!techShownAt) techShownAt = Date.now();
-    drawTechOverlay(st);
+    if (bm?.drawTechOverlay) bm.drawTechOverlay(env, engine);
+    else drawTechOverlay(st);
   } else {
     techShownAt = 0;
   }
+
+  if (showSettings) drawSettingsOverlay();
 }
 
 // ---------------- 拖拽建塔 ----------------
@@ -1415,7 +1985,7 @@ function drawDragGhost(st: NonNullable<GameEngine>['state'], type: TowerType, p:
 function drawBottomBar(st: NonNullable<GameEngine>['state']) {
   ctx.fillStyle = '#0A0F20';
   ctx.fillRect(0, VH - BAR_H, VW, BAR_H);
-  ctx.strokeStyle = 'rgba(34,224,255,0.22)';
+  ctx.strokeStyle = ac(0.22);
   ctx.beginPath();
   ctx.moveTo(0, VH - BAR_H + 0.5);
   ctx.lineTo(VW, VH - BAR_H + 0.5);
@@ -1426,17 +1996,17 @@ function drawBottomBar(st: NonNullable<GameEngine>['state']) {
   const sel = app.selectedId != null ? st.towers.find((t) => t.id === app.selectedId) : undefined;
   if (sel) {
     const def = TOWERS[sel.type];
-    fillText(`${def.name} Lv${sel.level + 1}`, MARGIN + 4, VH - BAR_H + 20, { size: 14, color: def.color });
+    fillText(`${def.name} Lv${sel.level + 1}`, MARGIN + 4, VH - BAR_H + 17, { size: 13, color: def.color });
     const upCost = sel.level < 2 ? TOWERS[sel.type].levels[sel.level + 1].cost : -1;
     btn({
-      x: MARGIN, y: VH - BAR_H + 42, w: VW / 2 - MARGIN - 6, h: 52,
+      x: MARGIN, y: VH - BAR_H + 34, w: VW / 2 - MARGIN - 6, h: 46,
       label: upCost >= 0 ? `升级 ◈ ${upCost}` : '已满级', disabled: upCost < 0 || st.gold < upCost,
       color: C.green, primary: upCost >= 0 && st.gold >= upCost,
       cb: () => { if (engineCmd({ type: 'UPGRADE', id: sel.id })) { sfx.play('upgrade'); buzz('light'); } },
     });
     const refund = Math.floor(sel.invested * SELL_RATE);
     btn({
-      x: VW / 2 + 6, y: VH - BAR_H + 42, w: VW / 2 - MARGIN - 6, h: 52, label: `出售 +${refund}`,
+      x: VW / 2 + 6, y: VH - BAR_H + 34, w: VW / 2 - MARGIN - 6, h: 46, label: `出售 +${refund}`,
       color: '#FF9F43', cb: () => { if (engineCmd({ type: 'SELL', id: sel.id })) sfx.play('sell'); app.selectedId = null; },
     });
     return;
@@ -1444,8 +2014,8 @@ function drawBottomBar(st: NonNullable<GameEngine>['state']) {
 
   if (app.placing) {
     const def = TOWERS[app.placing];
-    fillText(`点击地图上绿色格建造「${def.name}」`, VW / 2, VH - BAR_H + 24, { size: 13, color: def.color, align: 'center' });
-    btn({ x: VW / 2 - 76, y: VH - BAR_H + 48, w: 152, h: 48, label: '取消放置', cb: () => { app.placing = null; } });
+    fillText(`点击地图上绿色格建造「${def.name}」`, VW / 2, VH - BAR_H + 19, { size: 13, color: def.color, align: 'center' });
+    btn({ x: VW / 2 - 76, y: VH - BAR_H + 38, w: 152, h: 42, label: '取消放置', cb: () => { app.placing = null; } });
     return;
   }
 
@@ -1478,11 +2048,11 @@ function drawBottomBar(st: NonNullable<GameEngine>['state']) {
     ctx.lineWidth = 1.4;
     ctx.stroke();
     // 炮塔图标（与地图上同款矢量造型；关闭外围刻度环，炮口朝上轻微摆动）
+    // 槽内仅保留图标 + 价格，图标放大居中于上半区，价格贴近槽底
     ctx.translate(bx + sw / 2, by + 27);
-    drawTower(ctx, type, 0, 30, Math.sin(st.clock * 1.1) * 0.1, 0, st.clock, { ticks: false });
+    drawTower(ctx, type, 0, 38, Math.sin(st.clock * 1.1) * 0.1, 0, st.clock, { ticks: false });
     ctx.restore();
-    fillText(def.name, bx + sw / 2, by + 56, { size: 12, color: disabled ? '#9AA7C2' : C.text, align: 'center' });
-    fillText(`◈${cost}`, bx + sw / 2, by + 74, { size: 11, color: disabled ? '#C77A34' : C.gold, align: 'center' });
+    fillText(`◈${cost}`, bx + sw / 2, by + 54, { size: 11, color: disabled ? '#C77A34' : C.gold, align: 'center' });
     if (locked) {
       // 锁遮罩：半透明压暗 + 锁图标 + 解锁章节
       ctx.save();
@@ -1492,7 +2062,7 @@ function drawBottomBar(st: NonNullable<GameEngine>['state']) {
       ctx.strokeStyle = C.sub;
       ctx.lineWidth = 1.6;
       const lx = bx + sw / 2;
-      const ly = by + 26;
+      const ly = by + 27;
       ctx.beginPath();
       ctx.rect(lx - 7, ly - 1, 14, 11);
       ctx.stroke();
@@ -1500,7 +2070,7 @@ function drawBottomBar(st: NonNullable<GameEngine>['state']) {
       ctx.arc(lx, ly - 1, 5, Math.PI, 0);
       ctx.stroke();
       ctx.restore();
-      fillText(`第${TOWER_UNLOCK[type]}章`, bx + sw / 2, by + 74, { size: 10, color: C.sub, align: 'center' });
+      fillText(`第${TOWER_UNLOCK[type]}章`, bx + sw / 2, by + 54, { size: 10, color: C.sub, align: 'center' });
     }
   });
   ctx.restore();
@@ -1574,6 +2144,9 @@ function drawTechOverlay(st: NonNullable<GameEngine>['state']) {
 
 function drawResult(time: number) {
   hooks = [];
+  // 皮肤模块可插拔：整屏接管（模块自绘背景与页头）
+  const m = SKIN_MODULES[skin.id];
+  if (m?.drawResult) { m.drawResult(env, time); return; }
   drawSpaceBg(time);
   const won = app.result!.won;
   const st = app.engine!.state;
@@ -1703,6 +2276,8 @@ function drawResult(time: number) {
   y += 58;
   btn({ x: px, y, w: (pw - 12) / 2, h: 46, label: won ? '再来一局' : '再战本关', color: C.gold, cb: () => gotoBriefing(app.levelId) });
   btn({ x: px + (pw - 12) / 2 + 12, y, w: (pw - 12) / 2, h: 46, label: '返回选关', cb: () => goto('home') });
+
+  if (showSettings) drawSettingsOverlay();
 }
 
 // ---------------- 战斗场景（地图坐标） ----------------
@@ -1775,6 +2350,7 @@ function drawBattleScene() {
     ctx.stroke();
     ctx.setLineDash([]);
   }
+  ctx.restore();
   drawPath(ctx, engine.level.paths, time);
   // 地面灼痕（击杀残留焦痕，贴地、在基地/塔/敌人之下）
   fx?.drawScorches(ctx);
@@ -1960,6 +2536,9 @@ const CODEX_TABS: [CodexTab, string][] = [['story', '故事'], ['towers', '炮�
 
 function drawCodex(time: number) {
   hooks = [];
+  // 皮肤模块可插拔：整屏接管（模块自绘背景与页头）
+  const m = SKIN_MODULES[skin.id];
+  if (m?.drawCodex) { m.drawCodex(env, time); return; }
   drawSpaceBg(time);
   drawHeader('指挥官图鉴', { back: () => goto('home') });
 
@@ -2007,13 +2586,14 @@ function drawCodex(time: number) {
     const thumbH = Math.max(30, viewH * (viewH / (viewH + codexMaxScroll)));
     const ty = top + (viewH - thumbH) * (codex.scroll / codexMaxScroll);
     ctx.save();
-    ctx.fillStyle = 'rgba(34,224,255,0.25)';
+    ctx.fillStyle = ac(0.25);
     rr(VW - 4, ty, 3, thumbH, 1.5);
     ctx.fill();
     ctx.restore();
   }
 
   if (showProfile) drawProfileOverlay();
+  if (showSettings) drawSettingsOverlay();
 }
 
 function drawCodexStory(y0: number, time: number, top: number, bottom: number): number {
@@ -2194,11 +2774,42 @@ function frame() {
     else if (app.screen === 'codex') drawCodex(now / 1000);
     else if (app.screen === 'result' && app.engine) drawResult(now / 1000);
 
-    // 页面切换淡入
+    // 页面切换过渡：风格随皮肤（fade 淡入 / wipe 切角挡板横扫 / glitch 黑场色带）
     const ft = (Date.now() - screenAt) / 240;
     if (ft < 1) {
-      ctx.fillStyle = `rgba(7,11,24,${(1 - ft).toFixed(3)})`;
-      ctx.fillRect(0, 0, VW, VH);
+      if (skin.transition === 'wipe') {
+        // 切角挡板：三块斜切遮罩（rr 随 skin.chrome 出切角）错峰从右向左扫出屏幕，进度驱动
+        const bands = 3;
+        const bh = VH / bands;
+        for (let i = 0; i < bands; i++) {
+          const p = Math.min(1, Math.max(0, ft * 1.7 - i * 0.22));
+          if (p >= 1) continue;
+          const e = 1 - (1 - p) ** 3; // easeOutCubic
+          const x = -e * (VW + 96);
+          rr(x, i * bh - 1, VW + 96, bh + 2, 26);
+          ctx.fillStyle = skin.panelSolid;
+          ctx.fill();
+          ctx.strokeStyle = ac(0.55);
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+      } else if (skin.transition === 'glitch') {
+        // 故障：黑场渐散 + accent 低透明度水平色带离散跳变（量化进度 + hash01，帧间确定性）
+        const a = 1 - ft;
+        ctx.fillStyle = `rgba(2,4,10,${a.toFixed(3)})`;
+        ctx.fillRect(0, 0, VW, VH);
+        const frameSeed = Math.floor(ft * 14) * 31;
+        for (let i = 0; i < 5; i++) {
+          const gy = hash01(frameSeed + i * 7 + 3) * VH;
+          const gh = 3 + hash01(frameSeed + i * 13 + 5) * 22;
+          const gx = (hash01(frameSeed + i * 17 + 9) - 0.5) * 48 * a;
+          ctx.fillStyle = ac(0.32 * a * (0.4 + hash01(frameSeed + i * 5 + 1) * 0.6));
+          ctx.fillRect(gx, gy, VW, gh);
+        }
+      } else {
+        ctx.fillStyle = `rgba(7,11,24,${(1 - ft).toFixed(3)})`;
+        ctx.fillRect(0, 0, VW, VH);
+      }
     }
     drawToast();
   } catch (e) {
@@ -2216,6 +2827,69 @@ function frame() {
   requestAnimationFrame(frame);
 }
 
+// ---------------- 皮肤模块环境（单例） ----------------
+// 对象字面量 + getter/setter：可变对象（C/app/codex）直接引用共享，可变 let（skin/barScroll/
+// techShownAt/qualityHigh 等）经 getter/setter 转发，保证模块读到的永远是最新值。
+// 放在触摸注册之前：模块顶层求值到此行时，上面所有 let 均已初始化（避开 TDZ），
+// 而 env 首次被使用是在 frame()/触摸回调里，时机安全。
+
+/** 皮肤在 handleTouch('end') 里 env.consumeTap() 置位，主循环当次跳过内置 hooks 点击派发，用后清零 */
+let tapConsumed = false;
+
+const env: SkinEnv = {
+  // 画布与布局
+  ctx, VW, VH, DPR, TOP_SAFE, CAP_MID, CAP_LEFT, GAME_CENTER_PAD, MARGIN, RADIUS, BAR_H,
+  mapScale, mapOX, mapOY, toMapX, toMapY,
+  getMapPan: () => mapPan,
+  mapPanMin, homeTop, homeBottom, totalScrollMax,
+  // 配色
+  C,
+  get skin() { return skin; },
+  ac,
+  // 绘制助手
+  fillText, rr, panel, wrapBlock, wrapCount, shade, btn, hitBox, chip, segControl, drawSwitch,
+  drawAvatar, drawCardArt, drawSpaceBg, drawStars, RES_FONT, rng, hash01, drawTower, drawEnemy,
+  // 状态访问
+  app, codex,
+  getScreenAt: () => screenAt,
+  showProfile: () => showProfile,
+  setShowProfile: (v) => { showProfile = v; },
+  showSettings: () => showSettings,
+  setShowSettings: (v) => { showSettings = v; },
+  getPressedBtn: () => pressedBtn,
+  getTechShownAt: () => techShownAt,
+  setTechShownAt: (v) => { techShownAt = v; },
+  get barScroll() { return barScroll; },
+  set barScroll(v: number) { barScroll = v; },
+  getEngine: () => app.engine,
+  // 数据
+  LEVELS, DIFF_LIST, DIFFICULTIES, TOWER_LIST, ENEMY_LIST, TOWERS, ENEMIES, TECHS,
+  TOWER_ORDER, TOWER_UNLOCK, SELL_RATE, STORY_PARAS, CODEX_TABS, ENEMY_CATEGORY,
+  SLOT_W, SLOT_GAP, stripMaxScroll, SKINS, CELL, COLS, ROWS,
+  // 进度与解锁
+  loadProgress, unlockedChapter, towerUnlocked,
+  // 动作
+  goto, gotoBriefing, stopNarration, startBattle, engineCmd, applySkin, authUser, openFeedback,
+  // 主动拉起分享（判空包装 wx.shareAppMessage）
+  shareAppMessage: (o) => { try { wx.shareAppMessage?.(o); } catch { /* ignore */ } },
+  commanderRank, displayNick,
+  getProfile: () => profile,
+  // 反馈
+  sfx, buzz, showToast, track, store,
+  getToast: () => toast,
+  // 设置项状态
+  musicMuted: () => musicMuted,
+  toggleMusicMuted,
+  narrationMuted: () => narrationMuted,
+  toggleNarrationMuted,
+  vibrateMuted: () => vibrateMuted,
+  toggleVibrateMuted,
+  readQualityHigh: readWxQualityHigh,
+  setQualityHigh: (v) => { setWxQualityHigh(v); qualityHigh = v; },
+  // 触摸接管
+  consumeTap: () => { tapConsumed = true; },
+};
+
 // ---------------- 触控 ----------------
 
 let touchTime = 0;
@@ -2225,6 +2899,8 @@ wx.onTouchStart((e) => {
   if (!p0) return;
   sfx.init(); // 首次用户手势时初始化 WebAudio
   const p = touchPoint(p0);
+  // 皮肤模块可插拔：返回 true 表示消费该事件，跳过默认处理
+  if (SKIN_MODULES[skin.id]?.handleTouch?.(env, 'start', p)) return;
   touchTime = Date.now();
 
   // 按钮按压反馈：记录当前按下的按钮（命中最新一帧的 hooks）
@@ -2233,6 +2909,9 @@ wx.onTouchStart((e) => {
     const b = hooks[i];
     if (!b.disabled && hit(p, b)) { pressedBtn = b; break; }
   }
+
+  // 弹层（设置中心/指挥官档案）打开时，底层页面不响应滑动与战斗手势；面板按钮由 touchend 的 hooks 触发
+  if (showSettings || showProfile) return;
 
   if (app.screen === 'home' || app.screen === 'codex') { app.dragY = p.y; app.dragAcc = 0; return; }
 
@@ -2284,6 +2963,8 @@ wx.onTouchMove((e) => {
   const p0 = e.touches[0];
   if (!p0) return;
   const p = touchPoint(p0);
+  // 皮肤模块可插拔：返回 true 表示消费该事件，跳过默认处理
+  if (SKIN_MODULES[skin.id]?.handleTouch?.(env, 'move', p)) return;
 
   if (app.screen === 'home' || app.screen === 'codex') {
     if (app.dragY == null) return;
@@ -2330,6 +3011,10 @@ wx.onTouchEnd((e) => {
   const p0 = (e.changedTouches ?? e.touches)[0];
   if (!p0) return;
   const p = touchPoint(p0);
+  // 皮肤模块可插拔：返回 true 消费整个事件；返回 falsy 时若模块调用了 env.consumeTap()，
+  // 仍走默认手势收尾，但跳过最后的内置 hooks 点击派发
+  tapConsumed = false;
+  if (SKIN_MODULES[skin.id]?.handleTouch?.(env, 'end', p)) { tapConsumed = false; return; }
   const isScrollPage = app.screen === 'home' || app.screen === 'codex';
   if (isScrollPage) {
     // 拖动滚动超过了阈值则不视为点击
@@ -2387,6 +3072,8 @@ wx.onTouchEnd((e) => {
 
   const quick = Date.now() - touchTime < 600;
   if (!quick) return;
+  // 模块在 handleTouch('end') 里 consumeTap() 后，当次不再派发内置按钮点击
+  if (tapConsumed) { tapConsumed = false; return; }
 
   for (let i = hooks.length - 1; i >= 0; i--) {
     const b = hooks[i];

@@ -1,4 +1,4 @@
-// 战斗音效 —— WebAudio 程序化合成（移植自 H5 版 app/src/game/audio.ts 的音效部分）
+// 战斗音效 —— WebAudio 程序化合成（移植自 H5 版引擎的音效部分）
 // 零素材零包体积；BGM 由音频文件分包播放，不在本模块
 declare const wx: {
   createWebAudioContext(): WebAudioContextLike;
@@ -13,7 +13,8 @@ interface AudioParamLike {
   exponentialRampToValueAtTime(v: number, t: number): void;
   setTargetAtTime(v: number, t: number, tc: number): void;
 }
-interface AudioNodeLike { connect(d: AudioNodeLike): AudioNodeLike }
+// 注意：微信的 connect 实现不返回目标节点（与浏览器规范不同），禁止链式调用
+interface AudioNodeLike { connect(d: AudioNodeLike): void }
 interface OscillatorLike extends AudioNodeLike {
   type: string; frequency: AudioParamLike;
   start(t: number): void; stop(t: number): void;
@@ -46,7 +47,7 @@ const SFX_VOL: Partial<Record<Sfx, number>> = {
 };
 const sfxVol = (sfx: Sfx) => SFX_VOL[sfx] ?? 0.2;
 
-const MUTE_KEY = 'srd.muted';
+const MUTE_KEY = 'srd.sfxMuted';
 
 class SfxEngine {
   private ctx: WebAudioContextLike | null = null;
@@ -122,11 +123,14 @@ class SfxEngine {
       f.frequency.value = lp;
       const g = ctx.createGain();
       env(g, peak, dur);
-      src.connect(f).connect(g);
+      src.connect(f);
+      f.connect(g);
       src.start(t);
     };
 
-    switch (sfx) {
+    // 音频合成绝不允许把异常抛进游戏主循环（微信 WebAudio 与浏览器有行为差异）
+    try {
+      switch (sfx) {
       case 'laser': osc('sawtooth', 880, 220, 0.08); break;
       case 'missile':
         osc('triangle', 180, 60, 0.25);
@@ -174,49 +178,54 @@ class SfxEngine {
         setTimeout(() => this.playChord(f), i * 160)); break;
       case 'defeat': [392, 311, 233, 155].forEach((f, i) =>
         setTimeout(() => this.playChord(f), i * 220)); break;
-    }
+      }
+    } catch { /* 单个音效失败静默降级 */ }
   }
 
   private playSafe(sfx: 'leak2' | 'waveClear2' | 'waveClear3' | 'tech2') {
-    const ctx = this.ctx;
-    if (!ctx || this.muted || !this.master) return;
-    const t = ctx.currentTime;
-    const notes: Record<typeof sfx, [number, number]> = {
-      leak2: [520, 140],
-      waveClear2: [880, 880],
-      waveClear3: [1320, 1320],
-      tech2: [1040, 1560],
-    };
-    const [f0, f1] = notes[sfx];
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = sfx === 'leak2' ? 'square' : 'sine';
-    o.frequency.setValueAtTime(f0, t);
-    o.frequency.exponentialRampToValueAtTime(f1, t + 0.12);
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.16, t + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
-    g.connect(this.master);
-    o.connect(g);
-    o.start(t);
-    o.stop(t + 0.2);
+    try {
+      const ctx = this.ctx;
+      if (!ctx || this.muted || !this.master) return;
+      const t = ctx.currentTime;
+      const notes: Record<typeof sfx, [number, number]> = {
+        leak2: [520, 140],
+        waveClear2: [880, 880],
+        waveClear3: [1320, 1320],
+        tech2: [1040, 1560],
+      };
+      const [f0, f1] = notes[sfx];
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = sfx === 'leak2' ? 'square' : 'sine';
+      o.frequency.setValueAtTime(f0, t);
+      o.frequency.exponentialRampToValueAtTime(f1, t + 0.12);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.16, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+      g.connect(this.master);
+      o.connect(g);
+      o.start(t);
+      o.stop(t + 0.2);
+    } catch { /* 静默降级 */ }
   }
 
   private playChord(f: number) {
-    const ctx = this.ctx;
-    if (!ctx || this.muted || !this.master) return;
-    const t = ctx.currentTime;
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = 'triangle';
-    o.frequency.value = f;
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.18, t + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
-    g.connect(this.master);
-    o.connect(g);
-    o.start(t);
-    o.stop(t + 0.55);
+    try {
+      const ctx = this.ctx;
+      if (!ctx || this.muted || !this.master) return;
+      const t = ctx.currentTime;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'triangle';
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.18, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+      g.connect(this.master);
+      o.connect(g);
+      o.start(t);
+      o.stop(t + 0.55);
+    } catch { /* 静默降级 */ }
   }
 }
 

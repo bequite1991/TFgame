@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<!-- 本地效果预览 harness：用浏览器 stub wx API 跑 game.js，配合 headless Chromium 截图
+     用法: python3 -m http.server 后访问 preview.html?skin=abyss|ember|matrix&screen=home|battle -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>html,body{margin:0;padding:0;background:#04060E;overflow:hidden}canvas{display:block;width:390px;height:844px}</style>
+</head>
+<body>
+<script>
+// headless shell 在 mac 无显示源：rAF 不会自动触发。改用 setTimeout(16) 驱动帧循环，
+// 使其随虚拟时间推进；同时用帧计数自维护虚拟时钟接管 Date.now（游戏动画/引擎全靠 Date.now）
+let __vnow = Date.now();
+Date.now = () => __vnow;
+window.requestAnimationFrame = (cb) => setTimeout(() => { __vnow += 16.7; cb(__vnow); }, 16);
+
+const Q = new URLSearchParams(location.search);
+const SKIN = Q.get('skin') || 'abyss';
+const SCREEN = Q.get('screen') || 'battle';
+const VW = 390, VH = 844;
+
+// ---- wx API stub ----
+const touchCbs = { start: [], move: [], end: [] };
+const mem = {
+  'srd.skin': SKIN,
+  'srd.settings': { quality: 'high' },
+  'srd.progress': { cleared: [1, 2, 3, 4, 5, 6, 7, 8] }, // 解锁全部炮塔
+  'srd.musicMuted': '1', 'srd.narrationMuted': '1', 'srd.vibrateMuted': '1',
+};
+let firstCanvas = true;
+window.wx = {
+  createCanvas() {
+    const c = document.createElement('canvas');
+    if (firstCanvas) { firstCanvas = false; document.body.appendChild(c); }
+    return c;
+  },
+  getSystemInfoSync: () => ({ windowWidth: VW, windowHeight: VH, pixelRatio: 2 }),
+  onTouchStart: (cb) => touchCbs.start.push(cb),
+  onTouchMove: (cb) => touchCbs.move.push(cb),
+  onTouchEnd: (cb) => touchCbs.end.push(cb),
+  setStorageSync: (k, v) => { mem[k] = v; },
+  getStorageSync: (k) => (k in mem ? mem[k] : ''),
+  getMenuButtonBoundingClientRect: () => ({ top: 54, bottom: 86, left: VW - 90, right: VW - 10 }),
+  getAccountInfoSync: () => ({ miniProgram: { envVersion: 'release' } }),
+  createImage: () => new Image(),
+  createInnerAudioContext: () => ({
+    src: '', volume: 1, autoplay: false, obeyMuteSwitch: false, loop: false,
+    play() {}, stop() {}, destroy() {}, onError() {}, onCanplay() {},
+  }),
+  loadSubpackage: (o) => { o.success && o.success(); },
+  vibrateShort() {}, showShareMenu() {}, onShareAppMessage() {}, onShareTimeline() {},
+};
+</script>
+<script src="game.js"></script>
+<script>
+// ---- 驱动：模拟触摸走到目标页面 ----
+const LOG = [];
+function slog(msg) {
+  if (!Q.get('debug')) return;
+  LOG.push(msg);
+  const el = document.getElementById('dbg');
+  if (el) el.innerHTML = LOG.slice(-14).join('<br>');
+}
+function fire(list, e) { list.forEach((cb) => cb(e)); }
+function tap(x, y) {
+  const a = window.__SRD;
+  slog(`tap(${Math.round(x)},${Math.round(y)}) screen=${a && a.screen} hooks=${hooks().length}`);
+  const t = { clientX: x, clientY: y };
+  fire(touchCbs.start, { touches: [t] });
+  fire(touchCbs.end, { touches: [], changedTouches: [t] });
+  slog(` -> screen=${a && a.screen}`);
+}
+function hold(x, y, ms, done) {
+  const t = { clientX: x, clientY: y };
+  fire(touchCbs.start, { touches: [t] });
+  setTimeout(() => { fire(touchCbs.end, { touches: [], changedTouches: [t] }); done && done(); }, ms);
+}
+function hooks() { return window.__SRD_HOOKS ? __SRD_HOOKS.get() : []; }
+function hookAt(x, y) { return hooks().find((h) => x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h); }
+function tapHook(h) { if (h) tap(h.x + h.w / 2, h.y + h.h / 2); return !!h; }
+function findCta() {
+  const hs = hooks().filter((h) => h.y > VH * 0.45 && h.w >= 140 && !/返回|关闭|旁白|取消/.test(h.label));
+  return hs.sort((a, b) => a.y - b.y)[0] || null;
+}
+
+if (Q.get('debug')) {
+  const dbg = document.createElement('div');
+  dbg.id = 'dbg';
+  dbg.style.cssText = 'position:fixed;left:0;top:500px;color:#0f0;font-size:11px;z-index:9;background:rgba(0,0,0,0.7);max-width:390px';
+  document.body.appendChild(dbg);
+  window.addEventListener('error', (e) => slog('WINERR ' + e.message));
+  const _ce = console.error.bind(console);
+  console.error = (...a) => { slog('CERR ' + a.map(String).join(' ').slice(0, 160)); _ce(...a); };
+}
+
+// ---- 状态机轮询驱动：不看固定时序，按当前页面找目标按钮，各皮肤位置差异自适应 ----
+let built = false;
+let briefingActAt = -9999;
+let techPickAt = -9999;
+function buildTowers() {
+  const eng = window.__SRD && __SRD.engine;
+  if (!eng) { slog('no engine at build step'); return; }
+  eng.state.gold = 9999;
+  const types = ['laser', 'missile', 'frost', 'railgun', 'tesla', 'plasma'];
+  const cells = [];
+  for (let r = 0; r < 30 && cells.length < 40; r++) {
+    for (let c = 0; c < 20 && cells.length < 40; c++) {
+      try { if (eng.map.isBuildable(c, r)) cells.push([c, r]); } catch (e) {}
+    }
+  }
+  // 地图初始底对齐：优先在可视的下半区造塔，截图能看到塔群
+  cells.sort((a, b) => b[1] - a[1]);
+  const zone = cells.slice(0, 14);
+  const picks = [1, 4, 6, 9, 11, 13].map((i) => zone[Math.min(i, zone.length - 1)]).filter(Boolean);
+  picks.forEach(([c, r], i) => eng.dispatch({ type: 'BUILD', col: c, row: r, tower: types[i % types.length] }));
+  eng.dispatch({ type: 'SKIP_PREP' });
+  eng.dispatch({ type: 'SET_SPEED', speed: 2 });
+}
+setInterval(() => {
+  const a = window.__SRD;
+  if (!a) return;
+  if (a.screen === 'splash') {
+    // 菜单未出（只剩全屏跳过热区）→ 点中央跳过；菜单出了 → 点「开始战役」（下半屏最大命中区）
+    const start = hooks().find((h) => /开始战役/.test(h.label))
+      || hooks().filter((h) => h.y > VH * 0.45).sort((x, y) => y.w * y.h - x.w * x.h)[0];
+    if (start && start.w < VW * 0.98) tapHook(start);
+    else tap(VW / 2, VH * 0.55);
+  } else if (a.screen === 'home' && SCREEN === 'battle') {
+    const h = hooks().find((b) => /出击|重玩/.test(b.label));
+    if (h) tapHook(h);
+  } else if (a.screen === 'briefing') {
+    if (SKIN === 'matrix' && Date.now() - briefingActAt < 1500) return; // matrix 长按充能期间防重入
+    briefingActAt = Date.now();
+    const h = findCta();
+    if (!h) return;
+    const cx = h.x + h.w / 2, cy = h.y + h.h / 2;
+    if (SKIN === 'matrix') hold(cx, cy, 1100);   // 紫晶矩阵：长按充能确认
+    else tap(cx, cy);                            // 琥珀工业两段确认：下个轮询周期（350ms<1.6s 待命窗）自动补第二击
+  } else if (a.screen === 'battle') {
+    const eng = a.engine;
+    if (eng && eng.state.phase === 'tech') {
+      // 科技三选一：自动点第一张卡，继续下一波
+      if (Date.now() - techPickAt > 1200) {
+        techPickAt = Date.now();
+        const card = hooks().filter((h) => h.h >= 90 && h.w > VW * 0.6).sort((x, y) => x.y - y.y)[0];
+        if (card) tap(card.x + card.w / 2, card.y + card.h / 2);
+      }
+      return;
+    }
+    if (!built) { built = true; buildTowers(); }
+  }
+}, 350);
+</script>
+</body>
+</html>
