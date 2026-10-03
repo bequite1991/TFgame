@@ -32,10 +32,38 @@ export interface User {
   avatar_url: string;
   rank: string;
   cleared: number[];
+  /** 历史字段：按事件累计的积分（保留兼容老数据，新逻辑以 points 为准） */
   score_total: number;
+  /** 服务端认定的累计积分（云端 max 合并结果） */
+  points: number;
+  /** 单局最高积分 */
+  best_single: number;
+  /** 各关最高单局积分（键为关卡 id 的数字字符串） */
+  per_level_best: Record<string, number>;
+  /** 积分档案最后更新时间（ISO） */
+  score_updated_at: string;
   status: UserStatus;
   created_at: string;
   last_seen_at: string;
+}
+
+/** 积分云端档案（GET/POST /api/user/score 返回结构） */
+export interface ScoreProfile {
+  points: number;
+  bestSingle: number;
+  perLevelBest: Record<string, number>;
+  updatedAt: string;
+}
+
+/** 管理端审计记录（audit.jsonl 每行一条） */
+export interface AuditEntry {
+  actor: 'admin';
+  action: 'score_adjust' | 'ban';
+  target: string;
+  before: unknown;
+  after: unknown;
+  reason?: string;
+  at: string; // ISO
 }
 
 export interface Score {
