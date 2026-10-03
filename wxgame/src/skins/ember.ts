@@ -222,9 +222,11 @@ function drawHome(env: SkinEnv, time: number) {
   emberBg(env, time);
   emberHeader(env, '战役档案', 'OPERATION ARCHIVE', () => env.goto('splash'));
 
-  // 难度选择：三个工业切角 tab（替代胶囊分段控件）
+  // 难度选择：三个工业切角 tab（替代胶囊分段控件）+ 右侧 单人/双人 切换（§4.1）
   const tabY = env.TOP_SAFE + 6;
-  const tabW = (VW - MARGIN * 2 - 16) / 3;
+  const fullW = VW - MARGIN * 2;
+  const diffW = Math.round(fullW * 0.62);
+  const tabW = (diffW - 16) / 3;
   env.DIFF_LIST.forEach((d, i) => {
     const x = MARGIN + i * (tabW + 8);
     const on = env.app.difficulty === d;
@@ -259,6 +261,40 @@ function drawHome(env: SkinEnv, time: number) {
           env.buzz('light');
         }
       },
+    });
+  });
+
+  // 单人/双人同屏：同款工业切角小 tab（SOLO / CO-OP）
+  const coopX = MARGIN + diffW + 10;
+  const coopTabW = (fullW - diffW - 10 - 8) / 2;
+  (['单人', '双人'] as const).forEach((label, i) => {
+    const x = coopX + i * (coopTabW + 8);
+    const on = (env.app.coop ? 1 : 0) === i;
+    ctx.save();
+    env.rr(x, tabY, coopTabW, 40, 9);
+    if (on) {
+      const g = ctx.createLinearGradient(x, tabY, x, tabY + 40);
+      g.addColorStop(0, i === 1 ? env.C.green : env.C.gold);
+      g.addColorStop(1, env.shade(i === 1 ? env.C.green : env.C.gold));
+      ctx.fillStyle = g;
+      ctx.fill();
+    } else {
+      ctx.fillStyle = env.skin.panelSolid;
+      ctx.fill();
+      ctx.strokeStyle = env.ac(0.3);
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+    ctx.restore();
+    env.fillText(label, x + coopTabW / 2, tabY + 15, {
+      size: 13, color: on ? '#1A1209' : env.C.text, align: 'center',
+    });
+    env.fillText(i === 1 ? 'CO-OP' : 'SOLO', x + coopTabW / 2, tabY + 30, {
+      size: 8, color: on ? 'rgba(26,18,9,0.65)' : env.C.dim, align: 'center', weight: '600', font: env.RES_FONT(),
+    });
+    env.hitBox({
+      x, y: tabY, w: coopTabW, h: 40, label: '',
+      cb: () => { if ((env.app.coop ? 1 : 0) !== i) { env.toggleCoop(); env.buzz('light'); } },
     });
   });
 
@@ -422,7 +458,8 @@ function drawBriefing(env: SkinEnv, time: number) {
   const textW = bw - 32;
   let totalLines = 0;
   for (const para of lv.briefing) totalLines += env.wrapCount(para, textW, textSize) + 0.6;
-  const docH = 40 + bannerH + 10 + Math.ceil(totalLines * lineH) + 44;
+  const coopH = env.app.coop ? 18 : 0; // 双人同屏分工行占位
+  const docH = 40 + bannerH + 10 + Math.ceil(totalLines * lineH) + 44 + coopH;
   env.panel(bx, docY, bw, docH, env.C.panelLine);
   rivets(env, bx, docY, bw, docH);
   // 签发编号行
@@ -442,7 +479,13 @@ function drawBriefing(env: SkinEnv, time: number) {
   // 命令正文
   let ty = docY + 44 + bannerH + 22;
   for (const para of lv.briefing) ty = env.wrapBlock(para, bx + 16, ty, textW, { size: textSize, color: 'rgba(255,243,226,0.85)' }) + lineH * 0.6;
-  // 难度行
+  // 难度行（双人同屏时其上再盖一行协同分工）
+  if (env.app.coop) {
+    env.fillText(
+      '协同分工：P1 工程官建造布防 · P2 战术官升级与科技',
+      bx + 16, docY + docH - 26 - coopH, { size: 10, color: env.C.green, weight: 'normal' },
+    );
+  }
   env.fillText(
     `执行难度：${env.DIFFICULTIES[env.app.difficulty].name} · ${env.DIFFICULTIES[env.app.difficulty].label}`,
     bx + 16, docY + docH - 26, { size: 10, color: env.C.gold, weight: 'normal' },
@@ -575,7 +618,9 @@ function drawBattleHUD(env: SkinEnv, engine: GameEngine) {
     env.fillText(`${isBossWave ? '⚠ BOSS 波 · ' : ''}${summary}`, env.VW / 2, py + 42, {
       size: 9, color: isBossWave ? env.C.pink : env.C.gold, align: 'center', weight: 'normal',
     });
-    env.fillText(isBossWave ? '建议留好金币与穿甲火力' : '据此提前调整布防', env.VW / 2, py + 58, {
+    env.fillText(
+      env.app.coop ? 'P1 建造防线 · P2 把握升级与科技时机' : isBossWave ? '建议留好金币与穿甲火力' : '据此提前调整布防',
+      env.VW / 2, py + 58, {
       size: 9, color: env.C.sub, align: 'center', weight: 'normal',
     });
     armBtn(env, `skipPrep:${st.wave}`, {
@@ -786,7 +831,7 @@ function drawResult(env: SkinEnv, time: number) {
     ctx.restore();
   }
 
-  emberHeader(env, '战后报告', 'AFTER ACTION REPORT', () => env.goto('home'));
+  emberHeader(env, env.app.coop ? '协同战后报告' : '战后报告', env.app.coop ? 'CO-OP AFTER ACTION REPORT' : 'AFTER ACTION REPORT', () => env.goto('home'));
 
   const px = MARGIN;
   const pw = VW - MARGIN * 2;
@@ -810,13 +855,15 @@ function drawResult(env: SkinEnv, time: number) {
     VW / 2, bandY + 50, { size: 12, color: env.C.sub, align: 'center', weight: 'normal' },
   );
 
-  // 战绩记录面板（数字滚动递增）
-  const rows: [string, string, number | null][] = [
+  // 战绩记录面板（数字滚动递增）；末行「积分 +N」金色
+  const settle = env.getLastSettlement();
+  const rows: [k: string, v: string, num: number | null, color?: string, plus?: boolean][] = [
     ['击杀', String(st.kills), st.kills],
     ['漏怪', String(st.leaked), st.leaked],
     ['剩余生命', `${st.lives} / ${st.maxLives}`, null],
     ['赚取金币', String(st.goldEarned), st.goldEarned],
     ['战术模块', String(st.techs.length), st.techs.length],
+    ['积分', `+${settle?.score ?? 0}`, settle?.score ?? 0, env.C.gold, true],
   ];
   const py = bandY + 64;
   const rowH = 33;
@@ -824,13 +871,13 @@ function drawResult(env: SkinEnv, time: number) {
   env.panel(px, py, pw, docH, env.C.panelLine);
   rivets(env, px, py, pw, docH);
   env.fillText('RECORD // 战绩记录', px + 16, py + 16, { size: 10, color: env.C.cyan, weight: '600', font: env.RES_FONT() });
-  rows.forEach(([k, v, num], i) => {
+  rows.forEach(([k, v, num, color, plus], i) => {
     const ry = py + 42 + i * rowH;
-    ctx.fillStyle = env.C.sub;
+    ctx.fillStyle = color ?? env.C.sub;
     ctx.fillRect(px + 16, ry - 4, 3, 8);
-    env.fillText(k, px + 26, ry, { size: 13, color: env.C.sub, weight: 'normal' });
-    const shown = num === null ? v : String(Math.round(num * clamp01((t - 0.25 - i * 0.12) / 0.6)));
-    env.fillText(shown, px + pw - 22, ry, { size: 16, align: 'right', font: env.RES_FONT() });
+    env.fillText(k, px + 26, ry, { size: 13, color: color ?? env.C.sub, weight: 'normal' });
+    const shown = num === null ? v : `${plus ? '+' : ''}${Math.round(num * clamp01((t - 0.25 - i * 0.12) / 0.6))}`;
+    env.fillText(shown, px + pw - 22, ry, { size: 16, align: 'right', font: env.RES_FONT(), color });
     if (i < rows.length - 1) {
       ctx.save();
       ctx.strokeStyle = 'rgba(192,169,138,0.12)';
@@ -890,8 +937,17 @@ function drawResult(env: SkinEnv, time: number) {
     size: 9, color: env.C.sub, align: 'center', weight: 'normal',
   });
 
+  // 军衔进度横幅（工业风：▸ ◂ 夹注；满级显示已达最高军衔）
+  const rprog = env.getRankProgress();
+  env.fillText(
+    rprog.next === null
+      ? `▸ ${rprog.name} · 已达最高军衔 ◂`
+      : `▸ ${rprog.name} · 距「${rprog.nextName}」还差 ${(rprog.next - rprog.points).toLocaleString('en-US')} 分 ◂`,
+    VW / 2, py + docH + 22, { size: 10, color: env.C.gold, align: 'center', weight: 'normal' },
+  );
+
   // 指令区
-  let y = py + docH + 12;
+  let y = py + docH + 40;
   const nextId = env.app.levelId + 1;
   const hasNext = env.LEVELS.some((l) => l.id === nextId);
   if (won) {
@@ -1240,7 +1296,7 @@ function drawProfileImpl(env: SkinEnv) {
   ctx.fillRect(0, 0, VW, VH);
   env.hitBox({ x: 0, y: 0, w: VW, h: VH, label: '', cb: () => {} });
   const pw = VW - 72;
-  const ph = 384;
+  const ph = 460;
   const px = 36;
   const py = VH / 2 - ph / 2;
   env.panel(px, py, pw, ph, env.C.panelLine);
@@ -1274,8 +1330,41 @@ function drawProfileImpl(env: SkinEnv) {
   for (let i = 1; i < env.LEVELS.length; i++) ctx.fillRect(bx + (bw * i) / env.LEVELS.length, by + 8, 1, 10);
   ctx.restore();
 
-  env.btn({ x: px + 24, y: py + 200, w: pw - 48, h: 40, label: '💬 意见反馈', color: env.C.gold, cb: () => env.openFeedback() });
-  let y = py + 252;
+  // 军衔积分进度条（琥珀渐变 + 端帽铆钉；满级显示已达最高军衔）
+  const rp = env.getRankProgress();
+  const ry = by + 46;
+  env.fillText(
+    rp.next === null
+      ? `积分 ${rp.points.toLocaleString('en-US')} · 已达最高军衔`
+      : `积分 ${rp.points.toLocaleString('en-US')} / ${rp.next.toLocaleString('en-US')} · 距「${rp.nextName}」还差 ${(rp.next - rp.points).toLocaleString('en-US')} 分`,
+    VW / 2, ry - 6, { size: 11, color: env.C.sub, align: 'center', weight: 'normal' },
+  );
+  env.rr(bx, ry + 8, bw, 10, 3);
+  ctx.fillStyle = 'rgba(192,169,138,0.14)';
+  ctx.fill();
+  const frac = rp.next === null ? 1 : Math.min(1, Math.max(0, (rp.points - rp.base) / (rp.next - rp.base)));
+  if (frac > 0) {
+    env.rr(bx, ry + 8, Math.max(10, bw * frac), 10, 3);
+    const g = ctx.createLinearGradient(bx, 0, bx + bw, 0);
+    g.addColorStop(0, env.shade(env.C.gold));
+    g.addColorStop(1, env.C.gold);
+    ctx.fillStyle = g;
+    ctx.fill();
+  }
+  // 等分刻度（与战役条同款工业刻度语言）
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,243,226,0.25)';
+  for (let i = 1; i < 6; i++) ctx.fillRect(bx + (bw * i) / 6, ry + 8, 1, 10);
+  ctx.restore();
+
+  // 绑定状态行（静默登录成功后有 openid）
+  const openid = env.getProfile().openid;
+  if (openid) {
+    env.fillText(`已绑定 · ${openid.slice(0, 12)}…`, VW / 2, ry + 36, { size: 10, color: env.C.green, align: 'center', weight: 'normal' });
+  }
+
+  env.btn({ x: px + 24, y: py + 278, w: pw - 48, h: 40, label: '💬 意见反馈', color: env.C.gold, cb: () => env.openFeedback() });
+  let y = py + 330;
   if (!env.getProfile().real) {
     env.btn({
       x: px + 24, y, w: pw - 48, h: 44, label: '同步微信头像昵称', color: env.C.green, primary: true,

@@ -119,6 +119,8 @@ function buildTowers() {
 setInterval(() => {
   const a = window.__SRD;
   if (!a) return;
+  // ?coop=1：直接置位会话内双人同屏开关（冒烟多触点路由与文案，不走 UI 切换）
+  if (Q.get('coop') && !a.coop) { a.coop = true; slog('coop=on'); }
   if (a.screen === 'splash') {
     // 菜单未出（只剩全屏跳过热区）→ 点中央跳过；菜单出了 → 点「开始战役」（下半屏最大命中区）
     const start = hooks().find((h) => /开始战役/.test(h.label))

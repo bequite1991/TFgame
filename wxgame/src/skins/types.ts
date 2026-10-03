@@ -65,6 +65,8 @@ export interface AppState {
   result: { won: boolean } | null;
   techShownAt: number;
   techPickedAt: number;
+  /** 双人同屏协作开关（§4.1 A 档；按会话保持，不落盘） */
+  coop: boolean;
 }
 
 /** 图鉴页签 */
@@ -74,7 +76,25 @@ export type CodexTab = 'story' | 'towers' | 'enemies';
 export interface CodexState { tab: CodexTab; scroll: number }
 
 /** 用户信息 */
-export interface Profile { nick: string; avatarUrl: string; real: boolean }
+export interface Profile { nick: string; avatarUrl: string; real: boolean; openid?: string }
+
+/** 积分档案（srd.score；与 main.ts 的 ScoreProfile 结构一致，经 env 只读访问） */
+export interface ScoreProfile {
+  points: number;        // 累计积分（历史总产出，不减）
+  spendable: number;     // 消费积分（产出时与 points 同增；MVP 暂无消耗点）
+  bestSingle: number;    // 单局最高积分
+  perLevelBest: Record<number, number>; // 每关最高单局积分
+  season: number;
+  updatedAt: number;
+}
+
+/** 军衔档位与升级进度（按累计积分分档；满级时 next/nextName 为 null） */
+export interface RankProgress {
+  name: string; points: number; base: number; next: number | null; nextName: string | null;
+}
+
+/** 最近一局结算（gameOver 时由主文件写入，开局清空；结算页展示「积分 +N」用） */
+export interface Settlement { score: number; grade: 'S' | 'A' | 'B' | 'D' }
 
 /** fillText 的可选参数（与 main.ts 内部实现一致） */
 export interface FillTextOpts {
@@ -185,11 +205,18 @@ export interface SkinEnv {
   applySkin(id: string): void;      // 切换皮肤（含持久化）
   authUser(): void;                 // 拉起微信头像昵称授权
   openFeedback(): void;             // 客服会话 → 回退复制反馈邮箱
+  toggleCoop(): void;               // 切换 单人/双人同屏（翻转 app.coop + track coop_toggle）
   /** 主动拉起微信分享（判空包装 wx.shareAppMessage；不支持的环境静默跳过） */
   shareAppMessage(o: { title: string; imageUrl?: string }): void;
   commanderRank(): string;
   displayNick(): string;
   getProfile(): Profile;
+  /** 积分档案（srd.score）只读访问：积分条/排行展示用 */
+  getScore(): ScoreProfile;
+  /** 当前军衔档位与升级进度（满级时 next/nextName 为 null） */
+  getRankProgress(): RankProgress;
+  /** 最近一局结算积分与评级（gameOver 写入、开局清空；结算页「积分 +N」数据源，无则为 null） */
+  getLastSettlement(): Settlement | null;
 
   // ---- 反馈 ----
   sfx: typeof sfx;                  // 战斗音效（sfx.muted 为音效开关状态）

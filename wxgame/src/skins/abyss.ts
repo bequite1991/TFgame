@@ -358,12 +358,14 @@ function drawHome(env: SkinEnv, time: number) {
   holoAtmosphere(env, time);
   holoHeader(env, time, '高塔防线 · 战役选择', () => env.goto('splash'));
 
-  // 难度分段（全息舱样式，行为与默认一致）
+  // 难度分段（全息舱样式，行为与默认一致）+ 右侧 单人/双人同屏 切换（§4.1）
   const segW = VW - MARGIN * 2;
-  holoSeg(env, MARGIN, env.TOP_SAFE + 4, segW, env.DIFF_LIST.map((d) => env.DIFFICULTIES[d].name), env.DIFF_LIST.indexOf(env.app.difficulty), 'diff', (i) => {
+  const diffW = Math.round(segW * 0.6);
+  holoSeg(env, MARGIN, env.TOP_SAFE + 4, diffW, env.DIFF_LIST.map((d) => env.DIFFICULTIES[d].name), env.DIFF_LIST.indexOf(env.app.difficulty), 'diff', (i) => {
     env.app.difficulty = env.DIFF_LIST[i];
     env.track('difficulty_select', { difficulty: env.app.difficulty });
   }, time);
+  holoSeg(env, MARGIN + diffW + 10, env.TOP_SAFE + 4, segW - diffW - 10, ['单人', '双人同屏'], env.app.coop ? 1 : 0, 'coop', () => { env.toggleCoop(); env.buzz('light'); }, time);
 
   // 关卡卡列表（几何与默认一致，滚动由主文件触摸驱动）
   const homeTop = env.homeTop;
@@ -566,6 +568,21 @@ function drawBriefing(env: SkinEnv, time: number) {
   ctx.stroke();
   ctx.restore();
   env.fillText(diffTxt, VW / 2, afterY + 0.5, { size: 11, color: env.C.gold, align: 'center' });
+  // 双人同屏：注明分工（§4.1：P1 建造 · P2 指挥；绿色全息胶囊）
+  if (env.app.coop) {
+    const coopTxt = '双人同屏 · P1 建造 · P2 指挥';
+    ctx.save();
+    ctx.font = 'bold 11px sans-serif';
+    const cw = ctx.measureText(coopTxt).width + 24;
+    env.rr(VW / 2 - cw / 2, afterY + 13, cw, 22, 11);
+    ctx.fillStyle = 'rgba(61,240,140,0.12)';
+    ctx.fill();
+    ctx.strokeStyle = `rgba(61,240,140,${0.3 + 0.2 * Math.sin(time * 2.2)})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+    env.fillText(coopTxt, VW / 2, afterY + 24.5, { size: 11, color: env.C.green, align: 'center' });
+  }
 
   holoBtn(env, { x: VW / 2 - 100, y: afterY + 42, w: 200, h: 54, label: '▶ 出 击', primary: true, cb: () => env.startBattle() }, time);
   holoBtn(env, { x: VW / 2 - 100, y: afterY + 118, w: 200, h: 46, label: '返回选关', color: env.C.sub, cb: () => { env.stopNarration(); env.goto('home'); } }, time);
@@ -681,7 +698,10 @@ function drawBattleHUD(env: SkinEnv, engine: GameEngine) {
     const isBossWave = engine.level.waves[st.wave - 1]?.isBoss ?? false;
     const summary = [...new Set(groups.map((gsp) => `${env.ENEMIES[gsp.type].name}×${gsp.count}`))].join(' ');
     env.fillText(`${isBossWave ? '⚠ BOSS 波 · ' : ''}${summary}`, VW / 2, by2 + 34, { size: 9, color: isBossWave ? env.C.pink : '#FF9F43', align: 'center', weight: 'normal' });
-    env.fillText(isBossWave ? '建议留好金币与穿甲火力' : '据此提前调整布防', VW / 2, by2 + 47, { size: 9, color: env.C.sub, align: 'center', weight: 'normal' });
+    env.fillText(
+      env.app.coop ? 'P1 建造防线 · P2 把握升级与科技时机' : isBossWave ? '建议留好金币与穿甲火力' : '据此提前调整布防',
+      VW / 2, by2 + 47, { size: 9, color: env.C.sub, align: 'center', weight: 'normal' },
+    );
     holoBtn(env, { x: VW / 2 - 62, y: by2 + 66, w: 124, h: 36, label: '▶ 立即开战', color: env.C.gold, primary: true, cb: () => env.engineCmd({ type: 'SKIP_PREP' }) }, time);
   }
 }
@@ -1006,7 +1026,7 @@ function drawResult(env: SkinEnv, time: number) {
     ctx.restore();
   }
 
-  holoHeader(env, time, '战斗结算', () => env.goto('home'));
+  holoHeader(env, time, env.app.coop ? '协同作战结算' : '战斗结算', () => env.goto('home'));
   const y0 = env.TOP_SAFE + 16;
   // 标题回弹入场 + 全息错位残影
   const bt = Math.min(1, t / 0.45);
@@ -1022,13 +1042,15 @@ function drawResult(env: SkinEnv, time: number) {
     VW / 2, y0 + 32, { size: 13, color: env.C.sub, align: 'center', weight: 'normal' },
   );
 
-  // 战绩面板（数字滚动递增 + 扫描光周期性扫过）
-  const rows: [string, string, number | null][] = [
+  // 战绩面板（数字滚动递增 + 扫描光周期性扫过）；末行「积分 +N」金色
+  const settle = env.getLastSettlement();
+  const rows: [k: string, v: string, num: number | null, color?: string, plus?: boolean][] = [
     ['击杀', String(st.kills), st.kills],
     ['漏怪', String(st.leaked), st.leaked],
     ['剩余生命', `${st.lives} / ${st.maxLives}`, null],
     ['赚取金币', String(st.goldEarned), st.goldEarned],
     ['战术模块', String(st.techs.length), st.techs.length],
+    ['积分', `+${settle?.score ?? 0}`, settle?.score ?? 0, env.C.gold, true],
   ];
   const px = 24;
   const pw = VW - 48;
@@ -1050,11 +1072,11 @@ function drawResult(env: SkinEnv, time: number) {
     ctx.fillRect(sx - 40, py, 80, panelH);
   }
   ctx.restore();
-  rows.forEach(([k, v, num], i) => {
+  rows.forEach(([k, v, num, color, plus], i) => {
     const ry = py + 27 + i * rowH;
-    env.fillText(k, px + 22, ry, { size: 13, color: env.C.sub, weight: 'normal' });
-    const shown = num === null ? v : String(Math.round(num * clamp01((t - 0.25 - i * 0.12) / 0.6)));
-    env.fillText(shown, px + pw - 22, ry, { size: 16, align: 'right', font: env.RES_FONT() });
+    env.fillText(k, px + 22, ry, { size: 13, color: color ?? env.C.sub, weight: 'normal' });
+    const shown = num === null ? v : `${plus ? '+' : ''}${Math.round(num * clamp01((t - 0.25 - i * 0.12) / 0.6))}`;
+    env.fillText(shown, px + pw - 22, ry, { size: 16, align: 'right', font: env.RES_FONT(), color });
     if (i < rows.length - 1) {
       ctx.save();
       ctx.strokeStyle = 'rgba(124,141,176,0.12)';
@@ -1096,6 +1118,14 @@ function drawResult(env: SkinEnv, time: number) {
   ctx.globalAlpha = ge;
   env.fillText(['完美防线', '防守好手', '守住防线', '防线失守'][['S', 'A', 'B', 'D'].indexOf(grade)], gxp + 46, gyp - 8, { size: 15, color: gradeColor });
   env.fillText(won ? '下一章解锁已记录' : '再挑战一次就能通过', gxp + 46, gyp + 12, { size: 10, color: env.C.sub, weight: 'normal' });
+  // 军衔进度副文案（满级显示已达最高军衔）
+  const rprog = env.getRankProgress();
+  env.fillText(
+    rprog.next === null
+      ? `${rprog.name} · 已达最高军衔`
+      : `${rprog.name} · 距「${rprog.nextName}」还差 ${(rprog.next - rprog.points).toLocaleString('en-US')} 分`,
+    gxp + 46, gyp + 30, { size: 10, color: env.C.gold, weight: 'normal' },
+  );
   ctx.restore();
 
   // 按钮组（依次延迟入场；与默认行为一致）
@@ -1226,7 +1256,7 @@ function drawProfile(env: SkinEnv, time = Date.now() / 1000) {
   // 吞掉面板外点击（同设置中心）
   env.hitBox({ x: 0, y: 0, w: VW, h: VH, label: '', cb: () => {} });
   const pw = VW - 72;
-  const ph = 380;
+  const ph = 456;
   const px = 36;
   const py = VH / 2 - ph / 2;
   ctx.save();
@@ -1277,9 +1307,46 @@ function drawProfile(env: SkinEnv, time = Date.now() / 1000) {
     ctx.restore();
   }
 
+  // 军衔积分进度条（琥珀金渐变 + 前沿光点；满级显示已达最高军衔）
+  const rp = env.getRankProgress();
+  const ry = by + 42;
+  env.fillText(
+    rp.next === null
+      ? `积分 ${rp.points.toLocaleString('en-US')} · 已达最高军衔`
+      : `积分 ${rp.points.toLocaleString('en-US')} / ${rp.next.toLocaleString('en-US')} · 距「${rp.nextName}」还差 ${(rp.next - rp.points).toLocaleString('en-US')} 分`,
+    VW / 2, ry - 8, { size: 11, color: env.C.sub, align: 'center', weight: 'normal' },
+  );
+  env.rr(bx, ry + 6, bw, 10, 5);
+  ctx.fillStyle = 'rgba(255,201,77,0.12)';
+  ctx.fill();
+  const frac = rp.next === null ? 1 : Math.min(1, Math.max(0, (rp.points - rp.base) / (rp.next - rp.base)));
+  if (frac > 0) {
+    const fw2 = Math.max(10, bw * frac);
+    env.rr(bx, ry + 6, fw2, 10, 5);
+    const g = ctx.createLinearGradient(bx, 0, bx + bw, 0);
+    g.addColorStop(0, env.shade(env.C.gold));
+    g.addColorStop(1, env.C.gold);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.save();
+    ctx.shadowColor = env.C.gold;
+    ctx.shadowBlur = 6;
+    ctx.fillStyle = '#FFF3D6';
+    ctx.beginPath();
+    ctx.arc(bx + fw2 - 5, ry + 11, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 绑定状态行（静默登录成功后有 openid）
+  const openid = env.getProfile().openid;
+  if (openid) {
+    env.fillText(`已绑定 · ${openid.slice(0, 12)}…`, VW / 2, ry + 34, { size: 10, color: env.C.green, align: 'center', weight: 'normal' });
+  }
+
   // 意见反馈（客服会话 → 回退复制邮箱）
-  holoBtn(env, { x: px + 24, y: py + 192, w: pw - 48, h: 40, label: '💬 意见反馈', color: env.C.gold, cb: () => env.openFeedback() }, time);
-  let y = py + 244;
+  holoBtn(env, { x: px + 24, y: py + 268, w: pw - 48, h: 40, label: '💬 意见反馈', color: env.C.gold, cb: () => env.openFeedback() }, time);
+  let y = py + 320;
   if (!env.getProfile().real) {
     holoBtn(env, { x: px + 24, y, w: pw - 48, h: 44, label: '同步微信头像昵称', color: env.C.green, primary: true, cb: () => env.authUser() }, time);
     y += 56;

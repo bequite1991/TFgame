@@ -361,10 +361,12 @@ function drawHome(env: SkinEnv, time: number) {
   matrixBg(env, time);
   drawMxHeader(env, '战役选择', () => env.goto('splash'));
 
-  // —— 难度霓虹 tab（钉在顶部） ——
+  // —— 难度霓虹 tab（钉在顶部）+ 右侧 单人/双人 切换（§4.1） ——
   const tabY = TOP_SAFE + 8;
   const tabH = 36;
-  const tabW = (VW - MARGIN * 2 - 16) / 3;
+  const fullW = VW - MARGIN * 2;
+  const diffW = Math.round(fullW * 0.62);
+  const tabW = (diffW - 16) / 3;
   env.DIFF_LIST.forEach((d, i) => {
     const x = MARGIN + i * (tabW + 8);
     const on = env.app.difficulty === d;
@@ -397,6 +399,38 @@ function drawHome(env: SkinEnv, time: number) {
         env.track('difficulty_select', { difficulty: d });
         env.buzz('light');
       },
+    });
+  });
+
+  // —— 单人/双人同屏霓虹 tab（激活下划线：双人档用绿→粉渐变区分难度档） ——
+  const coopX = MARGIN + diffW + 10;
+  const coopTabW = (fullW - diffW - 10 - 8) / 2;
+  (['单人', '双人'] as const).forEach((label, i) => {
+    const x = coopX + i * (coopTabW + 8);
+    const on = (env.app.coop ? 1 : 0) === i;
+    ctx.save();
+    env.rr(x, tabY, coopTabW, tabH, 10);
+    ctx.fillStyle = on ? env.ac(0.16) : 'rgba(20,12,36,0.85)';
+    ctx.fill();
+    ctx.strokeStyle = on ? env.ac(0.8) : 'rgba(110,92,142,0.4)';
+    ctx.lineWidth = on ? 1.5 : 1;
+    ctx.stroke();
+    if (on) {
+      const ug = ctx.createLinearGradient(x, 0, x + coopTabW, 0);
+      ug.addColorStop(0, i === 1 ? 'rgba(61,240,140,0.9)' : env.ac(0.9));
+      ug.addColorStop(1, 'rgba(255,61,129,0.9)');
+      ctx.fillStyle = ug;
+      ctx.shadowColor = env.C.cyan;
+      ctx.shadowBlur = 6;
+      ctx.fillRect(x + 8, tabY + tabH - 3, coopTabW - 16, 2);
+    }
+    ctx.restore();
+    env.fillText(label, x + coopTabW / 2, tabY + tabH / 2, {
+      size: 13, color: on ? env.C.text : env.C.dim, align: 'center',
+    });
+    env.hitBox({
+      x, y: tabY, w: coopTabW, h: tabH, label: `coop-${i}`,
+      cb: () => { if ((env.app.coop ? 1 : 0) !== i) { env.toggleCoop(); env.buzz('light'); } },
     });
   });
 
@@ -511,7 +545,7 @@ function drawHome(env: SkinEnv, time: number) {
 
 /** 简报打印行缓存（段落按宽度重排一次，后续每帧只做切片） */
 function briefLines(env: SkinEnv, lv: SkinEnv['LEVELS'][number], textW: number, size: number): [string, string][] {
-  const key = `${lv.id}|${textW}|${env.skin.id}|${env.app.difficulty}`;
+  const key = `${lv.id}|${textW}|${env.skin.id}|${env.app.difficulty}|${env.app.coop ? 1 : 0}`;
   if (briefCache && briefCache.key === key) return briefCache.lines;
   const per = Math.max(6, Math.floor(textW / size));
   const body = 'rgba(164,143,200,0.95)';
@@ -527,6 +561,8 @@ function briefLines(env: SkinEnv, lv: SkinEnv['LEVELS'][number], textW: number, 
   const bossTxt = lv.waves.filter((w) => w.isBoss).map((w) => `W${w.wave}`).join(' ');
   lines.push([`> 波次 ${lv.waves.length} · BOSS ${bossTxt || '—'}`, '#FF9F43']);
   lines.push([`> 难度 ${env.DIFFICULTIES[env.app.difficulty].name} · ${env.DIFFICULTIES[env.app.difficulty].label}`, env.C.gold]);
+  // 双人同屏：终端行注明分工（§4.1）
+  if (env.app.coop) lines.push(['> CO-OP 双人同屏 // P1 建造 · P2 指挥', env.C.green]);
   briefCache = { key, lines };
   return lines;
 }
@@ -721,7 +757,10 @@ function drawBattleHUD(env: SkinEnv, engine: GameEngine) {
     env.fillText(`${isBossWave ? '⚠ BOSS 波 · ' : ''}${summary}`, VW / 2, py + 38, {
       size: 9, color: isBossWave ? env.C.pink : '#FF9F43', align: 'center', weight: 'normal',
     });
-    env.fillText(isBossWave ? '建议留好金币与穿甲火力' : '据此提前调整布防', VW / 2, py + 54, { size: 9, color: env.C.sub, align: 'center', weight: 'normal' });
+    env.fillText(
+      env.app.coop ? 'P1 建造防线 · P2 把握升级与科技时机' : isBossWave ? '建议留好金币与穿甲火力' : '据此提前调整布防',
+      VW / 2, py + 54, { size: 9, color: env.C.sub, align: 'center', weight: 'normal' },
+    );
     chargeButton(env, VW / 2 - 85, py + 84, 170, 42, '▶ 长按开战', () => env.engineCmd({ type: 'SKIP_PREP' }));
   }
 }
@@ -916,18 +955,19 @@ function drawResult(env: SkinEnv, time: number) {
   const won = env.app.result!.won;
   const st = env.app.engine!.state;
   const t = (Date.now() - env.getScreenAt()) / 1000;
-  drawMxHeader(env, '战斗结算', () => env.goto('home'));
+  drawMxHeader(env, env.app.coop ? '协同作战结算 // CO-OP' : '战斗结算', () => env.goto('home'));
 
   // 终端战绩面板：逐行打印，数字滚动递增
   const lvName = env.LEVELS.find((l) => l.id === env.app.levelId)?.name ?? '';
   const head: [string, string][] = won
     ? [[`> MISSION ${env.app.levelId} // ${lvName}`, env.C.cyan], ['> STATUS: 防线守住了 ✓', env.C.green]]
     : [[`> MISSION ${env.app.levelId} // ${lvName}`, env.C.cyan], [`> STATUS: 防线失守 · 撑到第 ${st.wave}/${st.totalWaves} 波`, env.C.pink]];
-  const stats: [string, number][] = [
+  const stats: [label: string, num: number, color?: string, plus?: boolean][] = [
     ['击杀', st.kills],
     ['漏怪', st.leaked],
     ['赚取金币', st.goldEarned],
     ['战术模块', st.techs.length],
+    ['积分', env.getLastSettlement()?.score ?? 0, env.C.gold, true],
   ];
   const px = 24;
   const pw = VW - 48;
@@ -944,13 +984,13 @@ function drawResult(env: SkinEnv, time: number) {
     ly += lineH;
   });
   ly += 4;
-  stats.forEach(([label, num], i) => {
+  stats.forEach(([label, num, color, plus], i) => {
     const at = t - 0.8 - i * 0.28;
     if (at <= 0) return;
     const shown = Math.round(num * Math.min(1, at / 0.55));
-    env.fillText(`> ${label}`, px + 18, ly, { size: 12, color: env.C.sub, weight: 'normal' });
+    env.fillText(`> ${label}`, px + 18, ly, { size: 12, color: color ?? env.C.sub, weight: 'normal' });
     // 数字滚动 + 扫过的亮光
-    env.fillText(String(shown), px + pw - 18, ly, { size: 15, align: 'right', font: env.RES_FONT() });
+    env.fillText(`${plus ? '+' : ''}${shown}`, px + pw - 18, ly, { size: 15, align: 'right', font: env.RES_FONT(), color });
     if (at < 0.55) {
       const sx = px + pw - 60 + at * 40;
       ctx.save();
@@ -994,6 +1034,14 @@ function drawResult(env: SkinEnv, time: number) {
     ctx.restore();
     env.fillText(['完美防线', '防守好手', '守住防线', '防线失守'][['S', 'A', 'B', 'D'].indexOf(grade)], gx + 52, gy - 8, { size: 15, color: gradeColor });
     env.fillText(won ? '下一章解锁已记录' : '再挑战一次就能通过', gx + 52, gy + 14, { size: 10, color: env.C.sub, weight: 'normal' });
+    // 军衔进度副文案（终端风格前缀；满级显示已达最高军衔）
+    const rprog = env.getRankProgress();
+    env.fillText(
+      rprog.next === null
+        ? `> RANK: ${rprog.name} · 已达最高军衔`
+        : `> RANK: ${rprog.name} · 距「${rprog.nextName}」还差 ${(rprog.next - rprog.points).toLocaleString('en-US')} 分`,
+      gx + 52, gy + 32, { size: 10, color: env.C.gold, weight: 'normal' },
+    );
   }
 
   // 动作按钮（语义与默认一致）
@@ -1108,7 +1156,7 @@ function drawProfile(env: SkinEnv) {
   ctx.fillStyle = 'rgba(6,3,12,0.82)';
   ctx.fillRect(0, 0, VW, VH);
   const pw = VW - 72;
-  const ph = 380;
+  const ph = 456;
   const px = 36;
   const py = VH / 2 - ph / 2;
   neonPanel(env, px, py, pw, ph, 16);
@@ -1143,8 +1191,41 @@ function drawProfile(env: SkinEnv) {
   }
   ctx.restore();
 
-  env.btn({ x: px + 24, y: py + 192, w: pw - 48, h: 40, label: '💬 意见反馈', color: env.C.gold, cb: () => env.openFeedback() });
-  let y = py + 244;
+  // 军衔积分进度条（金→粉霓虹渐变 + 端点发光；满级显示已达最高军衔）
+  const rp = env.getRankProgress();
+  const ry = by + 42;
+  env.fillText(
+    rp.next === null
+      ? `积分 ${rp.points.toLocaleString('en-US')} · 已达最高军衔`
+      : `积分 ${rp.points.toLocaleString('en-US')} / ${rp.next.toLocaleString('en-US')} · 距「${rp.nextName}」还差 ${(rp.next - rp.points).toLocaleString('en-US')} 分`,
+    VW / 2, ry - 8, { size: 11, color: env.C.sub, align: 'center', weight: 'normal' },
+  );
+  ctx.save();
+  env.rr(bx, ry + 6, bw, 10, 5);
+  ctx.fillStyle = env.ac(0.12);
+  ctx.fill();
+  const frac = rp.next === null ? 1 : Math.min(1, Math.max(0, (rp.points - rp.base) / (rp.next - rp.base)));
+  if (frac > 0) {
+    const fw2 = Math.max(10, bw * frac);
+    env.rr(bx, ry + 6, fw2, 10, 5);
+    const g = ctx.createLinearGradient(bx, 0, bx + bw, 0);
+    g.addColorStop(0, env.C.gold);
+    g.addColorStop(1, env.C.pink);
+    ctx.fillStyle = g;
+    ctx.shadowColor = env.C.pink;
+    ctx.shadowBlur = 8; // 小元素发光
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // 绑定状态行（静默登录成功后有 openid）
+  const openid = env.getProfile().openid;
+  if (openid) {
+    env.fillText(`> LINKED: ${openid.slice(0, 12)}…`, VW / 2, ry + 34, { size: 10, color: env.C.green, align: 'center', weight: 'normal' });
+  }
+
+  env.btn({ x: px + 24, y: py + 268, w: pw - 48, h: 40, label: '💬 意见反馈', color: env.C.gold, cb: () => env.openFeedback() });
+  let y = py + 320;
   if (!env.getProfile().real) {
     env.btn({ x: px + 24, y, w: pw - 48, h: 44, label: '同步微信头像昵称', color: env.C.green, primary: true, cb: () => env.authUser() });
     y += 56;

@@ -12,17 +12,19 @@ import {
   BloomLayer, FxLayer, NebulaBg, setFxPlatform,
   drawBaseGlow, drawStarfield, drawVignette, hash01, readQualityHigh, SPARKS_PER_HIT,
 } from './game/fx';
-import type { Command, Difficulty, GameEngine, TowerType } from './game/types';
+import type { Command, Difficulty, GameEngine, GameState, TowerType } from './game/types';
 import type { TechId } from './game/types';
 import { sfx } from './audio';
-import { track } from './analytics';
+import { track, configureAnalytics } from './analytics';
 import { SKIN_MODULES } from './skins';
 import type { SkinEnv } from './skins/types';
 
 // ---------------- 运行环境 ----------------
 
-interface TouchLike { clientX: number; clientY: number }
+interface TouchLike { clientX: number; clientY: number; identifier?: number }
 interface TouchEventLike { touches: TouchLike[]; changedTouches?: TouchLike[] }
+/** 触点稳定键：微信触摸对象带 identifier（多触点路由用）；浏览器 stub 没有则退化为 0 */
+const touchId = (t: TouchLike) => t.identifier ?? 0;
 
 interface WxImage {
   src: string; width: number; height: number;
@@ -75,6 +77,12 @@ declare const wx: {
     success?: () => void; fail?: (e?: unknown) => void;
   }): void;
   setClipboardData?(o: { data: string; success?: () => void; fail?: (e?: unknown) => void }): void;
+  login?(o: { success?: (r: { code: string }) => void; fail?: (e?: unknown) => void }): void;
+  request?(o: {
+    url: string; method?: string; data?: unknown; header?: Record<string, string>;
+    success?: (r: { statusCode: number; data: unknown }) => void;
+    fail?: (e?: unknown) => void;
+  }): void;
 };
 
 const canvas = wx.createCanvas();
@@ -176,22 +184,238 @@ setFxPlatform({
   nebulaUrl: () => 'assets/nebula-texture.jpg',
 });
 
-// ---------------- 用户信息 ----------------
+// ---------------- 用户体系 + 积分体系（MVP，design/multiplayer.md §2/§3） ----------------
 
-interface Profile { nick: string; avatarUrl: string; real: boolean }
-let profile: Profile = (() => {
-  const raw = store.get('srd.profile') as Partial<Profile> | undefined;
-  return { nick: raw?.nick ?? '', avatarUrl: raw?.avatarUrl ?? '', real: raw?.real === true };
+// 服务端 API 基址：默认空 = 纯本地模式（不登录、不同步云端）。
+// 开发联调：开发者工具 Console 执行 wx.setStorageSync('srd.apiBase', 'http://<开发机IP>:<端口>') 后重启生效
+const API_BASE: string = (() => {
+  try {
+    const saved = store.get('srd.apiBase');
+    return typeof saved === 'string' ? saved.trim() : '';
+  } catch { return ''; }
 })();
 
-/** 按通关数授予军衔（未授权微信信息时的默认身份） */
-function commanderRank(): string {
+/** 登录态（srd.user）：静默登录成功后落盘 */
+interface UserSession { openid: string; token: string; loginAt: number }
+let session: UserSession | null = (() => {
+  try {
+    const raw = store.get('srd.user') as Partial<UserSession> | undefined;
+    if (raw && typeof raw.openid === 'string' && raw.openid) {
+      return { openid: raw.openid, token: String(raw.token ?? ''), loginAt: Number(raw.loginAt ?? 0) || 0 };
+    }
+  } catch { /* ignore */ }
+  return null;
+})();
+
+/** 积分档案（srd.score）：本地为准即时展示，登录后与云端 max 合并 */
+interface ScoreProfile {
+  points: number;        // 累计积分（历史总产出，不减）
+  spendable: number;     // 消费积分（产出时与 points 同增；消耗只减它，MVP 暂无消耗点）
+  bestSingle: number;    // 单局最高积分
+  perLevelBest: Record<number, number>; // 每关最高单局积分
+  season: number;        // 赛季编号（预留，初始 1）
+  updatedAt: number;
+}
+const numOr = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+function loadScore(): ScoreProfile {
+  const raw = store.get('srd.score') as Partial<ScoreProfile> | undefined;
+  const per: Record<number, number> = {};
+  if (raw?.perLevelBest && typeof raw.perLevelBest === 'object') {
+    for (const [k, v] of Object.entries(raw.perLevelBest)) {
+      const key = Number(k);
+      if (Number.isFinite(key) && typeof v === 'number' && Number.isFinite(v)) per[key] = v;
+    }
+  }
+  return {
+    points: numOr(raw?.points),
+    spendable: numOr(raw?.spendable),
+    bestSingle: numOr(raw?.bestSingle),
+    perLevelBest: per,
+    season: numOr(raw?.season) || 1,
+    updatedAt: numOr(raw?.updatedAt),
+  };
+}
+let scoreProfile: ScoreProfile = loadScore();
+function saveScore() { store.set('srd.score', scoreProfile); }
+
+// 老用户迁移（一次性）：无积分档案但有通关记录 → 按旧军衔档补保底积分，避免升级后军衔倒退
+if (!store.get('srd.score')) {
   const n = loadProgress().cleared.length;
-  if (n >= 13) return '传奇统帅';
-  if (n >= 8) return '星环将星';
-  if (n >= 4) return '战地指挥官';
-  if (n >= 1) return '见习指挥官';
-  return '新晋学员';
+  if (n > 0) {
+    scoreProfile.points = scoreProfile.spendable = n >= 13 ? 15000 : n >= 8 ? 6000 : n >= 4 ? 2000 : 500;
+    scoreProfile.updatedAt = Date.now();
+    saveScore();
+  }
+}
+
+// 军衔表：累计积分门槛（§3.2；星海元帅为长期目标位，防硬核玩家封顶）
+const RANKS: [threshold: number, name: string][] = [
+  [0, '新晋学员'],
+  [500, '见习指挥官'],
+  [2000, '战地指挥官'],
+  [6000, '星环将星'],
+  [15000, '传奇统帅'],
+  [40000, '星海元帅'],
+];
+/** 当前军衔档位与升级进度（满级时 next/nextName 为 null） */
+function rankProgress(): { name: string; points: number; base: number; next: number | null; nextName: string | null } {
+  let i = 0;
+  for (let k = 0; k < RANKS.length; k++) if (scoreProfile.points >= RANKS[k][0]) i = k;
+  const nxt = i + 1 < RANKS.length ? RANKS[i + 1] : null;
+  return {
+    name: RANKS[i][1], points: scoreProfile.points, base: RANKS[i][0],
+    next: nxt ? nxt[0] : null, nextName: nxt ? nxt[1] : null,
+  };
+}
+
+// ---------------- 单局结算积分（§3.1；字段以 engine GameState 为准） ----------------
+
+type Grade = 'S' | 'A' | 'B' | 'D';
+/** 战斗评级：S 零漏怪 / A 漏 ≤2 / B 其余 / D 失败（与结算页评级圈同一规则） */
+function battleGrade(st: GameState, won: boolean): Grade {
+  return !won ? 'D' : st.leaked === 0 ? 'S' : st.leaked <= 2 ? 'A' : 'B';
+}
+const DIFF_MUL: Record<Difficulty, number> = { easy: 0.8, normal: 1.0, hard: 1.4 };
+const GRADE_BONUS: Record<Grade, number> = { S: 1.25, A: 1.1, B: 1.0, D: 0.4 };
+/** 单局结算积分：击杀/波次/科技/剩余生命/章节权重 − 漏怪惩罚，乘难度系数与评级加成 */
+function calcScore(st: GameState, difficulty: Difficulty, levelId: number, won: boolean): number {
+  const base = st.kills * 10        // 击杀：每只 10 分
+    + st.wave * 60                  // 进度：每到达一波 60 分
+    + st.techs.length * 40          // 构筑深度：每个战术模块 40 分
+    + st.lives * 15                 // 防守质量：每剩 1 点生命 15 分
+    + levelId * 50                  // 章节权重
+    - st.leaked * 30;               // 漏怪惩罚
+  return Math.max(0, Math.round(base * DIFF_MUL[difficulty] * GRADE_BONUS[battleGrade(st, won)]));
+}
+
+// ---------------- 云端同步（全部网络异常静默 catch，绝不影响游戏主流程） ----------------
+
+/** 云端档案 → 本地逐字段 max 合并并写盘；返回本地是否存在更大字段（需回传服务端） */
+function applyCloudScore(cp: Partial<ScoreProfile>): boolean {
+  let localBigger = false;
+  const cPoints = numOr(cp.points);
+  const cBest = numOr(cp.bestSingle);
+  if (scoreProfile.points > cPoints || scoreProfile.bestSingle > cBest) localBigger = true;
+  // 云端多出的累计积分同额计入消费积分（本地已消耗的部分不受影响）
+  scoreProfile.spendable += Math.max(0, cPoints - scoreProfile.points);
+  scoreProfile.points = Math.max(scoreProfile.points, cPoints);
+  scoreProfile.bestSingle = Math.max(scoreProfile.bestSingle, cBest);
+  if (cp.perLevelBest && typeof cp.perLevelBest === 'object') {
+    for (const [k, v] of Object.entries(cp.perLevelBest)) {
+      const key = Number(k);
+      const nv = numOr(v);
+      if (!Number.isFinite(key)) continue;
+      if (nv > (scoreProfile.perLevelBest[key] ?? 0)) scoreProfile.perLevelBest[key] = nv;
+      else if ((scoreProfile.perLevelBest[key] ?? 0) > nv) localBigger = true;
+    }
+  }
+  scoreProfile.updatedAt = Date.now();
+  saveScore();
+  return localBigger;
+}
+
+/** 已登录时把本地积分档案 POST 回服务端（服务端 max 合并），失败静默 */
+function syncScoreToCloud() {
+  try {
+    if (!API_BASE || !session || typeof wx.request !== 'function') return;
+    wx.request({
+      url: `${API_BASE}/api/user/score`,
+      method: 'POST',
+      header: { Authorization: `Bearer ${session.token}` },
+      data: {
+        points: scoreProfile.points,
+        bestSingle: scoreProfile.bestSingle,
+        perLevelBest: scoreProfile.perLevelBest,
+      },
+      success: (r) => {
+        try {
+          const d = r.data as { ok?: boolean; profile?: Partial<ScoreProfile> };
+          if (r.statusCode === 200 && d?.ok && d.profile) applyCloudScore(d.profile);
+        } catch { /* ignore */ }
+      },
+      fail: () => { /* 静默 */ },
+    });
+  } catch { /* ignore */ }
+}
+
+/** 登录成功后的积分云合并：GET 云端档案 → 本地 max 合并 → 本地更大则 POST 回传 */
+function mergeScoreWithCloud() {
+  try {
+    if (!API_BASE || !session || typeof wx.request !== 'function') return;
+    wx.request({
+      url: `${API_BASE}/api/user/score`,
+      method: 'GET',
+      header: { Authorization: `Bearer ${session.token}` },
+      success: (r) => {
+        try {
+          const d = r.data as { ok?: boolean; profile?: Partial<ScoreProfile> };
+          if (r.statusCode === 200 && d?.ok && d.profile) {
+            if (applyCloudScore(d.profile)) syncScoreToCloud();
+          } else if (r.statusCode === 401) {
+            // token 失效：清登录态，保持游客（403 banned 等其余情况不动本地数据）
+            session = null;
+            store.set('srd.user', '');
+          }
+        } catch { /* ignore */ }
+      },
+      fail: () => { /* 静默 */ },
+    });
+  } catch { /* ignore */ }
+}
+
+/** 静默登录（splash 期间并行发起）：wx.login 换 code → POST /api/login 换 openid/token。
+ *  无后端 / 无 wx.login / 任何失败：静默保持游客，不打断进游戏 */
+function silentLogin() {
+  try {
+    if (!API_BASE || typeof wx.login !== 'function' || typeof wx.request !== 'function') return;
+    wx.login({
+      success: (r) => {
+        try {
+          if (!r?.code || typeof wx.request !== 'function') return;
+          wx.request({
+            url: `${API_BASE}/api/login`,
+            method: 'POST',
+            data: { code: r.code },
+            success: (res) => {
+              try {
+                const d = res.data as { ok?: boolean; openid?: string; token?: string };
+                if (res.statusCode !== 200 || !d?.ok || !d.openid || !d.token) return;
+                session = { openid: d.openid, token: d.token, loginAt: Date.now() };
+                store.set('srd.user', session);
+                profile.openid = d.openid; // 冗余一份便于 UI 展示「已绑定」状态
+                store.set('srd.profile', profile);
+                configureAnalytics({
+                  endpoint: API_BASE,
+                  getOpenid: () => session?.openid ?? '',
+                  getBuildId: () => (typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'dev'),
+                });
+                track('login_ok', { level: 1 });
+                mergeScoreWithCloud();
+              } catch { /* ignore */ }
+            },
+            fail: () => { /* 静默 */ },
+          });
+        } catch { /* ignore */ }
+      },
+      fail: () => { /* 静默 */ },
+    });
+  } catch { /* ignore */ }
+}
+
+// ---------------- 用户信息 ----------------
+
+interface Profile { nick: string; avatarUrl: string; real: boolean; openid?: string }
+let profile: Profile = (() => {
+  const raw = store.get('srd.profile') as Partial<Profile> | undefined;
+  return {
+    nick: raw?.nick ?? '', avatarUrl: raw?.avatarUrl ?? '', real: raw?.real === true,
+    openid: typeof raw?.openid === 'string' ? raw.openid : '',
+  };
+})();
+
+/** 按累计积分授予军衔（未授权微信信息时的默认身份；签名不变，全 UI 自动生效） */
+function commanderRank(): string {
+  return rankProgress().name;
 }
 const displayNick = () => (profile.real && profile.nick ? profile.nick : commanderRank());
 
@@ -207,11 +431,15 @@ function loadAvatar() {
 }
 loadAvatar();
 
+// 启动即静默登录（splash 动画期间并行发起）；API_BASE 为空或任何失败都保持游客，不打断进游戏
+silentLogin();
+
 function authUser() {
   try {
     wx.getUserInfo?.({
       success: (r) => {
-        profile = { nick: r.userInfo.nickName, avatarUrl: r.userInfo.avatarUrl, real: true };
+        // 授权只更新昵称头像，保留静默登录绑定的 openid
+        profile = { nick: r.userInfo.nickName, avatarUrl: r.userInfo.avatarUrl, real: true, openid: profile.openid };
         store.set('srd.profile', profile);
         avatarImg = null;
         loadAvatar();
@@ -643,7 +871,7 @@ function drawProfileOverlay() {
   ctx.fillStyle = 'rgba(7,11,24,0.78)';
   ctx.fillRect(0, 0, VW, VH);
   const pw = VW - 72;
-  const ph = 380;
+  const ph = 456;
   const px = 36;
   const py = VH / 2 - ph / 2;
   panel(px, py, pw, ph, C.panelLine);
@@ -669,13 +897,40 @@ function drawProfileOverlay() {
     ctx.fill();
   }
 
+  // 军衔积分进度条（points / 下一档门槛；满级显示已达最高军衔）
+  const rp = rankProgress();
+  const ry = by + 42;
+  fillText(
+    rp.next === null
+      ? `积分 ${rp.points.toLocaleString('en-US')} · 已达最高军衔`
+      : `积分 ${rp.points.toLocaleString('en-US')} / ${rp.next.toLocaleString('en-US')} · 距「${rp.nextName}」还差 ${(rp.next - rp.points).toLocaleString('en-US')} 分`,
+    VW / 2, ry - 8, { size: 11, color: C.sub, align: 'center', weight: 'normal' },
+  );
+  rr(bx, ry + 6, bw, 10, 5);
+  ctx.fillStyle = 'rgba(255,201,77,0.12)';
+  ctx.fill();
+  const frac = rp.next === null ? 1 : Math.min(1, Math.max(0, (rp.points - rp.base) / (rp.next - rp.base)));
+  if (frac > 0) {
+    rr(bx, ry + 6, Math.max(10, bw * frac), 10, 5);
+    const g = ctx.createLinearGradient(bx, 0, bx + bw, 0);
+    g.addColorStop(0, shade(C.gold));
+    g.addColorStop(1, C.gold);
+    ctx.fillStyle = g;
+    ctx.fill();
+  }
+
+  // 绑定状态行（静默登录成功后有 openid）
+  if (profile.openid) {
+    fillText(`已绑定 · ${profile.openid.slice(0, 12)}…`, VW / 2, ry + 34, { size: 10, color: C.green, align: 'center', weight: 'normal' });
+  }
+
   // 意见反馈（客服会话 → 回退复制邮箱）
   btn({
-    x: px + 24, y: py + 192, w: pw - 48, h: 40, label: '💬 意见反馈', color: C.gold,
+    x: px + 24, y: py + 266, w: pw - 48, h: 40, label: '💬 意见反馈', color: C.gold,
     cb: () => openFeedback(),
   });
 
-  let y = py + 244;
+  let y = py + 318;
   if (!profile.real) {
     btn({
       x: px + 24, y, w: pw - 48, h: 44, label: '同步微信头像昵称', color: C.green, primary: true,
@@ -985,7 +1240,15 @@ const app = {
   result: null as { won: boolean } | null,
   techShownAt: 0,
   techPickedAt: 0,
+  // 双人同屏协作开关（§4.1 A 档；按会话保持，不落盘）
+  coop: false,
 };
+
+/** 切换 单人 / 双人同屏（home 选关页分段控件调用） */
+function toggleCoop() {
+  app.coop = !app.coop;
+  track('coop_toggle', { mode: app.coop ? 1 : 0 });
+}
 
 /** 页面切换时间戳（淡入过渡用） */
 let screenAt = Date.now();
@@ -1025,8 +1288,9 @@ const ENEMY_CATEGORY: Record<string, string> = {
 
 /** 底部塔栏横向滚动偏移 */
 let barScroll = 0;
-/** 底部塔栏触摸：pending 待定 / scroll 滚动 / drag 拖拽建塔 */
-let barTouch: { mode: 'pending' | 'scroll' | 'drag'; type: TowerType | null; unusable: string | null; startX: number; startY: number; lastX: number } | null = null;
+/** 底部塔栏触摸状态机：pending 待定 / scroll 滚动 / drag 拖拽建塔 */
+interface BarTouch { mode: 'pending' | 'scroll' | 'drag'; type: TowerType | null; unusable: string | null; startX: number; startY: number; lastX: number }
+let barTouch: BarTouch | null = null;
 /** 拖拽建塔时的手指位置（屏幕坐标） */
 let dragPos: TouchPoint | null = null;
 /** 地图垂直平移手势 */
@@ -1567,13 +1831,15 @@ function drawHome(time: number) {
 
   drawHeader('高塔防线 · 战役选择', { back: () => goto('splash') });
 
-  // 难度分段控件（高亮块滑动动画 + 轻震动）
+  // 难度分段控件（高亮块滑动动画 + 轻震动）+ 右侧 单人/双人同屏 切换（§4.1）
   const segW = VW - MARGIN * 2;
   const segY = TOP_SAFE + 4;
-  segControl(MARGIN, segY, segW, DIFF_LIST.map((d) => DIFFICULTIES[d].name), DIFF_LIST.indexOf(app.difficulty), 'diff', (i) => {
+  const diffW = Math.round(segW * 0.6);
+  segControl(MARGIN, segY, diffW, DIFF_LIST.map((d) => DIFFICULTIES[d].name), DIFF_LIST.indexOf(app.difficulty), 'diff', (i) => {
     app.difficulty = DIFF_LIST[i];
     track('difficulty_select', { difficulty: app.difficulty });
   });
+  segControl(MARGIN + diffW + 10, segY, segW - diffW - 10, ['单人', '双人同屏'], app.coop ? 1 : 0, 'coop', () => toggleCoop());
 
   // 关卡卡片列表（可滚动）
   ctx.save();
@@ -1751,6 +2017,21 @@ function drawBriefing(time: number) {
   ctx.stroke();
   ctx.restore();
   fillText(diffTxt, VW / 2, afterY + 0.5, { size: 11, color: C.gold, align: 'center' });
+  // 双人同屏：注明分工（§4.1：P1 建造 · P2 指挥）
+  if (app.coop) {
+    const coopTxt = '双人同屏 · P1 建造 · P2 指挥';
+    ctx.save();
+    ctx.font = 'bold 11px sans-serif';
+    const cw = ctx.measureText(coopTxt).width + 24;
+    rr(VW / 2 - cw / 2, afterY + 13, cw, 22, 11);
+    ctx.fillStyle = 'rgba(61,240,140,0.12)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(61,240,140,0.4)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+    fillText(coopTxt, VW / 2, afterY + 24.5, { size: 11, color: C.green, align: 'center' });
+  }
 
   btn({ x: VW / 2 - 100, y: afterY + 42, w: 200, h: 54, label: '▶ 出 击', primary: true, cb: startBattle });
   btn({ x: VW / 2 - 100, y: afterY + 118, w: 200, h: 46, label: '返回选关', color: C.sub, cb: () => { stopNarration(); goto('home'); } });
@@ -1770,6 +2051,8 @@ let qualityHigh = readWxQualityHigh(); // 低频轮询存储，避免每帧读 s
 let fxFrame = 0;
 /** 本局开战时间戳（结算埋点算时长） */
 let battleStartAt = 0;
+/** 最近一局结算积分与评级（gameOver 写入，皮肤结算页经 env.getLastSettlement() 读取） */
+let lastSettlement: { score: number; grade: Grade } | null = null;
 
 function startBattle() {
   stopNarration();
@@ -1777,12 +2060,14 @@ function startBattle() {
   app.placing = null;
   app.selectedId = null;
   app.result = null;
+  lastSettlement = null;
   barScroll = 0;
   fx = new FxLayer();
   bloom = new BloomLayer(W, H);
   pathPixels = app.engine.map.paths.map((p) => p.pixels);
   battleStartAt = Date.now();
-  track('game_start', { level_id: app.levelId, difficulty: app.difficulty });
+  coopClearTouches();
+  track('game_start', { level_id: app.levelId, difficulty: app.difficulty, coop: app.coop ? 1 : 0 });
   goto('battle');
 }
 
@@ -1880,7 +2165,10 @@ function drawBattle() {
     const summary = [...new Set(groups.map(g => `${ENEMIES[g.type].name}×${g.count}`))].join(' ');
     const cCol = isBossWave ? C.pink : '#FF9F43';
     fillText(`${isBossWave ? '⚠ BOSS 波 · ' : ''}${summary}`, VW / 2, by2 + 34, { size: 9, color: isBossWave ? C.pink : '#FF9F43', align: 'center', weight: 'normal' });
-    fillText(isBossWave ? '建议留好金币与穿甲火力' : '据此提前调整布防', VW / 2, by2 + 47, { size: 9, color: C.sub, align: 'center', weight: 'normal' });
+    fillText(
+      app.coop ? 'P1 建造防线 · P2 把握升级与科技时机' : isBossWave ? '建议留好金币与穿甲火力' : '据此提前调整布防',
+      VW / 2, by2 + 47, { size: 9, color: C.sub, align: 'center', weight: 'normal' },
+    );
     btn({ x: VW / 2 - 62, y: by2 + 66, w: 124, h: 36, label: '▶ 立即开战', color: C.gold, primary: true, cb: () => engineCmd({ type: 'SKIP_PREP' }) });
   }
   }
@@ -1889,10 +2177,19 @@ function drawBattle() {
   if (bm?.drawBottomBar) bm.drawBottomBar(env, engine);
   else drawBottomBar(st);
 
-  // 拖拽建塔幽灵预览
+  // 拖拽建塔幽灵预览（协作模式支持两名玩家各拖一座，互不中断）
   if (barTouch?.mode === 'drag' && dragPos && barTouch.type) {
     if (bm?.drawDragGhost) bm.drawDragGhost(env, engine, barTouch.type, dragPos);
     else drawDragGhost(st, barTouch.type, dragPos);
+  }
+  if (app.coop) {
+    for (const [tid, bt] of coopBar) {
+      if (bt.mode !== 'drag' || !bt.type) continue;
+      const dp = coopDrag.get(tid);
+      if (!dp) continue;
+      if (bm?.drawDragGhost) bm.drawDragGhost(env, engine, bt.type, dp);
+      else drawDragGhost(st, bt.type, dp);
+    }
   }
 
   if (st.paused) {
@@ -2187,7 +2484,7 @@ function drawResult(time: number) {
     ctx.restore();
   }
 
-  drawHeader('战斗结算', { back: () => goto('home') });
+  drawHeader(app.coop ? '协同作战结算' : '战斗结算', { back: () => goto('home') });
   const y0 = TOP_SAFE + 16;
   // 标题回弹入场
   const bt = Math.min(1, t / 0.45);
@@ -2202,24 +2499,29 @@ function drawResult(time: number) {
     VW / 2, y0 + 32, { size: 13, color: C.sub, align: 'center', weight: 'normal' },
   );
 
-  // 战绩面板（数字滚动递增）
-  const rows: [string, string, number | null][] = [
+  // 本局积分（与 gameOver 入账同一公式 calcScore，此处纯展示重算）
+  const gained = calcScore(st, app.difficulty, app.levelId, won);
+  // 战绩面板（数字滚动递增）；末行「积分 +N」金色（随同一 count-up 节奏滚动）
+  const rows: [k: string, v: string, num: number | null, color?: string, plus?: boolean][] = [
     ['击杀', String(st.kills), st.kills],
     ['漏怪', String(st.leaked), st.leaked],
     ['剩余生命', `${st.lives} / ${st.maxLives}`, null],
     ['赚取金币', String(st.goldEarned), st.goldEarned],
     ['战术模块', String(st.techs.length), st.techs.length],
+    ['积分', `+${gained}`, gained, C.gold, true],
   ];
   const px = 24;
   const pw = VW - 48;
   const py = y0 + 58;
   const rowH = 36;
   panel(px, py, pw, rows.length * rowH + 20, C.panelLine);
-  rows.forEach(([k, v, num], i) => {
+  rows.forEach(([k, v, num, color, plus], i) => {
     const ry = py + 28 + i * rowH;
-    fillText(k, px + 22, ry, { size: 13, color: C.sub, weight: 'normal' });
-    const shown = num === null ? v : String(Math.round(num * Math.min(1, Math.max(0, (t - 0.25 - i * 0.12) / 0.6))));
-    fillText(shown, px + pw - 22, ry, { size: 16, align: 'right', font: RES_FONT() });
+    fillText(k, px + 22, ry, { size: 13, color: color ?? C.sub, weight: 'normal' });
+    const shown = num === null
+      ? v
+      : `${plus ? '+' : ''}${Math.round(num * Math.min(1, Math.max(0, (t - 0.25 - i * 0.12) / 0.6)))}`;
+    fillText(shown, px + pw - 22, ry, { size: 16, align: 'right', font: RES_FONT(), color });
     if (i < rows.length - 1) {
       ctx.save();
       ctx.strokeStyle = 'rgba(124,141,176,0.12)';
@@ -2232,7 +2534,7 @@ function drawResult(time: number) {
   });
 
   // 战斗评价：S（零漏怪）A（漏 ≤2）B（其余）D（失败）
-  const grade = !won ? 'D' : st.leaked === 0 ? 'S' : st.leaked <= 2 ? 'A' : 'B';
+  const grade = battleGrade(st, won);
   const gradeColor = grade === 'S' ? C.gold : grade === 'A' ? C.green : grade === 'B' ? C.cyan : C.pink;
   const gx = px + 40;
   const gy3 = py + rows.length * rowH + 40;
@@ -2244,6 +2546,14 @@ function drawResult(time: number) {
   fillText(grade, gx, gy3 + 8, { size: 30, color: gradeColor, align: 'center', font: RES_FONT() });
   fillText(['完美防线', '防守好手', '守住防线', '防线失守'][['S','A','B','D'].indexOf(grade)], gx + 44, gy3 - 4, { size: 15, color: gradeColor });
   fillText(won ? '下一章解锁已记录' : '再挑战一次就能通过', gx + 44, gy3 + 18, { size: 10, color: C.sub, align: 'center', weight: 'normal' });
+  // 军衔进度副文案：当前军衔 · 距下一档差额（满级显示已达最高军衔）
+  const rp = rankProgress();
+  fillText(
+    rp.next === null
+      ? `${rp.name} · 已达最高军衔`
+      : `${rp.name} · 距「${rp.nextName}」还差 ${(rp.next - rp.points).toLocaleString('en-US')} 分`,
+    gx + 44, gy3 + 34, { size: 10, color: C.gold, align: 'center', weight: 'normal' },
+  );
   ctx.restore();
 
   let y = py + rows.length * rowH + 40;
@@ -2751,16 +3061,36 @@ function frame() {
         app.result = { won: ev.won };
         // 结算埋点（wave_fail 并入：失败时 result=lose + wave_reached 即失败波次，不重复打）
         const st0 = app.engine.state;
+        const levelId = app.engine.level.id;
+        // 积分入账（公式见 design/multiplayer.md §3.1）：累计/消费积分同增，刷榜单局与各关最高
+        const gained = calcScore(st0, app.difficulty, levelId, ev.won);
+        const grade = battleGrade(st0, ev.won);
+        lastSettlement = { score: gained, grade };
+        const rankBefore = commanderRank();
+        scoreProfile.points += gained;
+        scoreProfile.spendable += gained;
+        if (gained > scoreProfile.bestSingle) scoreProfile.bestSingle = gained;
+        if (gained > (scoreProfile.perLevelBest[levelId] ?? 0)) scoreProfile.perLevelBest[levelId] = gained;
+        scoreProfile.updatedAt = Date.now();
+        saveScore();
+        coopClearTouches(); // 离开战斗屏前清掉多触点手势状态
+        syncScoreToCloud(); // 已登录则同步服务端（静默失败）
+        track('score_gain', { score: gained, grade, level_id: levelId, coop: app.coop ? 1 : 0 });
         track('game_end', {
-          level_id: app.engine.level.id,
+          level_id: levelId,
           difficulty: app.difficulty,
           result: ev.won ? 'win' : 'lose',
           wave_reached: st0.wave,
           duration_sec: Math.round((Date.now() - battleStartAt) / 1000),
           kills: st0.kills,
           leaks: st0.leaked,
+          score: gained,
+          grade,
+          coop: app.coop ? 1 : 0,
         });
-        if (ev.won) recordLevelClear(app.engine.level.id);
+        if (ev.won) recordLevelClear(levelId);
+        const rankAfter = commanderRank();
+        if (rankAfter !== rankBefore) showToast(`晋升 · ${rankAfter}`);
         goto('result');
       }
     }
@@ -2869,11 +3199,14 @@ const env: SkinEnv = {
   // 进度与解锁
   loadProgress, unlockedChapter, towerUnlocked,
   // 动作
-  goto, gotoBriefing, stopNarration, startBattle, engineCmd, applySkin, authUser, openFeedback,
+  goto, gotoBriefing, stopNarration, startBattle, engineCmd, applySkin, authUser, openFeedback, toggleCoop,
   // 主动拉起分享（判空包装 wx.shareAppMessage）
   shareAppMessage: (o) => { try { wx.shareAppMessage?.(o); } catch { /* ignore */ } },
   commanderRank, displayNick,
   getProfile: () => profile,
+  getScore: () => scoreProfile,
+  getRankProgress: rankProgress,
+  getLastSettlement: () => lastSettlement,
   // 反馈
   sfx, buzz, showToast, track, store,
   getToast: () => toast,
@@ -2890,6 +3223,190 @@ const env: SkinEnv = {
   consumeTap: () => { tapConsumed = true; },
 };
 
+// ---------------- 协作模式多触点路由（§4.1：P1 工程官建造 / P2 战术官指挥） ----------------
+// 仅 app.coop 且战斗屏时启用；按触点 identifier 键控，每个触点独立手势状态机。
+// 分工天然由落区决定：底部塔栏与地图建造归 P1；HUD 钮 / 科技卡 / 升级出售 / 轻点选塔归 P2
+// （后者走 touchend 的 hooks 命中派发，与单人完全一致）。引擎单线程 dispatch 天然保证原子性。
+
+/** P1 塔栏手势（每触点一份 pending/scroll/drag 状态机） */
+const coopBar = new Map<number, BarTouch>();
+/** P1 拖拽中的手指位置（drag ghost 绘制用，每触点一份） */
+const coopDrag = new Map<number, TouchPoint>();
+/** 地图平移/轻点选塔手势（每触点一份） */
+const coopMap = new Map<number, { startY: number; pan0: number }>();
+/** 各触点累计位移（抑制误触点击）与按下时间（快速轻点判定） */
+const coopMoved = new Map<number, number>();
+const coopTouchAt = new Map<number, number>();
+
+function coopClearTouches() {
+  coopBar.clear();
+  coopDrag.clear();
+  coopMap.clear();
+  coopMoved.clear();
+  coopTouchAt.clear();
+}
+
+/** 塔栏起点手势：可用性判定与单人路径同一套文案 */
+function makeBarTouch(engine: GameEngine, p: TouchPoint): BarTouch {
+  const t = towerSlotAt(p);
+  const unusable = !t ? null
+    : !towerUnlocked(t) ? `通关第 ${TOWER_UNLOCK[t]} 章后解锁「${TOWERS[t].name}」`
+    : engine.state.gold < TOWERS[t].levels[0].cost ? '金币不足，先攒一攒' : null;
+  return { mode: 'pending', type: unusable ? null : t, unusable, startX: p.x, startY: p.y, lastX: p.x };
+}
+
+/** 点选放置模式：地图落格建塔（逻辑与单人路径一致；无论成败都退出放置模式） */
+function placeAtOnce(engine: GameEngine, p: TouchPoint) {
+  const st = engine.state;
+  const cx = Math.floor(toMapX(p.x) / CELL);
+  const cy = Math.floor(toMapY(p.y) / CELL);
+  if (
+    cx >= 0 && cx < COLS && cy >= 0 && cy < ROWS &&
+    engine.map.isBuildable(cx, cy) &&
+    !st.towers.some((tw) => tw.col === cx && tw.row === cy)
+  ) {
+    if (engine.dispatch({ type: 'BUILD', col: cx, row: cy, tower: app.placing! })) {
+      sfx.play('build'); buzz('light');
+      track('tower_build', { tower_type: app.placing!, level_id: app.levelId, wave: engine.state.wave });
+    }
+  }
+  app.placing = null;
+}
+
+function coopTouchStart(e: TouchEventLike) {
+  const engine = app.engine;
+  if (!engine) return;
+  for (const t of e.changedTouches ?? e.touches) {
+    const id = touchId(t);
+    const p = touchPoint(t);
+    coopTouchAt.set(id, Date.now());
+    coopMoved.set(id, 0);
+    // 皮肤按压反馈等副作用保留；battle 下各皮肤 handleTouch 均不消费事件
+    SKIN_MODULES[skin.id]?.handleTouch?.(env, 'start', p);
+    // 按钮按压反馈（视觉）：命中即记录，多触点时只保留第一个
+    if (!pressedBtn) {
+      for (let i = hooks.length - 1; i >= 0; i--) {
+        const b = hooks[i];
+        if (!b.disabled && hit(p, b)) { pressedBtn = b; break; }
+      }
+    }
+    // 弹层打开 / 科技三选一阶段：底层手势全部关闭，只留 touchend 的 hooks 派发（P2）
+    if (showSettings || showProfile || engine.state.phase === 'tech') continue;
+    // 命中 HUD/面板按钮 → 归 P2，不进入地图手势
+    if (hooks.some((b) => !b.disabled && hit(p, b))) continue;
+    // P1：底部塔栏（无选中塔且无点选放置时）
+    if (p.y >= VH - BAR_H) {
+      if (!app.placing && app.selectedId == null) coopBar.set(id, makeBarTouch(engine, p));
+      continue;
+    }
+    // P1：点选放置模式下直接建造
+    if (app.placing) { placeAtOnce(engine, p); continue; }
+    // 地图区：平移 / 轻点选塔（选塔归 P2，手势判定相同）
+    coopMap.set(id, { startY: p.y, pan0: mapPan });
+  }
+}
+
+function coopTouchMove(e: TouchEventLike) {
+  for (const t of e.changedTouches ?? e.touches) {
+    const id = touchId(t);
+    const p = touchPoint(t);
+    if (SKIN_MODULES[skin.id]?.handleTouch?.(env, 'move', p)) continue;
+    const bt = coopBar.get(id);
+    if (bt) {
+      const dx = p.x - bt.startX;
+      const dy = p.y - bt.startY;
+      if (bt.mode === 'pending') {
+        // 横向为主 → 滚动塔栏；纵向/斜向 → 拖拽建塔（阈值与单人路径一致）
+        if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.2 && stripMaxScroll > 0) bt.mode = 'scroll';
+        else if (dx * dx + dy * dy > 144 && bt.type) bt.mode = 'drag';
+      }
+      if (bt.mode === 'scroll') {
+        barScroll = Math.max(0, Math.min(stripMaxScroll, barScroll - (p.x - bt.lastX)));
+        bt.lastX = p.x;
+        coopMoved.set(id, (coopMoved.get(id) ?? 0) + Math.abs(dx));
+      } else if (bt.mode === 'drag') {
+        coopDrag.set(id, p);
+        coopMoved.set(id, (coopMoved.get(id) ?? 0) + Math.abs(dx) + Math.abs(dy));
+      }
+      continue;
+    }
+    const mt = coopMap.get(id);
+    if (mt && mapPanMin < 0) {
+      const dy = p.y - mt.startY;
+      mapPan = Math.max(mapPanMin, Math.min(0, mt.pan0 + dy));
+      coopMoved.set(id, (coopMoved.get(id) ?? 0) + Math.abs(dy));
+    }
+  }
+}
+
+function coopTouchEnd(e: TouchEventLike) {
+  for (const t of e.changedTouches ?? e.touches) {
+    const id = touchId(t);
+    const p = touchPoint(t);
+    const at = coopTouchAt.get(id) ?? 0;
+    const moved = coopMoved.get(id) ?? 0;
+    coopTouchAt.delete(id);
+    coopMoved.delete(id);
+    if (SKIN_MODULES[skin.id]?.handleTouch?.(env, 'end', p)) continue;
+    // P1 塔栏手势收尾（与单人路径同一套分支）
+    const bt = coopBar.get(id);
+    if (bt) {
+      coopBar.delete(id);
+      coopDrag.delete(id);
+      if (bt.mode === 'scroll') continue;
+      if (bt.mode === 'drag') {
+        // 松手落格建造
+        if (bt.type && app.engine) {
+          const st = app.engine.state;
+          const cx = Math.floor(toMapX(p.x) / CELL);
+          const cy = Math.floor(toMapY(p.y) / CELL);
+          if (
+            cx >= 0 && cx < COLS && cy >= 0 && cy < ROWS &&
+            app.engine.map.isBuildable(cx, cy) &&
+            !st.towers.some((tw) => tw.col === cx && tw.row === cy)
+          ) {
+            if (app.engine.dispatch({ type: 'BUILD', col: cx, row: cy, tower: bt.type })) {
+              sfx.play('build'); buzz('light');
+              track('tower_build', { tower_type: bt.type, level_id: app.levelId, wave: st.wave });
+            }
+          }
+        }
+        continue;
+      }
+      // pending 轻点：可用则进入点选放置模式，否则提示原因
+      if (bt.type) { app.placing = bt.type; app.selectedId = null; }
+      else if (bt.unusable) { showToast(bt.unusable); buzz('light'); }
+      continue;
+    }
+    // 地图手势收尾：拖动超阈值不视为点击；轻点选塔（P2）
+    const mt = coopMap.get(id);
+    if (mt) {
+      coopMap.delete(id);
+      if (moved > 8) continue;
+      if (app.engine && !app.placing) {
+        const cx = Math.floor(toMapX(p.x) / CELL);
+        const cy = Math.floor(toMapY(p.y) / CELL);
+        const tw = app.engine.state.towers.find((tw2) => tw2.col === cx && tw2.row === cy);
+        app.selectedId = tw ? tw.id : null;
+        if (tw) sfx.play('select');
+      }
+      continue;
+    }
+    // P2：快速轻点 → hooks 派发（HUD 钮 / 科技卡 / 升级出售 / 弹层按钮等）
+    if (Date.now() - at < 600) {
+      for (let i = hooks.length - 1; i >= 0; i--) {
+        const b = hooks[i];
+        if (!b.disabled && hit(p, b)) {
+          sfx.play('click');
+          b.cb();
+          break;
+        }
+      }
+    }
+  }
+  pressedBtn = null;
+}
+
 // ---------------- 触控 ----------------
 
 let touchTime = 0;
@@ -2898,6 +3415,8 @@ wx.onTouchStart((e) => {
   const p0 = e.touches[0];
   if (!p0) return;
   sfx.init(); // 首次用户手势时初始化 WebAudio
+  // 协作模式战斗中：多触点路由（P1 建造 / P2 指挥），逻辑见上方 coopTouchStart
+  if (app.coop && app.screen === 'battle' && app.engine) { coopTouchStart(e); return; }
   const p = touchPoint(p0);
   // 皮肤模块可插拔：返回 true 表示消费该事件，跳过默认处理
   if (SKIN_MODULES[skin.id]?.handleTouch?.(env, 'start', p)) return;
@@ -2962,6 +3481,8 @@ wx.onTouchStart((e) => {
 wx.onTouchMove((e) => {
   const p0 = e.touches[0];
   if (!p0) return;
+  // 协作模式战斗中：多触点路由
+  if (app.coop && app.screen === 'battle' && app.engine) { coopTouchMove(e); return; }
   const p = touchPoint(p0);
   // 皮肤模块可插拔：返回 true 表示消费该事件，跳过默认处理
   if (SKIN_MODULES[skin.id]?.handleTouch?.(env, 'move', p)) return;
@@ -3008,6 +3529,8 @@ wx.onTouchMove((e) => {
 
 wx.onTouchEnd((e) => {
   pressedBtn = null;
+  // 协作模式战斗中：多触点路由
+  if (app.coop && app.screen === 'battle' && app.engine) { coopTouchEnd(e); return; }
   const p0 = (e.changedTouches ?? e.touches)[0];
   if (!p0) return;
   const p = touchPoint(p0);
