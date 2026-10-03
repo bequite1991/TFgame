@@ -1,9 +1,12 @@
+import { currentAdmin } from '@/lib/auth';
 import { listConfigs } from '@/lib/store';
 import ConfigEditor from './editor';
 
 export const dynamic = 'force-dynamic';
 
-export default function ConfigPage() {
+export default async function ConfigPage() {
+  const session = await currentAdmin();
+  const canEdit = session?.role === 'ops' || session?.role === 'super';
   const configs = listConfigs();
 
   return (
@@ -13,10 +16,12 @@ export default function ConfigPage() {
         key-value 配置（公告 notice / 活动位 home_banner / 双倍战利 ad_double_loot / 平衡 balance.*），保存即版本 +1
       </p>
 
-      <div className="section">
-        <h2>编辑配置</h2>
-        <ConfigEditor existingKeys={configs.map((c) => c.key)} />
-      </div>
+      {canEdit && (
+        <div className="section">
+          <h2>编辑配置</h2>
+          <ConfigEditor existingKeys={configs.map((c) => c.key)} />
+        </div>
+      )}
 
       <div className="section">
         <h2>已发布配置（{configs.length}）</h2>

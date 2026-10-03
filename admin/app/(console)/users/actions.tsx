@@ -3,7 +3,15 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
-export default function UserActions({ openid, banned }: { openid: string; banned: boolean }) {
+export default function UserActions({
+  openid,
+  banned,
+  role,
+}: {
+  openid: string;
+  banned: boolean;
+  role: 'super' | 'ops' | 'readonly';
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
 
@@ -56,7 +64,9 @@ export default function UserActions({ openid, banned }: { openid: string; banned
   return (
     <div style={{ display: 'flex', gap: 6 }}>
       <button className="btn" onClick={adjustScore} disabled={busy}>调整积分</button>
-      <button className="btn" onClick={toggleBan} disabled={busy}>{banned ? '解封' : '封禁'}</button>
+      {role === 'super' && (
+        <button className="btn" onClick={toggleBan} disabled={busy}>{banned ? '解封' : '封禁'}</button>
+      )}
     </div>
   );
 }

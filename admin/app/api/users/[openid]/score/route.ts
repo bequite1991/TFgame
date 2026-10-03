@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireRole } from '@/lib/auth';
 import { adjustUserPoints } from '@/lib/store';
 
 export const dynamic = 'force-dynamic';
@@ -7,6 +8,10 @@ const MAX_DELTA = 1_000_000;
 const MAX_REASON_LEN = 200;
 
 export async function POST(request: Request, { params }: { params: Promise<{ openid: string }> }) {
+  // 积分调整：ops 及以上
+  const session = requireRole(request, 'ops');
+  if (session instanceof NextResponse) return session;
+
   const { openid } = await params;
 
   let body: unknown;
@@ -26,7 +31,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ope
 
   // 单次调整幅度钳制在 ±100 万
   const delta = Math.min(Math.max(obj.delta, -MAX_DELTA), MAX_DELTA);
-  const result = await adjustUserPoints(openid, delta, obj.reason.trim());
+  const result = await adjustUserPoints(openid, delta, obj.reason.trim(), session.email);
   if (!result) {
     return NextResponse.json({ ok: false, error: 'user not found' }, { status: 404 });
   }

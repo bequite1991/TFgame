@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireRole } from '@/lib/auth';
 import { getConfig, listConfigs, putConfig } from '@/lib/store';
 
 export const dynamic = 'force-dynamic';
@@ -19,6 +20,10 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  // 配置发布：ops 及以上
+  const session = requireRole(request, 'ops');
+  if (session instanceof NextResponse) return session;
+
   let body: unknown;
   try {
     body = await request.json();
@@ -26,10 +31,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'invalid json' }, { status: 400 });
   }
 
-  const { key, value, updated_by } = (body ?? {}) as {
+  const { key, value } = (body ?? {}) as {
     key?: unknown;
     value?: unknown;
-    updated_by?: unknown;
   };
   if (typeof key !== 'string' || !key || key.length > 128) {
     return NextResponse.json({ ok: false, error: 'key required' }, { status: 400 });
@@ -39,7 +43,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const entry = await putConfig(key, value, typeof updated_by === 'string' ? updated_by : undefined);
+    // 更新人以登录会话为准，便于审计
+    const entry = await putConfig(key, value, session.email);
     return NextResponse.json({ ok: true, config: entry });
   } catch {
     return NextResponse.json({ ok: false, error: 'internal error' }, { status: 500 });

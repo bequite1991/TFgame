@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireRole } from '@/lib/auth';
 import { listReleases, putRelease } from '@/lib/store';
 import type { ReleaseStatus } from '@/lib/types';
 
@@ -16,6 +17,10 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  // 版本登记：ops 及以上
+  const session = requireRole(request, 'ops');
+  if (session instanceof NextResponse) return session;
+
   let body: unknown;
   try {
     body = await request.json();

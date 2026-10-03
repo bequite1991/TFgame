@@ -1,9 +1,12 @@
+import { currentAdmin } from '@/lib/auth';
 import { listReleases } from '@/lib/store';
 import ReleaseForm from './form';
 
 export const dynamic = 'force-dynamic';
 
-export default function ReleasesPage() {
+export default async function ReleasesPage() {
+  const session = await currentAdmin();
+  const canEdit = session?.role === 'ops' || session?.role === 'super';
   const releases = listReleases();
 
   return (
@@ -11,10 +14,12 @@ export default function ReleasesPage() {
       <h1 className="page-title">发布登记</h1>
       <p className="page-sub">build_id（node build.mjs 输出，如 b1002-1530）与微信版本 / git commit 的对应关系</p>
 
-      <div className="section">
-        <h2>新增 / 更新登记</h2>
-        <ReleaseForm />
-      </div>
+      {canEdit && (
+        <div className="section">
+          <h2>新增 / 更新登记</h2>
+          <ReleaseForm />
+        </div>
+      )}
 
       <div className="section">
         <h2>已登记构建（{releases.length}）</h2>

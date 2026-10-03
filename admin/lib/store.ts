@@ -511,11 +511,12 @@ export async function appendAudit(entry: AuditEntry): Promise<void> {
   await enqueue(s, () => fs.appendFileSync(AUDIT_FILE, JSON.stringify(entry) + '\n'));
 }
 
-/** 管理端调整积分：delta 可正可负，下限 0；同步刷新军衔并写审计 */
+/** 管理端调整积分：delta 可正可负，下限 0；同步刷新军衔并写审计（actor 为操作者邮箱） */
 export async function adjustUserPoints(
   openid: string,
   delta: number,
   reason: string,
+  actor: string,
 ): Promise<{ before: number; after: number; rank: string } | null> {
   const s = state();
   const user = s.users.get(openid);
@@ -528,7 +529,7 @@ export async function adjustUserPoints(
 
   await enqueue(s, () => writeJson(USERS_FILE, [...s.users.values()]));
   await appendAudit({
-    actor: 'admin',
+    actor,
     action: 'score_adjust',
     target: openid,
     before,
@@ -539,10 +540,11 @@ export async function adjustUserPoints(
   return { before, after: user.points, rank: user.rank };
 }
 
-/** 管理端封禁/解封并写审计 */
+/** 管理端封禁/解封并写审计（actor 为操作者邮箱） */
 export async function setUserBanned(
   openid: string,
   banned: boolean,
+  actor: string,
 ): Promise<{ before: string; after: string } | null> {
   const s = state();
   const user = s.users.get(openid);
@@ -553,7 +555,7 @@ export async function setUserBanned(
 
   await enqueue(s, () => writeJson(USERS_FILE, [...s.users.values()]));
   await appendAudit({
-    actor: 'admin',
+    actor,
     action: 'ban',
     target: openid,
     before,

@@ -278,6 +278,27 @@ button.btn:disabled {
   gap: 12px;
 }
 
+.sidebar .userbox {
+  margin-top: 24px;
+  padding: 12px 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.sidebar .userbox-email {
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 8px;
+}
+
+.sidebar .userbox-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .empty {
   color: var(--text-dim);
   padding: 24px 0;

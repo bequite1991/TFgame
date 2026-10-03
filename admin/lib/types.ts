@@ -57,7 +57,7 @@ export interface ScoreProfile {
 
 /** 管理端审计记录（audit.jsonl 每行一条） */
 export interface AuditEntry {
-  actor: 'admin';
+  actor: string; // 操作者邮箱
   action: 'score_adjust' | 'ban';
   target: string;
   before: unknown;
