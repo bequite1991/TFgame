@@ -5,7 +5,8 @@ WORKDIR /app
 COPY package.json package-lock.json* .npmrc* ./
 # npm 偶发 "Exit handler never called" 自身崩溃且退出码仍为 0，
 # 先升级 npm，再以 .bin/next 是否存在校验安装完整性并重试
-RUN npm i -g npm@11 --no-audit --no-fund && \
+RUN npm config set registry https://registry.npmmirror.com && \
+    npm i -g npm@11 --no-audit --no-fund && \
     for i in 1 2 3 4 5; do \
       npm ci --no-audit --no-fund || true; \
       if [ -x node_modules/.bin/next ]; then break; fi; \
@@ -26,7 +27,7 @@ ENV TZ=Asia/Shanghai
 
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
+# 本项目无 public/ 目录，无需拷贝静态资产
 
 RUN mkdir -p /app/data
 
