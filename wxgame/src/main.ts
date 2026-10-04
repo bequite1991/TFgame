@@ -186,13 +186,14 @@ setFxPlatform({
 
 // ---------------- 用户体系 + 积分体系（MVP，design/multiplayer.md §2/§3） ----------------
 
-// 服务端 API 基址：默认空 = 纯本地模式（不登录、不同步云端）。
-// 开发联调：开发者工具 Console 执行 wx.setStorageSync('srd.apiBase', 'http://<开发机IP>:<端口>') 后重启生效
+// 服务端 API 基址：默认指向线上管理端；置空字符串则纯本地模式（不登录、不同步云端）。
+// 开发联调：开发者工具 Console 执行 wx.setStorageSync('srd.apiBase', 'http://<开发机IP>:<端口>') 可覆盖，重启生效
 const API_BASE: string = (() => {
   try {
     const saved = store.get('srd.apiBase');
-    return typeof saved === 'string' ? saved.trim() : '';
-  } catch { return ''; }
+    if (typeof saved === 'string' && saved.trim()) return saved.trim();
+  } catch { /* ignore */ }
+  return 'https://game.chujian.site';
 })();
 
 /** 登录态（srd.user）：静默登录成功后落盘 */

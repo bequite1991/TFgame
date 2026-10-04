@@ -9201,10 +9201,10 @@
   var API_BASE = (() => {
     try {
       const saved = store.get("srd.apiBase");
-      return typeof saved === "string" ? saved.trim() : "";
+      if (typeof saved === "string" && saved.trim()) return saved.trim();
     } catch {
-      return "";
     }
+    return "https://game.chujian.site";
   })();
   var session = (() => {
     try {
@@ -9369,7 +9369,7 @@
                   configureAnalytics({
                     endpoint: API_BASE,
                     getOpenid: () => session?.openid ?? "",
-                    getBuildId: () => true ? "b1003-2312" : "dev"
+                    getBuildId: () => true ? "b1004-2249" : "dev"
                   });
                   track("login_ok", { level: 1 });
                   mergeScoreWithCloud();
@@ -10645,7 +10645,7 @@
     const dim = 0.4 + 0.3 * Math.sin(t * 1.1);
     fillText("\u6DF1\u7A7A\u76D1\u542C\u7AD9 \xB7 \u7B2C 41 \u8F68\u9053\u5468\u671F", VW / 2, VH - 46, { size: 9, color: `rgba(124,141,176,${dim})`, align: "center", weight: "normal" });
     fillText("SIGNAL FADING", VW / 2, VH - 30, { size: 8, color: `rgba(255,61,129,${dim * 0.8})`, align: "center", weight: "600" });
-    fillText(true ? "b1003-2312" : "dev", VW - 10, VH - 10, { size: 8, color: "rgba(124,141,176,0.4)", align: "right", weight: "normal" });
+    fillText(true ? "b1004-2249" : "dev", VW - 10, VH - 10, { size: 8, color: "rgba(124,141,176,0.4)", align: "right", weight: "normal" });
     const menuA = Math.min(1, Math.max(0, (t - 1) / 0.5));
     if (menuA <= 0) {
       if (t > 0.2) hitBox({ x: 0, y: 0, w: VW, h: VH, label: "", cb: () => {
