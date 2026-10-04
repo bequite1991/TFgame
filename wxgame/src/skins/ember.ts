@@ -264,18 +264,21 @@ function drawHome(env: SkinEnv, time: number) {
     });
   });
 
-  // 单人/双人同屏：同款工业切角小 tab（SOLO / CO-OP）
+  // 单人/同屏/联机：同款工业切角小 tab（SOLO / CO-OP / ONLINE）
   const coopX = MARGIN + diffW + 10;
-  const coopTabW = (fullW - diffW - 10 - 8) / 2;
-  (['单人', '双人'] as const).forEach((label, i) => {
-    const x = coopX + i * (coopTabW + 8);
-    const on = (env.app.coop ? 1 : 0) === i;
+  const coopTabW = (fullW - diffW - 10 - 12) / 3;
+  const MODE_TABS: [label: string, en: string, mode: 'single' | 'coop' | 'online'][] = [
+    ['单人', 'SOLO', 'single'], ['同屏', 'CO-OP', 'coop'], ['联机', 'ONLINE', 'online'],
+  ];
+  MODE_TABS.forEach(([label, en, mode], i) => {
+    const x = coopX + i * (coopTabW + 6);
+    const on = env.app.mode === mode;
     ctx.save();
     env.rr(x, tabY, coopTabW, 40, 9);
     if (on) {
       const g = ctx.createLinearGradient(x, tabY, x, tabY + 40);
-      g.addColorStop(0, i === 1 ? env.C.green : env.C.gold);
-      g.addColorStop(1, env.shade(i === 1 ? env.C.green : env.C.gold));
+      g.addColorStop(0, i >= 1 ? env.C.green : env.C.gold);
+      g.addColorStop(1, env.shade(i >= 1 ? env.C.green : env.C.gold));
       ctx.fillStyle = g;
       ctx.fill();
     } else {
@@ -289,12 +292,12 @@ function drawHome(env: SkinEnv, time: number) {
     env.fillText(label, x + coopTabW / 2, tabY + 15, {
       size: 13, color: on ? '#1A1209' : env.C.text, align: 'center',
     });
-    env.fillText(i === 1 ? 'CO-OP' : 'SOLO', x + coopTabW / 2, tabY + 30, {
+    env.fillText(en, x + coopTabW / 2, tabY + 30, {
       size: 8, color: on ? 'rgba(26,18,9,0.65)' : env.C.dim, align: 'center', weight: '600', font: env.RES_FONT(),
     });
     env.hitBox({
-      x, y: tabY, w: coopTabW, h: 40, label: '',
-      cb: () => { if ((env.app.coop ? 1 : 0) !== i) { env.toggleCoop(); env.buzz('light'); } },
+      x, y: tabY, w: coopTabW, h: 40, label: `mode-${mode}`,
+      cb: () => { if (env.app.mode !== mode) { env.setMode(mode); env.buzz('light'); } },
     });
   });
 
@@ -817,6 +820,7 @@ function drawResult(env: SkinEnv, time: number) {
   emberBg(env, time);
   const won = env.app.result!.won;
   const st = env.app.engine!.state;
+  const oi = env.getOnlineInfo(); // 在线局信息（结算页展示队友/个人击杀用）
   const t = (Date.now() - env.getScreenAt()) / 1000;
 
   // 战败红色边缘晕染
@@ -831,7 +835,7 @@ function drawResult(env: SkinEnv, time: number) {
     ctx.restore();
   }
 
-  emberHeader(env, env.app.coop ? '协同战后报告' : '战后报告', env.app.coop ? 'CO-OP AFTER ACTION REPORT' : 'AFTER ACTION REPORT', () => env.goto('home'));
+  emberHeader(env, env.app.coop || oi ? '协同战后报告' : '战后报告', env.app.coop || oi ? 'CO-OP AFTER ACTION REPORT' : 'AFTER ACTION REPORT', () => env.goto('home'));
 
   const px = MARGIN;
   const pw = VW - MARGIN * 2;
@@ -851,20 +855,23 @@ function drawResult(env: SkinEnv, time: number) {
     size: 14, color: won ? env.C.green : env.C.red, align: 'center',
   });
   env.fillText(
-    won ? `第 ${env.app.levelId} 章 · ${env.LEVELS.find((l) => l.id === env.app.levelId)?.name ?? ''}` : `撑到了第 ${st.wave} / ${st.totalWaves} 波`,
+    won ? (oi ? '在线协同 · 双子星门' : `第 ${env.app.levelId} 章 · ${env.LEVELS.find((l) => l.id === env.app.levelId)?.name ?? ''}`) : `撑到了第 ${st.wave} / ${st.totalWaves} 波`,
     VW / 2, bandY + 50, { size: 12, color: env.C.sub, align: 'center', weight: 'normal' },
   );
 
   // 战绩记录面板（数字滚动递增）；末行「积分 +N」金色
   const settle = env.getLastSettlement();
+  // 在线局：击杀数按个人击杀分账显示
+  const myKills = oi ? (st.killsBy?.[oi.player] ?? st.kills) : st.kills;
   const rows: [k: string, v: string, num: number | null, color?: string, plus?: boolean][] = [
-    ['击杀', String(st.kills), st.kills],
+    ['击杀', String(myKills), myKills],
     ['漏怪', String(st.leaked), st.leaked],
     ['剩余生命', `${st.lives} / ${st.maxLives}`, null],
     ['赚取金币', String(st.goldEarned), st.goldEarned],
     ['战术模块', String(st.techs.length), st.techs.length],
     ['积分', `+${settle?.score ?? 0}`, settle?.score ?? 0, env.C.gold, true],
   ];
+  if (oi) rows.splice(1, 0, ['在线协同', `队友 ${oi.peerNick || '—'}`, null, env.C.cyan]);
   const py = bandY + 64;
   const rowH = 33;
   const docH = rows.length * rowH + 42;
@@ -933,7 +940,7 @@ function drawResult(env: SkinEnv, time: number) {
   env.fillText(['完美防线', '防守好手', '守住防线', '防线失守'][['S', 'A', 'B', 'D'].indexOf(grade)], px + 16, py + docH - 16, {
     size: 12, color: gradeColor,
   });
-  env.fillText(won ? '下一章解锁已记录' : '再挑战一次就能通过', px + pw - 120, py + docH - 16, {
+  env.fillText(won ? (oi ? '协同加成 ×1.2 已入账' : '下一章解锁已记录') : '再挑战一次就能通过', px + pw - 120, py + docH - 16, {
     size: 9, color: env.C.sub, align: 'center', weight: 'normal',
   });
 
@@ -949,7 +956,7 @@ function drawResult(env: SkinEnv, time: number) {
   // 指令区
   let y = py + docH + 40;
   const nextId = env.app.levelId + 1;
-  const hasNext = env.LEVELS.some((l) => l.id === nextId);
+  const hasNext = !oi && env.LEVELS.some((l) => l.id === nextId); // 联机协作图不是战役关，无「进入下一章」
   if (won) {
     env.btn({ x: px, y, w: pw, h: 44, label: '◈ 双倍战利 · 观看视频', color: env.C.gold, cb: () => env.showToast('广告模块开发中') });
     y += 54;

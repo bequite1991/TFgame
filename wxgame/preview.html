@@ -49,6 +49,21 @@ window.wx = {
   }),
   loadSubpackage: (o) => { o.success && o.success(); },
   vibrateShort() {}, showShareMenu() {}, onShareAppMessage() {}, onShareTimeline() {},
+  // 联机冒烟用：映射到浏览器 WebSocket（真实房间服务 wss://game.chujian.site/ws 可直连）
+  connectSocket(o) {
+    const ws = new WebSocket(o.url);
+    return {
+      onOpen: (cb) => ws.addEventListener('open', cb),
+      onMessage: (cb) => ws.addEventListener('message', (e) => cb({ data: e.data })),
+      onClose: (cb) => ws.addEventListener('close', cb),
+      onError: (cb) => ws.addEventListener('error', cb),
+      send: (so) => { try { ws.send(so.data); so.success && so.success(); } catch (e) { so.fail && so.fail(e); } },
+      close: () => { try { ws.close(); } catch (e) {} },
+    };
+  },
+  // 分享卡片邀请直达：从 URL query 读 room（?room=CODE 模拟好友点开卡片）
+  getLaunchOptionsSync: () => ({ query: Object.fromEntries(Q.entries()) }),
+  shareAppMessage: (o) => slog('shareAppMessage title=' + (o.title || '') + ' query=' + (o.query || '')),
 };
 </script>
 <script src="game.js"></script>
@@ -94,6 +109,8 @@ if (Q.get('debug')) {
 }
 
 // ---- 状态机轮询驱动：不看固定时序，按当前页面找目标按钮，各皮肤位置差异自适应 ----
+// ?drive=0 关闭自动驱动（联机双端联调走 CDP 手动驱动 __SRD_NET）
+const DRIVE = Q.get('drive') !== '0';
 let built = false;
 let briefingActAt = -9999;
 let techPickAt = -9999;
@@ -117,10 +134,11 @@ function buildTowers() {
   eng.dispatch({ type: 'SET_SPEED', speed: 2 });
 }
 setInterval(() => {
+  if (!DRIVE) return;
   const a = window.__SRD;
   if (!a) return;
-  // ?coop=1：直接置位会话内双人同屏开关（冒烟多触点路由与文案，不走 UI 切换）
-  if (Q.get('coop') && !a.coop) { a.coop = true; slog('coop=on'); }
+  // ?coop=1：直接置位会话内双人同屏模式（冒烟多触点路由与文案，不走 UI 切换；保持 mode/coop 同步不变量）
+  if (Q.get('coop') && !a.coop) { a.mode = 'coop'; a.coop = true; slog('coop=on'); }
   if (a.screen === 'splash') {
     // 菜单未出（只剩全屏跳过热区）→ 点中央跳过；菜单出了 → 点「开始战役」（下半屏最大命中区）
     const start = hooks().find((h) => /开始战役/.test(h.label))

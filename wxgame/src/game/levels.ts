@@ -1671,5 +1671,164 @@ LEVELS.push(
 );
 
 export function getLevel(id: number): LevelDef {
+  if (id === COOP_LEVEL.id) return COOP_LEVEL;
   return LEVELS.find((l) => l.id === id) ?? LEVELS[0];
 }
+
+// ---------------- 在线联机协作关卡 ----------------
+
+/**
+ * 双人协作专用图（不进 LEVELS —— 主页选关卡直接 forEach LEVELS，绝不能污染）。
+ * 地图沿用第 3 章「核心之门」的左右分流双路（互不接触，各守一座能量门）。
+ * 波次 15 波，强度对齐 normal 第 5-6 章；每组显式指定 path 且两路交替，保证双路压力相当。
+ * BOSS 波（第 8 / 15 波）双路各出一只，血量取同级单 BOSS 的 60%：
+ * 两名玩家各有完整 BOSS 战体验，总血量 1.2 倍与「单路 1.2 倍血」方案压力相当。
+ * 由联机层以 createEngine(difficulty, 0, { coop: true }) 创建；难度系数仍经 hpMul/speedMul 生效。
+ */
+export const COOP_LEVEL: LevelDef = {
+  id: 0,
+  name: '双子星门',
+  sub: '协同作战 · 双路联机防线',
+  briefing: [
+    '双子星门——殖民地跃迁网络的东西双门枢纽。虫群主力兵分两路，沿两条维修栈道同时压向双门。',
+    '指挥部命令：两名指挥官各领一路，独立军费、各自为战——但星门的护盾核心只有一座，漏掉的每一只虫子都在烧共同的生命。',
+    '守住全部波次。协同加成已计入战后军功，指挥官，并肩作战。',
+  ],
+  epilogue: '双子星门在双重火力网中屹立不倒。虫群残部退回深空——这一战，是两双眼睛一起赢下的。',
+  // 左路（path 0）左进左出，右路（path 1）右进右出，互不接触
+  paths: [
+    [[-1, 2], [4, 2], [4, 5], [1, 5], [1, 9], [3, 9], [3, 12], [1, 12], [1, 14], [2, 14], [2, 16]],
+    [[9, 2], [5, 2], [5, 4], [7, 4], [7, 7], [5, 7], [5, 10], [7, 10], [7, 13], [6, 13], [6, 16]],
+  ],
+  waves: [
+    {
+      wave: 1, groups: [{ type: 'crawler', count: 8, interval: 1.1, path: 0 }], bonus: 40, isBoss: false,
+      comm: '双门枢纽接敌——左路栈道先出现虫群。各守一路，指挥官！',
+    },
+    {
+      wave: 2,
+      groups: [
+        { type: 'crawler', count: 6, interval: 1.0, path: 1 },
+        { type: 'speeder', count: 4, interval: 0.8, path: 1 },
+      ],
+      bonus: 55, isBoss: false,
+      comm: '右路遇袭！别让任何一路放空。',
+    },
+    {
+      wave: 3,
+      groups: [
+        { type: 'splitter', count: 5, interval: 0.9, path: 0 },
+        { type: 'lurker', count: 3, interval: 0.9, path: 1 },
+      ],
+      bonus: 65, isBoss: false,
+    },
+    {
+      wave: 4,
+      groups: [
+        { type: 'tanker', count: 4, interval: 0.9, path: 0 },
+        { type: 'crawler', count: 8, interval: 0.8, path: 1 },
+      ],
+      bonus: 80, isBoss: false,
+    },
+    {
+      wave: 5,
+      groups: [
+        { type: 'lurker', count: 8, interval: 0.6, path: 1 },
+        { type: 'speeder', count: 10, interval: 0.6, path: 0 },
+      ],
+      bonus: 100, isBoss: false,
+      comm: '隐匿者开始渗透右路——电磁炮可无视隐身。',
+    },
+    {
+      wave: 6,
+      groups: [
+        { type: 'splitter', count: 9, interval: 0.65, path: 0 },
+        { type: 'tanker', count: 4, interval: 0.8, path: 1 },
+      ],
+      bonus: 130, isBoss: false,
+    },
+    {
+      wave: 7,
+      groups: [
+        { type: 'lurker', count: 10, interval: 0.55, path: 0 },
+        { type: 'speeder', count: 12, interval: 0.5, path: 1 },
+      ],
+      bonus: 150, isBoss: false,
+    },
+    {
+      wave: 8,
+      groups: [
+        { type: 'boss', count: 1, interval: 1.0, hpOverride: 4000, rewardOverride: 400, path: 0 },
+        { type: 'boss', count: 1, interval: 1.0, hpOverride: 4000, rewardOverride: 400, path: 1 },
+      ],
+      bonus: 280, isBoss: true,
+      comm: '警告：双路各有一只巨兽压阵！各自集火，别让它碰到星门！',
+    },
+    {
+      wave: 9,
+      groups: [
+        { type: 'tanker', count: 7, interval: 0.6, path: 1 },
+        { type: 'lurker', count: 8, interval: 0.55, path: 0 },
+      ],
+      bonus: 170, isBoss: false,
+    },
+    {
+      wave: 10,
+      groups: [
+        { type: 'splitter', count: 10, interval: 0.55, path: 0 },
+        { type: 'speeder', count: 10, interval: 0.5, path: 1 },
+        { type: 'crawler', count: 12, interval: 0.5, path: 0 },
+      ],
+      bonus: 200, isBoss: false,
+      comm: '兽潮密度还在上升。军费独立——照看好你自己的那一路。',
+    },
+    {
+      wave: 11,
+      groups: [
+        { type: 'lurker', count: 12, interval: 0.5, path: 1 },
+        { type: 'tanker', count: 5, interval: 0.7, path: 0 },
+        { type: 'splitter', count: 7, interval: 0.55, path: 1 },
+      ],
+      bonus: 240, isBoss: false,
+    },
+    {
+      wave: 12,
+      groups: [
+        { type: 'crawler', count: 14, interval: 0.4, path: 0 },
+        { type: 'speeder', count: 12, interval: 0.4, path: 1 },
+        { type: 'tanker', count: 6, interval: 0.6, path: 0 },
+      ],
+      bonus: 280, isBoss: false,
+    },
+    {
+      wave: 13,
+      groups: [
+        { type: 'splitter', count: 10, interval: 0.45, path: 1 },
+        { type: 'lurker', count: 10, interval: 0.45, path: 0 },
+        { type: 'speeder', count: 12, interval: 0.4, path: 1 },
+      ],
+      bonus: 320, isBoss: false,
+    },
+    {
+      wave: 14,
+      groups: [
+        { type: 'tanker', count: 8, interval: 0.5, path: 0 },
+        { type: 'lurker', count: 10, interval: 0.4, path: 1 },
+        { type: 'splitter', count: 8, interval: 0.45, path: 0 },
+      ],
+      bonus: 380, isBoss: false,
+      comm: '星门护盾能量见底。最后一波总攻要来了——把军费全部花掉！',
+    },
+    {
+      wave: 15,
+      groups: [
+        { type: 'boss', count: 1, interval: 0.8, hpOverride: 9600, rewardOverride: 900, path: 0 },
+        { type: 'boss', count: 1, interval: 0.8, hpOverride: 9600, rewardOverride: 900, path: 1 },
+        { type: 'speeder', count: 8, interval: 0.7, path: 0 },
+        { type: 'lurker', count: 6, interval: 0.8, path: 1 },
+      ],
+      bonus: 650, isBoss: true,
+      comm: '最终警告：双路各现身一只湮灭巨兽！这是双子星门的最后一战——开火！',
+    },
+  ],
+};

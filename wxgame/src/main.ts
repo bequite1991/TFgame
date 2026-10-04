@@ -12,12 +12,16 @@ import {
   BloomLayer, FxLayer, NebulaBg, setFxPlatform,
   drawBaseGlow, drawStarfield, drawVignette, hash01, readQualityHigh, SPARKS_PER_HIT,
 } from './game/fx';
-import type { Command, Difficulty, GameEngine, GameState, TowerType } from './game/types';
+import type { Command, Difficulty, GameEngine, GameEvent, GameState, TowerType } from './game/types';
 import type { TechId } from './game/types';
 import { sfx } from './audio';
 import { track, configureAnalytics } from './analytics';
+import { connectCoop, wsUrlFromApiBase } from './net';
+import type { CoopCallbacks, CoopConn } from './net';
+import { createGhostEngine } from './ghost';
+import type { GhostEngine } from './ghost';
 import { SKIN_MODULES } from './skins';
-import type { SkinEnv } from './skins/types';
+import type { PlayMode, SkinEnv } from './skins/types';
 
 // ---------------- 运行环境 ----------------
 
@@ -71,7 +75,16 @@ declare const wx: {
   showShareMenu?(o: { withShareTicket?: boolean; menus?: string[]; success?: () => void; fail?: (e?: unknown) => void }): void;
   onShareAppMessage?(cb: () => { title: string; imageUrl?: string }): void;
   onShareTimeline?(cb: () => { title: string; imageUrl?: string }): void;
-  shareAppMessage?(o: { title: string; imageUrl?: string }): void;
+  shareAppMessage?(o: { title: string; imageUrl?: string; query?: string }): void;
+  connectSocket?(o: { url: string }): {
+    onOpen(cb: () => void): void;
+    onMessage(cb: (r: { data: unknown }) => void): void;
+    onClose(cb: () => void): void;
+    onError(cb: (e?: unknown) => void): void;
+    send(o: { data: string; success?: () => void; fail?: (e?: unknown) => void }): void;
+    close(o?: Record<string, unknown>): void;
+  };
+  getLaunchOptionsSync?(): { query?: Record<string, unknown> };
   openCustomerServiceChat?(o: {
     extInfo: { url: string }; corpId: string;
     success?: () => void; fail?: (e?: unknown) => void;
@@ -1226,7 +1239,7 @@ const CARD_STARS: Record<number, Star[]> = {};
 
 // ---------------- 应用状态 ----------------
 
-type Screen = 'splash' | 'home' | 'briefing' | 'battle' | 'result' | 'codex';
+type Screen = 'splash' | 'home' | 'briefing' | 'battle' | 'result' | 'codex' | 'lobby';
 const app = {
   screen: 'splash' as Screen,
   splashAt: Date.now(),
@@ -1241,20 +1254,41 @@ const app = {
   result: null as { won: boolean } | null,
   techShownAt: 0,
   techPickedAt: 0,
-  // 双人同屏协作开关（§4.1 A 档；按会话保持，不落盘）
+  // 双人同屏协作开关（§4.1 A 档；按会话保持，不落盘）。与 mode 同步：coop === (mode==='coop')
   coop: false,
+  // 玩法模式三档（§4.3 C 档）：单人 / 双人同屏 / 在线联机
+  mode: 'single' as PlayMode,
+  // 分享卡片带入的待加入房间码（邀请横幅数据源）
+  pendingRoom: null as string | null,
 };
 
-/** 切换 单人 / 双人同屏（home 选关页分段控件调用） */
-function toggleCoop() {
-  app.coop = !app.coop;
-  track('coop_toggle', { mode: app.coop ? 1 : 0 });
+/** 切换玩法模式三档（home 模式控件调用；同步 app.coop 布尔镜像） */
+function setMode(m: PlayMode) {
+  if (app.mode === m) return;
+  app.mode = m;
+  app.coop = m === 'coop';
+  track('coop_toggle', { mode: m === 'single' ? 0 : m === 'coop' ? 1 : 2 });
 }
+
+/** 切换 单人 / 双人同屏（兼容旧调用；新 UI 走 setMode） */
+function toggleCoop() {
+  setMode(app.mode === 'coop' ? 'single' : 'coop');
+}
+
+// 分享卡片邀请直达：启动参数 query.room（6 位房间码），splash/home 顶部弹邀请横幅
+try {
+  const room = wx.getLaunchOptionsSync?.().query?.room;
+  if (typeof room === 'string' && /^[A-Z0-9]{4,8}$/.test(room)) app.pendingRoom = room;
+} catch { /* ignore */ }
 
 /** 页面切换时间戳（淡入过渡用） */
 let screenAt = Date.now();
 function goto(s: Screen) {
   if (app.screen === s) return;
+  // 联机会话集中清理：离开战斗屏即退房（已结算的房间静默关闭，未结算的通知对方）
+  if (app.screen === 'battle' && online) teardownOnline(!online.ended);
+  // 离开结算页：清掉结算快照的联机信息
+  if (app.screen === 'result' && s !== 'result') onlineResultInfo = null;
   app.screen = s;
   screenAt = Date.now();
 }
@@ -1473,6 +1507,8 @@ function toggleNarrationMuted() {
 }
 
 function gotoBriefing(levelId: number) {
+  // 在线联机模式：所有关卡卡 CTA 统一拦截进联机大厅（双子星门固定图，无简报页）
+  if (app.mode === 'online') { enterLobby(); return; }
   app.levelId = levelId;
   track('chapter_select', { level_id: levelId });
   goto('briefing');
@@ -1840,7 +1876,7 @@ function drawHome(time: number) {
     app.difficulty = DIFF_LIST[i];
     track('difficulty_select', { difficulty: app.difficulty });
   });
-  segControl(MARGIN + diffW + 10, segY, segW - diffW - 10, ['单人', '双人同屏'], app.coop ? 1 : 0, 'coop', () => toggleCoop());
+  segControl(MARGIN + diffW + 10, segY, segW - diffW - 10, ['单人', '同屏', '联机'], app.mode === 'coop' ? 1 : app.mode === 'online' ? 2 : 0, 'coop', (i) => setMode(i === 1 ? 'coop' : i === 2 ? 'online' : 'single'));
 
   // 关卡卡片列表（可滚动）
   ctx.save();
@@ -2055,9 +2091,8 @@ let battleStartAt = 0;
 /** 最近一局结算积分与评级（gameOver 写入，皮肤结算页经 env.getLastSettlement() 读取） */
 let lastSettlement: { score: number; grade: Grade } | null = null;
 
-function startBattle() {
-  stopNarration();
-  app.engine = createEngine(app.difficulty, app.levelId);
+/** 战斗视图初始化（fx/bloom/路径像素/选中态）；单局与联机局（主机/客机）共用 */
+function initBattleView() {
   app.placing = null;
   app.selectedId = null;
   app.result = null;
@@ -2065,11 +2100,390 @@ function startBattle() {
   barScroll = 0;
   fx = new FxLayer();
   bloom = new BloomLayer(W, H);
-  pathPixels = app.engine.map.paths.map((p) => p.pixels);
+  pathPixels = app.engine!.map.paths.map((p) => p.pixels);
   battleStartAt = Date.now();
   coopClearTouches();
+}
+
+function startBattle() {
+  stopNarration();
+  app.engine = createEngine(app.difficulty, app.levelId);
+  initBattleView();
   track('game_start', { level_id: app.levelId, difficulty: app.difficulty, coop: app.coop ? 1 : 0 });
   goto('battle');
+}
+
+// ---------------- 在线联机（C 档 · 主机权威；design/coop-online.md） ----------------
+// 主机：跑唯一真实引擎（createEngine coop:true），200ms 广播裁剪快照，双方指令都进它的 dispatchAs；
+// 客机：GhostEngine 渲染快照、指令上网。断线重连/心跳/退房由 net.ts 承载，此处只管会话状态机。
+
+interface OnlineSession {
+  conn: CoopConn | null;
+  /** 入口意图：首次 onOpen 时据此发 create / join */
+  intent: { action: 'create' } | { action: 'join'; roomId: string };
+  roomId: string;
+  player: number;          // 0 主机 / 1 客机
+  peerNick: string;
+  peerReady: boolean;      // 客机已加入（主机端「开始战斗」前置条件）
+  peerLost: boolean;       // 对手断线待重连（战斗内持续横幅）
+  started: boolean;        // 已开局（主机点开始 / 客机收到首个快照）
+  ended: boolean;          // 结算仲裁已发出/收到（end 已发或游戏已结束）
+  connecting: boolean;     // 连接/重连进行中（大厅状态文案）
+  snapTimer: ReturnType<typeof setInterval> | null;
+}
+let online: OnlineSession | null = null;
+/** 快照附带事件的帧间缓冲（主机：frame drainEvents 后推入，200ms 广播时 splice 带走） */
+const snapEvents: GameEvent[] = [];
+/** 结算页展示用的最近一局联机信息（settleOnline 写入，离开 result 时清空） */
+let onlineResultInfo: { peerNick: string; player: number } | null = null;
+
+/** 在线局信息：联机会话存活时取会话，否则取结算快照（结算页展示队友昵称/分工用） */
+function getOnlineInfo(): { peerNick: string; player: number } | null {
+  if (online) return { peerNick: online.peerNick, player: online.player };
+  return onlineResultInfo;
+}
+
+/** 房间码哈希（埋点脱敏：逐字符累加取模，不上报原码） */
+function roomHash(roomId: string): number {
+  let h = 0;
+  for (const ch of roomId) h = (h + ch.charCodeAt(0)) % 100000;
+  return h;
+}
+
+/** 结束联机会话：可选先通知服务器退房，再断连清定时器 */
+function teardownOnline(sendLeave: boolean) {
+  const sess = online;
+  if (!sess) return;
+  online = null;
+  if (sess.snapTimer !== null) clearInterval(sess.snapTimer);
+  const conn = sess.conn;
+  if (conn) {
+    if (sendLeave) conn.send({ t: 'leave' });
+    conn.close();
+  }
+}
+
+/** 联机结算（双方共用入口：gameOver 事件 / end 消息双通道，app.result 防重复）。
+ *  各人按个人击杀计分 ×1.2 协同加成；协作图不计战役通关与各关最高 */
+function settleOnline(won: boolean) {
+  const sess = online;
+  if (app.result || !app.engine || !sess) return;
+  app.result = { won };
+  // 主机权威：由主机广播结算仲裁（客机等到服务器 end 或快照 gameOver 后本地结算）
+  if (sess.player === 0 && !sess.ended) sess.conn?.send({ t: 'end', won });
+  sess.ended = true; // 游戏结束意味着 end 已发/将至，离开战斗屏时无需再 leave
+  onlineResultInfo = { peerNick: sess.peerNick, player: sess.player };
+  const st0 = app.engine.state;
+  const myKills = st0.killsBy?.[sess.player] ?? st0.kills;
+  const gained = Math.round(calcScore({ ...st0, kills: myKills }, app.difficulty, 0, won) * 1.2);
+  const grade = battleGrade(st0, won);
+  lastSettlement = { score: gained, grade };
+  const rankBefore = commanderRank();
+  scoreProfile.points += gained;
+  scoreProfile.spendable += gained;
+  if (gained > scoreProfile.bestSingle) scoreProfile.bestSingle = gained;
+  scoreProfile.updatedAt = Date.now();
+  saveScore();
+  coopClearTouches(); // 离开战斗屏前清掉多触点手势状态
+  syncScoreToCloud(); // 已登录则同步服务端（静默失败）
+  track('score_gain', { score: gained, grade, level_id: 0, coop: 2 });
+  track('game_end', {
+    level_id: 0,
+    difficulty: app.difficulty,
+    result: won ? 'win' : 'lose',
+    wave_reached: st0.wave,
+    duration_sec: Math.round((Date.now() - battleStartAt) / 1000),
+    kills: myKills,
+    leaks: st0.leaked,
+    score: gained,
+    grade,
+    coop: 2,
+  });
+  track('room_finish', { room_id: roomHash(sess.roomId), result: won ? 'win' : 'lose', wave: st0.wave });
+  const rankAfter = commanderRank();
+  if (rankAfter !== rankBefore) showToast(`晋升 · ${rankAfter}`);
+  goto('result');
+}
+
+/** 联机网络回调（建房/加入共用；sess 闭包绑定，会话被替换后旧回调一律忽略） */
+function makeNetHandlers(sess: OnlineSession): CoopCallbacks {
+  return {
+    onOpen: (reconnected) => {
+      if (online !== sess) return;
+      sess.connecting = false;
+      if (reconnected) { showToast('已重新连接'); return; }
+      // 首次连接：按入口意图发建房/加房
+      if (sess.intent.action === 'create') {
+        sess.conn?.send({ t: 'create', nick: displayNick(), levelId: 0, difficulty: app.difficulty });
+      } else {
+        sess.conn?.send({ t: 'join', roomId: sess.intent.roomId, nick: displayNick() });
+      }
+    },
+    onRoom: (info) => {
+      if (online !== sess) return;
+      if (sess.roomId) return; // 重连归位确认，忽略
+      sess.roomId = info.roomId;
+      sess.conn?.setRejoinInfo({ roomId: info.roomId });
+      if (info.role === 'host') {
+        sess.player = 0;
+        track('room_create', { room_id: roomHash(info.roomId) });
+      } else {
+        sess.player = 1;
+        sess.peerNick = info.hostNick ?? '';
+        sess.peerReady = true;
+        if (info.difficulty === 'easy' || info.difficulty === 'normal' || info.difficulty === 'hard') {
+          app.difficulty = info.difficulty; // 客机难度以房间为准
+        }
+        track('room_join', { room_id: roomHash(info.roomId) });
+        showToast(`已加入 ${sess.peerNick || '好友'} 的房间`);
+      }
+    },
+    onPeer: (nick, status) => {
+      if (online !== sess) return;
+      if (status === 'joined') {
+        sess.peerNick = nick;
+        sess.peerReady = true;
+        sess.peerLost = false;
+        showToast(`${nick} 加入了房间`);
+        buzz('light');
+      } else if (status === 'lost') {
+        sess.peerLost = true;
+        showToast('对手断线，等待重连…');
+      } else {
+        sess.peerLost = false;
+        showToast('对手已重连');
+      }
+    },
+    onCmd: (player, cmd) => {
+      if (online !== sess) return;
+      // 主机收客机指令：以客机身份进引擎（UPGRADE/SELL 越权由引擎拒绝）
+      if (sess.player === 0 && app.engine && app.screen === 'battle') app.engine.dispatchAs(player, cmd);
+    },
+    onSnap: (netState, events) => {
+      if (online !== sess || sess.player !== 1) return;
+      if (!app.engine) {
+        // 首个快照 = 主机已开局：客机建幽灵引擎进战斗（渲染层零改动）
+        app.levelId = 0;
+        const conn = sess.conn;
+        app.engine = createGhostEngine(app.difficulty, 0, (cmd) => {
+          conn?.send({ t: 'cmd', player: 1, cmd });
+        });
+        initBattleView();
+        sess.started = true;
+        track('game_start', { level_id: 0, difficulty: app.difficulty, coop: 2 });
+        goto('battle');
+      }
+      (app.engine as GhostEngine).applySnap(netState, events);
+    },
+    onEnd: (won, reason) => {
+      if (online !== sess) return;
+      sess.ended = true;
+      if (app.result) return; // 已结算（本地 gameOver 先行）
+      if (app.screen === 'battle' && app.engine) {
+        // 对局中被仲裁/解散：按当前进度结算
+        settleOnline(won);
+      } else {
+        // 大厅中房间解散
+        showToast(reason === 'peer_left' ? '对手离开了房间' : '房间已解散');
+        teardownOnline(false);
+        goto('home');
+      }
+    },
+    onError: (code) => {
+      if (online !== sess) return;
+      showToast(
+        code === 'room_full' ? '房间已满'
+          : code === 'room_not_found' ? '房间不存在或已解散'
+            : code === 'server_full' ? '服务器繁忙，请稍后再试'
+              : '联机异常，请稍后再试',
+      );
+      if (!sess.started) teardownOnline(false); // 未开局直接清会话留在大厅；局中错误不打断战斗
+    },
+    onReconnecting: (n) => {
+      if (online !== sess) return;
+      sess.connecting = true;
+      showToast(`连接中断，正在重连（${n}/3）…`);
+    },
+    onClose: () => {
+      // 重连耗尽，连接彻底断开
+      if (online !== sess) return;
+      if (sess.started && app.screen === 'battle' && app.engine) {
+        if (sess.player === 0) {
+          settleOnline(false); // 主机在战斗中掉线：按当前进度判负结算
+        } else {
+          showToast('连接已断开');
+          app.engine = null;
+          teardownOnline(false);
+          goto('home');
+        }
+      } else {
+        showToast('连接失败，请检查网络');
+        teardownOnline(false);
+      }
+    },
+  };
+}
+
+/** 建立联机会话（建房/加入共用入口）；环境不支持联机时 toast 并返回 false */
+function openOnlineSession(intent: OnlineSession['intent']): boolean {
+  if (online) teardownOnline(false); // 防御：替换旧会话
+  const sess: OnlineSession = {
+    conn: null, intent, roomId: '', player: intent.action === 'create' ? 0 : 1,
+    peerNick: '', peerReady: false, peerLost: false, started: false, ended: false,
+    connecting: true, snapTimer: null,
+  };
+  online = sess;
+  const conn = connectCoop(wx, { url: wsUrlFromApiBase(API_BASE), nick: displayNick() }, makeNetHandlers(sess));
+  if (!conn) {
+    online = null;
+    showToast('当前环境不支持联机');
+    return false;
+  }
+  sess.conn = conn;
+  return true;
+}
+
+function hostCreateRoom() {
+  openOnlineSession({ action: 'create' }); // room_create 埋点在 onRoom 拿到房号后打
+}
+
+function joinRoom(code: string) {
+  app.pendingRoom = null;
+  openOnlineSession({ action: 'join', roomId: code }); // room_join 埋点在 onRoom 确认后打
+}
+
+/** 进入联机大厅（在线模式的 gotoBriefing 拦截点 / 邀请横幅接受点共用） */
+function enterLobby() {
+  goto('lobby');
+  // 邀请链接直达：自动加入好友房间
+  if (app.pendingRoom && !online) joinRoom(app.pendingRoom);
+}
+
+/** 邀请好友：分享卡片带 query room=CODE，好友点开即进邀请横幅 */
+function shareInvite(roomId: string) {
+  track('share_click', { channel: 'coop_invite' });
+  try {
+    wx.shareAppMessage?.({
+      title: `来《高塔防线》和我协同防守「双子星门」！房间码 ${roomId}`,
+      imageUrl: 'assets/share-cover.jpg',
+      query: `room=${roomId}`,
+    });
+  } catch { /* ignore */ }
+  showToast('分享后好友点开卡片即可加入');
+}
+
+/** 主机开局：建协作引擎 + 200ms 快照广播 */
+function startOnlineBattle() {
+  const sess = online;
+  if (!sess || sess.player !== 0 || !sess.peerReady || sess.started) return;
+  stopNarration();
+  app.levelId = 0; // 协作图「双子星门」
+  app.engine = createEngine(app.difficulty, 0, { coop: true });
+  initBattleView();
+  sess.started = true;
+  snapEvents.length = 0;
+  sess.snapTimer = setInterval(() => {
+    const eng = app.engine;
+    if (online !== sess || !eng || !sess.conn?.connected) return;
+    // serializeNet 剔除装饰数组；JSON.stringify 同步取值，引用安全
+    sess.conn.send({ t: 'snap', state: eng.serializeNet(), events: snapEvents.splice(0) });
+  }, 200);
+  track('game_start', { level_id: 0, difficulty: app.difficulty, coop: 2 });
+  goto('battle');
+}
+
+// ---------------- 联机大厅（内置兜底渲染，皮肤无接管） ----------------
+
+function drawLobby() {
+  hooks = [];
+  drawSpaceBg(Date.now() / 1000);
+  drawHeader('在线联机 · 双子星门', { back: () => { teardownOnline(true); goto('home'); } });
+  const sess = online;
+  const px = MARGIN;
+  const pw = VW - MARGIN * 2;
+  let y = TOP_SAFE + 24;
+
+  // 玩法说明卡
+  panel(px, y, pw, 96, C.panelLine);
+  fillText('CO-OP ONLINE', px + 16, y + 20, { size: 10, color: C.cyan, weight: '600' });
+  fillText('与好友各守一条防线', px + 16, y + 42, { size: 15 });
+  fillText('共享生命 · 经济独立 · 击杀各计 · 结算 ×1.2', px + 16, y + 66, { size: 11, color: C.sub, weight: 'normal' });
+  y += 116;
+
+  if (!sess) {
+    // 入口状态：建房 / 加房（加房走邀请卡片直达，无手输房码）
+    if (app.pendingRoom) {
+      btn({
+        x: px, y, w: pw, h: 52, label: `加入好友的房间 ${app.pendingRoom}`, color: C.green, primary: true,
+        cb: () => joinRoom(app.pendingRoom!),
+      });
+      y += 66;
+    }
+    btn({ x: px, y, w: pw, h: 52, label: '✚ 创建房间', color: C.cyan, primary: !app.pendingRoom, cb: hostCreateRoom });
+    y += 66;
+    fillText('建房后邀请好友，好友点开分享卡片即可加入', VW / 2, y + 10, { size: 11, color: C.dim, align: 'center', weight: 'normal' });
+    return;
+  }
+
+  if (sess.player === 0) {
+    // 主机：房间码大字 + 邀请 + 状态 + 开始
+    panel(px, y, pw, 132, C.panelLine);
+    fillText('房间码', px + 16, y + 22, { size: 11, color: C.sub, weight: 'normal' });
+    fillText(sess.roomId || '······', VW / 2, y + 62, { size: 34, color: C.gold, align: 'center', font: RES_FONT() });
+    fillText(
+      sess.connecting ? '连接服务器中…' : sess.peerReady ? `${sess.peerNick} 已就位` : '等待好友加入…',
+      VW / 2, y + 102, { size: 12, color: sess.peerReady ? C.green : C.sub, align: 'center', weight: 'normal' },
+    );
+    y += 150;
+    btn({ x: px, y, w: pw, h: 46, label: '📣 邀请好友', color: C.pink, disabled: !sess.roomId, cb: () => shareInvite(sess.roomId) });
+    y += 60;
+    btn({
+      x: px, y, w: pw, h: 54, label: '▶ 开始战斗', color: C.green, primary: true,
+      disabled: !sess.peerReady || sess.connecting, cb: startOnlineBattle,
+    });
+    y += 68;
+    fillText(`难度 ${DIFFICULTIES[app.difficulty].name}（建房时选定）`, VW / 2, y + 8, { size: 11, color: C.dim, align: 'center', weight: 'normal' });
+  } else {
+    // 客机：已加入，等待主机开始
+    panel(px, y, pw, 120, C.panelLine);
+    fillText(`已加入 ${sess.peerNick || '好友'} 的房间`, VW / 2, y + 32, { size: 16, align: 'center' });
+    fillText(`房间码 ${sess.roomId} · 难度 ${DIFFICULTIES[app.difficulty].name}`, VW / 2, y + 60, { size: 11, color: C.sub, align: 'center', weight: 'normal' });
+    // 等待动画：三点轮换
+    const dots = '.'.repeat(1 + (Math.floor(Date.now() / 500) % 3));
+    fillText(sess.connecting ? '连接服务器中…' : `等待主机开始战斗${dots}`, VW / 2, y + 90, { size: 12, color: C.gold, align: 'center', weight: 'normal' });
+    y += 140;
+  }
+  if (sess.peerLost) {
+    fillText('⚠ 对手断线，等待重连（60s 内）…', VW / 2, y + 10, { size: 12, color: C.red, align: 'center' });
+  }
+}
+
+/** 客机 tech 阶段：科技三选一以主机为准，客机画等待面板（引擎本就拒绝 player 1 的 PICK_TECH） */
+function drawTechWaiting() {
+  ctx.fillStyle = 'rgba(7,11,24,0.85)';
+  ctx.fillRect(0, 0, VW, VH);
+  const pw2 = VW - 96;
+  const ph2 = 108;
+  const py2 = VH / 2 - ph2 / 2;
+  panel(48, py2, pw2, ph2, C.panelLine);
+  fillText('战术模块整备中', VW / 2, py2 + 34, { size: 16, align: 'center' });
+  const dots = '.'.repeat(1 + (Math.floor(Date.now() / 500) % 3));
+  fillText(`等待主机选择战术模块${dots}`, VW / 2, py2 + 66, { size: 12, color: C.sub, align: 'center', weight: 'normal' });
+}
+
+/** 邀请进入横幅（分享卡片 query.room 带入；皮肤无关，帧尾绘制盖在当前页之上） */
+function drawInviteBanner() {
+  const bx = MARGIN;
+  const bw = VW - MARGIN * 2;
+  const by = TOP_SAFE + 4;
+  panel(bx, by, bw, 64, 'rgba(61,240,140,0.45)');
+  fillText('🤝 好友邀你联机协作', bx + 16, by + 20, { size: 13, color: C.green });
+  fillText(`房间码 ${app.pendingRoom} · 双子星门`, bx + 16, by + 42, { size: 11, color: C.sub, weight: 'normal' });
+  btn({
+    x: bx + bw - 140, y: by + 14, w: 96, h: 36, label: '接受邀请', color: C.green, primary: true,
+    cb: () => { setMode('online'); enterLobby(); },
+  });
+  btn({ x: bx + bw - 36, y: by + 14, w: 30, h: 36, label: '✕', color: C.sub, cb: () => { app.pendingRoom = null; } });
 }
 
 // ---------------- 战斗 ----------------
@@ -2220,10 +2634,17 @@ function drawBattle() {
 
   if (st.phase === 'tech' && st.techChoices) {
     if (!techShownAt) techShownAt = Date.now();
-    if (bm?.drawTechOverlay) bm.drawTechOverlay(env, engine);
+    if (online?.started && online.player === 1) drawTechWaiting(); // 联机客机：科技以主机为准
+    else if (bm?.drawTechOverlay) bm.drawTechOverlay(env, engine);
     else drawTechOverlay(st);
   } else {
     techShownAt = 0;
+  }
+
+  // 在线联机：对手断线持续横幅（帧尾绘制，盖在所有皮肤 HUD 之上）
+  if (online?.peerLost) {
+    panel(40, VH * 0.16, VW - 80, 40, 'rgba(255,90,90,0.5)');
+    fillText('⚠ 对手断线，等待重连（60s 内）…', VW / 2, VH * 0.16 + 20, { size: 12, color: C.red, align: 'center' });
   }
 
   if (showSettings) drawSettingsOverlay();
@@ -2448,6 +2869,7 @@ function drawResult(time: number) {
   drawSpaceBg(time);
   const won = app.result!.won;
   const st = app.engine!.state;
+  const oi = getOnlineInfo(); // 在线局信息（结算页展示队友/个人击杀用）
   const t = (Date.now() - screenAt) / 1000; // 进入结算页的时长（动画驱动）
 
   // 胜利彩带（无状态：粒子轨迹是 t 的确定函数）
@@ -2485,7 +2907,7 @@ function drawResult(time: number) {
     ctx.restore();
   }
 
-  drawHeader(app.coop ? '协同作战结算' : '战斗结算', { back: () => goto('home') });
+  drawHeader(app.coop || oi ? '协同作战结算' : '战斗结算', { back: () => goto('home') });
   const y0 = TOP_SAFE + 16;
   // 标题回弹入场
   const bt = Math.min(1, t / 0.45);
@@ -2496,21 +2918,24 @@ function drawResult(time: number) {
   fillText(won ? '★ 防线守住了' : '✕ 防线失守', 0, 0, { size: 26, color: won ? C.green : C.pink, align: 'center' });
   ctx.restore();
   fillText(
-    won ? `第 ${app.levelId} 章 · ${LEVELS.find((l) => l.id === app.levelId)?.name ?? ''}` : `撑到了第 ${st.wave} / ${st.totalWaves} 波`,
+    won ? (oi ? '在线协同 · 双子星门' : `第 ${app.levelId} 章 · ${LEVELS.find((l) => l.id === app.levelId)?.name ?? ''}`) : `撑到了第 ${st.wave} / ${st.totalWaves} 波`,
     VW / 2, y0 + 32, { size: 13, color: C.sub, align: 'center', weight: 'normal' },
   );
 
-  // 本局积分（与 gameOver 入账同一公式 calcScore，此处纯展示重算）
-  const gained = calcScore(st, app.difficulty, app.levelId, won);
+  // 本局积分（优先取 gameOver 入账的结算值；联机局为个人击杀 ×1.2，重算公式会失真）
+  const gained = lastSettlement ? lastSettlement.score : calcScore(st, app.difficulty, app.levelId, won);
+  // 在线局：击杀数按个人击杀分账显示
+  const myKills = oi ? (st.killsBy?.[oi.player] ?? st.kills) : st.kills;
   // 战绩面板（数字滚动递增）；末行「积分 +N」金色（随同一 count-up 节奏滚动）
   const rows: [k: string, v: string, num: number | null, color?: string, plus?: boolean][] = [
-    ['击杀', String(st.kills), st.kills],
+    ['击杀', String(myKills), myKills],
     ['漏怪', String(st.leaked), st.leaked],
     ['剩余生命', `${st.lives} / ${st.maxLives}`, null],
     ['赚取金币', String(st.goldEarned), st.goldEarned],
     ['战术模块', String(st.techs.length), st.techs.length],
     ['积分', `+${gained}`, gained, C.gold, true],
   ];
+  if (oi) rows.splice(1, 0, ['在线协同', `队友 ${oi.peerNick || '—'}`, null, C.cyan]);
   const px = 24;
   const pw = VW - 48;
   const py = y0 + 58;
@@ -2546,7 +2971,7 @@ function drawResult(time: number) {
   ctx.beginPath(); ctx.arc(gx, gy3 + 10, 26, 0, Math.PI * 2); ctx.stroke();
   fillText(grade, gx, gy3 + 8, { size: 30, color: gradeColor, align: 'center', font: RES_FONT() });
   fillText(['完美防线', '防守好手', '守住防线', '防线失守'][['S','A','B','D'].indexOf(grade)], gx + 44, gy3 - 4, { size: 15, color: gradeColor });
-  fillText(won ? '下一章解锁已记录' : '再挑战一次就能通过', gx + 44, gy3 + 18, { size: 10, color: C.sub, align: 'center', weight: 'normal' });
+  fillText(won ? (oi ? '协同加成 ×1.2 已入账' : '下一章解锁已记录') : '再挑战一次就能通过', gx + 44, gy3 + 18, { size: 10, color: C.sub, align: 'center', weight: 'normal' });
   // 军衔进度副文案：当前军衔 · 距下一档差额（满级显示已达最高军衔）
   const rp = rankProgress();
   fillText(
@@ -2559,7 +2984,7 @@ function drawResult(time: number) {
 
   let y = py + rows.length * rowH + 40;
   const nextId = app.levelId + 1;
-  const hasNext = LEVELS.some((l) => l.id === nextId);
+  const hasNext = !oi && LEVELS.some((l) => l.id === nextId); // 联机协作图不是战役关，无「进入下一章」
   if (won) {
     // 激励视频广告位（流量主开通后接入 wx.createRewardedVideoAd 实现真翻倍）
     btn({ x: px, y, w: pw, h: 50, label: '◈ 双倍战利 · 观看视频', color: C.gold, cb: () => { showToast('广告模块开发中'); } });
@@ -3050,15 +3475,21 @@ function frame() {
 
   if (app.screen === 'battle' && app.engine) {
     app.engine.tick(dt);
-    for (const ev of app.engine.drainEvents()) {
+    const evs = app.engine.drainEvents();
+    // 主机：事件随下一次快照广播给客机（客机 drainEvents 出来的是快照外层事件，不回填）
+    if (online?.player === 0 && online.started && evs.length) snapEvents.push(...evs);
+    for (const ev of evs) {
       if (ev.type === 'leak') { sfx.play('leak'); buzz('heavy'); leakFlashAt = Date.now(); }
       else if (ev.type === 'waveStart') sfx.play('waveStart');
       else if (ev.type === 'waveClear') sfx.play('waveClear');
       else if (ev.type === 'bossDown') { sfx.play('boss'); buzz('heavy'); }
       else if (ev.type === 'sfx') sfx.play(ev.name);
       else if (ev.type === 'gameOver') {
+        if (app.result) continue; // 联机双通道（end 消息 / 快照事件）防重复结算
         sfx.play(ev.won ? 'victory' : 'defeat');
         buzz(ev.won ? 'medium' : 'heavy');
+        // 在线联机：走联机结算（个人击杀 ×1.2、不计战役进度；主机先发 end 仲裁）
+        if (online) { settleOnline(ev.won); continue; }
         app.result = { won: ev.won };
         // 结算埋点（wave_fail 并入：失败时 result=lose + wave_reached 即失败波次，不重复打）
         const st0 = app.engine.state;
@@ -3104,6 +3535,10 @@ function frame() {
     else if (app.screen === 'battle' && app.engine) drawBattle();
     else if (app.screen === 'codex') drawCodex(now / 1000);
     else if (app.screen === 'result' && app.engine) drawResult(now / 1000);
+    else if (app.screen === 'lobby') drawLobby();
+
+    // 邀请进入横幅（分享卡片 query.room 带入；皮肤无关，盖在 splash/home 之上）
+    if (app.pendingRoom && (app.screen === 'home' || app.screen === 'splash')) drawInviteBanner();
 
     // 页面切换过渡：风格随皮肤（fade 淡入 / wipe 切角挡板横扫 / glitch 黑场色带）
     const ft = (Date.now() - screenAt) / 240;
@@ -3201,6 +3636,7 @@ const env: SkinEnv = {
   loadProgress, unlockedChapter, towerUnlocked,
   // 动作
   goto, gotoBriefing, stopNarration, startBattle, engineCmd, applySkin, authUser, openFeedback, toggleCoop,
+  setMode, getOnlineInfo,
   // 主动拉起分享（判空包装 wx.shareAppMessage）
   shareAppMessage: (o) => { try { wx.shareAppMessage?.(o); } catch { /* ignore */ } },
   commanderRank, displayNick,
@@ -3616,4 +4052,9 @@ frame();
 try {
   (globalThis as { __SRD?: unknown }).__SRD = app;
   (globalThis as { __SRD_HOOKS?: object }).__SRD_HOOKS = { get: () => hooks };
+  // 联机调试：会话只读视图 + 联机动作（CDP 双端联调驱动用）
+  (globalThis as { __SRD_NET?: object }).__SRD_NET = {
+    get session() { return online; },
+    setMode, enterLobby, hostCreateRoom, joinRoom, startOnlineBattle,
+  };
 } catch { /* ignore */ }

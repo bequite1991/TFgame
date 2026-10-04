@@ -24,6 +24,8 @@ export interface TowerState {
   lastFireAt: number; // 最近一次开火时刻（引擎时钟，驱动开火帧动画）
   kills: number;
   invested: number; // 累计投入金币（建造+升级）
+  /** 塔的归属玩家：单人恒为 0；联机协作 0=主机 / 1=客机（建造/升级/出售鉴权与击杀分账依据） */
+  owner: number;
 }
 
 export interface EnemyState {
@@ -147,9 +149,16 @@ export interface GameState {
   phase: Phase;
   clock: number; // 引擎时钟（秒，受加速影响）
   timeSec: number; // 本局用时
+  /** 单人：唯一金币池；联机协作：恒等于 golds[0] 的镜像（供 UI/兼容旧逻辑读取） */
   gold: number;
-  lives: number;
+  lives: number; // 联机协作为双方共享生命
   maxLives: number;
+  /** 联机协作：是否为双人协作局（createEngine opts.coop） */
+  coop: boolean;
+  /** 联机协作：双方独立金币池 [主机, 客机]；单人恒为 null */
+  golds: [number, number] | null;
+  /** 联机协作：双方各自击杀数 [主机, 客机]（仅塔击杀计数）；单人恒为 null */
+  killsBy: [number, number] | null;
   wave: number; // 当前/即将开始波次
   totalWaves: number; // 本关总波数
   prepT: number; // 波次前倒计时
@@ -181,6 +190,9 @@ export interface GameState {
   events: GameEvent[];
 }
 
+/** 联机快照类型：玩法状态全量，剔除纯装饰特效数组以省带宽（zones 保留——灼烧区是玩法数据） */
+export type NetGameState = Omit<GameState, 'particles' | 'beams' | 'rings' | 'floaters'>;
+
 export type Command =
   | { type: 'BUILD'; col: number; row: number; tower: TowerType }
   | { type: 'UPGRADE'; id: number }
@@ -197,6 +209,11 @@ export interface GameEngine {
   level: LevelDef;
   tick(dtReal: number): void;
   dispatch(cmd: Command): boolean;
+  /** 以指定玩家身份执行命令（联机协作鉴权：0=主机 / 1=客机）；dispatch(cmd) 等价于 dispatchAs(0, cmd) */
+  dispatchAs(player: number, cmd: Command): boolean;
+  /** 联机快照：剔除纯装饰数组（particles/beams/rings/floaters）后的玩法状态。
+   *  快照里的 events 在 drainEvents 之后恒为空属正常——事件由联机层在快照消息外层附带 */
+  serializeNet(): NetGameState;
   subscribe(fn: () => void): () => void;
   drainEvents(): GameEvent[];
 }

@@ -2231,24 +2231,197 @@
     }
   );
   function getLevel(id) {
+    if (id === COOP_LEVEL.id) return COOP_LEVEL;
     return LEVELS.find((l) => l.id === id) ?? LEVELS[0];
   }
+  var COOP_LEVEL = {
+    id: 0,
+    name: "\u53CC\u5B50\u661F\u95E8",
+    sub: "\u534F\u540C\u4F5C\u6218 \xB7 \u53CC\u8DEF\u8054\u673A\u9632\u7EBF",
+    briefing: [
+      "\u53CC\u5B50\u661F\u95E8\u2014\u2014\u6B96\u6C11\u5730\u8DC3\u8FC1\u7F51\u7EDC\u7684\u4E1C\u897F\u53CC\u95E8\u67A2\u7EBD\u3002\u866B\u7FA4\u4E3B\u529B\u5175\u5206\u4E24\u8DEF\uFF0C\u6CBF\u4E24\u6761\u7EF4\u4FEE\u6808\u9053\u540C\u65F6\u538B\u5411\u53CC\u95E8\u3002",
+      "\u6307\u6325\u90E8\u547D\u4EE4\uFF1A\u4E24\u540D\u6307\u6325\u5B98\u5404\u9886\u4E00\u8DEF\uFF0C\u72EC\u7ACB\u519B\u8D39\u3001\u5404\u81EA\u4E3A\u6218\u2014\u2014\u4F46\u661F\u95E8\u7684\u62A4\u76FE\u6838\u5FC3\u53EA\u6709\u4E00\u5EA7\uFF0C\u6F0F\u6389\u7684\u6BCF\u4E00\u53EA\u866B\u5B50\u90FD\u5728\u70E7\u5171\u540C\u7684\u751F\u547D\u3002",
+      "\u5B88\u4F4F\u5168\u90E8\u6CE2\u6B21\u3002\u534F\u540C\u52A0\u6210\u5DF2\u8BA1\u5165\u6218\u540E\u519B\u529F\uFF0C\u6307\u6325\u5B98\uFF0C\u5E76\u80A9\u4F5C\u6218\u3002"
+    ],
+    epilogue: "\u53CC\u5B50\u661F\u95E8\u5728\u53CC\u91CD\u706B\u529B\u7F51\u4E2D\u5C79\u7ACB\u4E0D\u5012\u3002\u866B\u7FA4\u6B8B\u90E8\u9000\u56DE\u6DF1\u7A7A\u2014\u2014\u8FD9\u4E00\u6218\uFF0C\u662F\u4E24\u53CC\u773C\u775B\u4E00\u8D77\u8D62\u4E0B\u7684\u3002",
+    // 左路（path 0）左进左出，右路（path 1）右进右出，互不接触
+    paths: [
+      [[-1, 2], [4, 2], [4, 5], [1, 5], [1, 9], [3, 9], [3, 12], [1, 12], [1, 14], [2, 14], [2, 16]],
+      [[9, 2], [5, 2], [5, 4], [7, 4], [7, 7], [5, 7], [5, 10], [7, 10], [7, 13], [6, 13], [6, 16]]
+    ],
+    waves: [
+      {
+        wave: 1,
+        groups: [{ type: "crawler", count: 8, interval: 1.1, path: 0 }],
+        bonus: 40,
+        isBoss: false,
+        comm: "\u53CC\u95E8\u67A2\u7EBD\u63A5\u654C\u2014\u2014\u5DE6\u8DEF\u6808\u9053\u5148\u51FA\u73B0\u866B\u7FA4\u3002\u5404\u5B88\u4E00\u8DEF\uFF0C\u6307\u6325\u5B98\uFF01"
+      },
+      {
+        wave: 2,
+        groups: [
+          { type: "crawler", count: 6, interval: 1, path: 1 },
+          { type: "speeder", count: 4, interval: 0.8, path: 1 }
+        ],
+        bonus: 55,
+        isBoss: false,
+        comm: "\u53F3\u8DEF\u9047\u88AD\uFF01\u522B\u8BA9\u4EFB\u4F55\u4E00\u8DEF\u653E\u7A7A\u3002"
+      },
+      {
+        wave: 3,
+        groups: [
+          { type: "splitter", count: 5, interval: 0.9, path: 0 },
+          { type: "lurker", count: 3, interval: 0.9, path: 1 }
+        ],
+        bonus: 65,
+        isBoss: false
+      },
+      {
+        wave: 4,
+        groups: [
+          { type: "tanker", count: 4, interval: 0.9, path: 0 },
+          { type: "crawler", count: 8, interval: 0.8, path: 1 }
+        ],
+        bonus: 80,
+        isBoss: false
+      },
+      {
+        wave: 5,
+        groups: [
+          { type: "lurker", count: 8, interval: 0.6, path: 1 },
+          { type: "speeder", count: 10, interval: 0.6, path: 0 }
+        ],
+        bonus: 100,
+        isBoss: false,
+        comm: "\u9690\u533F\u8005\u5F00\u59CB\u6E17\u900F\u53F3\u8DEF\u2014\u2014\u7535\u78C1\u70AE\u53EF\u65E0\u89C6\u9690\u8EAB\u3002"
+      },
+      {
+        wave: 6,
+        groups: [
+          { type: "splitter", count: 9, interval: 0.65, path: 0 },
+          { type: "tanker", count: 4, interval: 0.8, path: 1 }
+        ],
+        bonus: 130,
+        isBoss: false
+      },
+      {
+        wave: 7,
+        groups: [
+          { type: "lurker", count: 10, interval: 0.55, path: 0 },
+          { type: "speeder", count: 12, interval: 0.5, path: 1 }
+        ],
+        bonus: 150,
+        isBoss: false
+      },
+      {
+        wave: 8,
+        groups: [
+          { type: "boss", count: 1, interval: 1, hpOverride: 4e3, rewardOverride: 400, path: 0 },
+          { type: "boss", count: 1, interval: 1, hpOverride: 4e3, rewardOverride: 400, path: 1 }
+        ],
+        bonus: 280,
+        isBoss: true,
+        comm: "\u8B66\u544A\uFF1A\u53CC\u8DEF\u5404\u6709\u4E00\u53EA\u5DE8\u517D\u538B\u9635\uFF01\u5404\u81EA\u96C6\u706B\uFF0C\u522B\u8BA9\u5B83\u78B0\u5230\u661F\u95E8\uFF01"
+      },
+      {
+        wave: 9,
+        groups: [
+          { type: "tanker", count: 7, interval: 0.6, path: 1 },
+          { type: "lurker", count: 8, interval: 0.55, path: 0 }
+        ],
+        bonus: 170,
+        isBoss: false
+      },
+      {
+        wave: 10,
+        groups: [
+          { type: "splitter", count: 10, interval: 0.55, path: 0 },
+          { type: "speeder", count: 10, interval: 0.5, path: 1 },
+          { type: "crawler", count: 12, interval: 0.5, path: 0 }
+        ],
+        bonus: 200,
+        isBoss: false,
+        comm: "\u517D\u6F6E\u5BC6\u5EA6\u8FD8\u5728\u4E0A\u5347\u3002\u519B\u8D39\u72EC\u7ACB\u2014\u2014\u7167\u770B\u597D\u4F60\u81EA\u5DF1\u7684\u90A3\u4E00\u8DEF\u3002"
+      },
+      {
+        wave: 11,
+        groups: [
+          { type: "lurker", count: 12, interval: 0.5, path: 1 },
+          { type: "tanker", count: 5, interval: 0.7, path: 0 },
+          { type: "splitter", count: 7, interval: 0.55, path: 1 }
+        ],
+        bonus: 240,
+        isBoss: false
+      },
+      {
+        wave: 12,
+        groups: [
+          { type: "crawler", count: 14, interval: 0.4, path: 0 },
+          { type: "speeder", count: 12, interval: 0.4, path: 1 },
+          { type: "tanker", count: 6, interval: 0.6, path: 0 }
+        ],
+        bonus: 280,
+        isBoss: false
+      },
+      {
+        wave: 13,
+        groups: [
+          { type: "splitter", count: 10, interval: 0.45, path: 1 },
+          { type: "lurker", count: 10, interval: 0.45, path: 0 },
+          { type: "speeder", count: 12, interval: 0.4, path: 1 }
+        ],
+        bonus: 320,
+        isBoss: false
+      },
+      {
+        wave: 14,
+        groups: [
+          { type: "tanker", count: 8, interval: 0.5, path: 0 },
+          { type: "lurker", count: 10, interval: 0.4, path: 1 },
+          { type: "splitter", count: 8, interval: 0.45, path: 0 }
+        ],
+        bonus: 380,
+        isBoss: false,
+        comm: "\u661F\u95E8\u62A4\u76FE\u80FD\u91CF\u89C1\u5E95\u3002\u6700\u540E\u4E00\u6CE2\u603B\u653B\u8981\u6765\u4E86\u2014\u2014\u628A\u519B\u8D39\u5168\u90E8\u82B1\u6389\uFF01"
+      },
+      {
+        wave: 15,
+        groups: [
+          { type: "boss", count: 1, interval: 0.8, hpOverride: 9600, rewardOverride: 900, path: 0 },
+          { type: "boss", count: 1, interval: 0.8, hpOverride: 9600, rewardOverride: 900, path: 1 },
+          { type: "speeder", count: 8, interval: 0.7, path: 0 },
+          { type: "lurker", count: 6, interval: 0.8, path: 1 }
+        ],
+        bonus: 650,
+        isBoss: true,
+        comm: "\u6700\u7EC8\u8B66\u544A\uFF1A\u53CC\u8DEF\u5404\u73B0\u8EAB\u4E00\u53EA\u6E6E\u706D\u5DE8\u517D\uFF01\u8FD9\u662F\u53CC\u5B50\u661F\u95E8\u7684\u6700\u540E\u4E00\u6218\u2014\u2014\u5F00\u706B\uFF01"
+      }
+    ]
+  };
 
   // src/game/engine.ts
   var uid = 1;
-  function createEngine(difficulty, levelId = 1) {
+  function createEngine(difficulty, levelId = 1, opts) {
     const diff = DIFFICULTIES[difficulty];
     const level = getLevel(levelId);
     const map = buildLevelMap(level.paths);
     const lowSpec = typeof navigator !== "undefined" && (navigator.hardwareConcurrency ?? 8) <= 4;
     const particleScale = lowSpec ? 0.5 : 1;
+    const coop = !!opts?.coop;
+    const startGolds = coop ? [
+      opts?.startGold?.[0] ?? DIFFICULTIES.normal.gold,
+      opts?.startGold?.[1] ?? DIFFICULTIES.normal.gold
+    ] : null;
     const state = {
       phase: "prep",
       clock: 0,
       timeSec: 0,
-      gold: diff.gold,
+      gold: startGolds ? startGolds[0] : diff.gold,
       lives: diff.lives,
       maxLives: diff.lives,
+      coop,
+      golds: startGolds,
+      killsBy: coop ? [0, 0] : null,
       wave: 1,
       totalWaves: level.waves.length,
       prepT: PREP_TIME,
@@ -2300,6 +2473,20 @@
     const listeners = /* @__PURE__ */ new Set();
     const notify = () => listeners.forEach((f) => f());
     const pushEvent = (e) => state.events.push(e);
+    function goldOf(player) {
+      return state.golds ? state.golds[player] : state.gold;
+    }
+    function setGold(player, value) {
+      if (state.golds) {
+        state.golds[player] = value;
+        state.gold = state.golds[0];
+      } else {
+        state.gold = value;
+      }
+    }
+    function addGold(player, delta) {
+      setGold(player, goldOf(player) + delta);
+    }
     function addFloater(x, y, text, color) {
       state.floaters.push({ id: uid++, x, y, text, color, ttl: 0.9, maxTtl: 0.9 });
     }
@@ -2414,7 +2601,14 @@
       e.hp = 0;
       state.kills += 1;
       const earned = Math.max(1, Math.round(e.reward * goldMul()));
-      state.gold += earned;
+      if (state.golds) {
+        const owner = tower?.owner ?? 0;
+        state.golds[owner] += earned;
+        state.gold = state.golds[0];
+        if (tower) state.killsBy[owner] += 1;
+      } else {
+        state.gold += earned;
+      }
       state.goldEarned += earned;
       if (tower) tower.kills += 1;
       const p = map.posAt(e.path, e.dist);
@@ -2683,7 +2877,14 @@
     }
     function clearWave() {
       const def = level.waves[state.wave - 1];
-      state.gold += def.bonus;
+      if (state.golds) {
+        const half = Math.round(def.bonus / 2);
+        state.golds[0] += half;
+        state.golds[1] += def.bonus - half;
+        state.gold = state.golds[0];
+      } else {
+        state.gold += def.bonus;
+      }
       state.goldEarned += def.bonus;
       addFloater(270, 120, `\u6CE2\u6B21\u5956\u52B1 +${def.bonus}`, "#FFC94D");
       pushEvent({ type: "waveClear", wave: state.wave, bonus: def.bonus });
@@ -2843,14 +3044,15 @@
       state.floaters = state.floaters.filter((f) => f.ttl > 0);
       notify();
     }
-    function dispatch(cmd) {
+    function dispatchAs(player, cmd) {
       if (state.phase === "tech") {
         if (cmd.type !== "PICK_TECH") return false;
+        if (state.coop && player !== 0) return false;
         if (!state.techChoices?.includes(cmd.id)) return false;
         state.techs.push(cmd.id);
         state.techChoices = null;
         if (cmd.id === "supply") {
-          state.gold += 200;
+          addGold(0, 200);
           state.goldEarned += 200;
           addFloater(270, 120, "\u540E\u52E4\u7A7A\u6295 +200", "#FFC94D");
         }
@@ -2886,8 +3088,8 @@
         const cost = def.levels[0].cost;
         if (!map.isBuildable(cmd.col, cmd.row)) return false;
         if (state.towers.some((t) => t.col === cmd.col && t.row === cmd.row)) return false;
-        if (state.gold < cost) return false;
-        state.gold -= cost;
+        if (goldOf(player) < cost) return false;
+        setGold(player, goldOf(player) - cost);
         const c = { x: (cmd.col + 0.5) * CELL, y: (cmd.row + 0.5) * CELL };
         state.towers.push({
           id: uid++,
@@ -2902,7 +3104,8 @@
           aimY: c.y - 60,
           lastFireAt: -999,
           kills: 0,
-          invested: cost
+          invested: cost,
+          owner: player
         });
         if (!state.towerTypesBuilt.includes(cmd.tower)) state.towerTypesBuilt.push(cmd.tower);
         if (cmd.tower === "frost") state.usedFrost = true;
@@ -2913,9 +3116,10 @@
       if (cmd.type === "UPGRADE") {
         const t = state.towers.find((tw) => tw.id === cmd.id);
         if (!t || t.level >= 2) return false;
+        if (state.coop && t.owner !== player) return false;
         const cost = TOWERS[t.type].levels[t.level + 1].cost;
-        if (state.gold < cost) return false;
-        state.gold -= cost;
+        if (goldOf(player) < cost) return false;
+        setGold(player, goldOf(player) - cost);
         t.level += 1;
         t.invested += cost;
         state.maxTowerLevel = Math.max(state.maxTowerLevel, t.level + 1);
@@ -2929,8 +3133,9 @@
         const i = state.towers.findIndex((tw) => tw.id === cmd.id);
         if (i < 0) return false;
         const t = state.towers[i];
+        if (state.coop && t.owner !== player) return false;
         const refund = Math.floor(t.invested * SELL_RATE);
-        state.gold += refund;
+        addGold(player, refund);
         const c = towerCenter(t);
         addFloater(c.x, c.y - 20, `+${refund}`, "#FFC94D");
         addExplosion(c.x, c.y, "#7C8DB0", 8, 80);
@@ -2940,6 +3145,13 @@
       }
       return false;
     }
+    function dispatch(cmd) {
+      return dispatchAs(0, cmd);
+    }
+    function serializeNet() {
+      const { particles, beams, rings, floaters, ...rest } = state;
+      return rest;
+    }
     return {
       state,
       difficulty,
@@ -2947,6 +3159,8 @@
       level,
       tick,
       dispatch,
+      dispatchAs,
+      serializeNet,
       subscribe(fn) {
         listeners.add(fn);
         return () => listeners.delete(fn);
@@ -4634,6 +4848,210 @@
     }
   }
 
+  // src/net.ts
+  function wsUrlFromApiBase(base) {
+    const b = base.trim().replace(/\/+$/, "");
+    if (b.startsWith("https://")) return `wss://${b.slice("https://".length)}/ws`;
+    if (b.startsWith("http://")) return `ws://${b.slice("http://".length)}/ws`;
+    return "";
+  }
+  var MAX_RECONNECT = 3;
+  var PING_MS = 25e3;
+  function connectCoop(wxImpl, opts, cb) {
+    try {
+      let stopPing = function() {
+        if (pingTimer !== null) clearInterval(pingTimer);
+        pingTimer = null;
+      }, sendRaw = function(msg) {
+        if (!task || !opened || closed) return false;
+        try {
+          task.send({ data: JSON.stringify(msg) });
+          return true;
+        } catch {
+          return false;
+        }
+      }, scheduleRetry = function() {
+        if (closed) return;
+        attempts += 1;
+        if (attempts > MAX_RECONNECT) {
+          closed = true;
+          cb.onClose?.();
+          return;
+        }
+        cb.onReconnecting?.(attempts);
+        retryTimer = setTimeout(connect, 1e3 * 2 ** (attempts - 1));
+      }, onDead = function() {
+        opened = false;
+        stopPing();
+        scheduleRetry();
+      }, connect = function() {
+        if (closed) return;
+        try {
+          task = wxImpl.connectSocket({ url: opts.url });
+        } catch {
+          scheduleRetry();
+          return;
+        }
+        if (!task) {
+          scheduleRetry();
+          return;
+        }
+        opened = false;
+        task.onOpen(() => {
+          if (closed) return;
+          opened = true;
+          const wasRetry = attempts > 0 || everOpened;
+          attempts = 0;
+          everOpened = true;
+          if (rejoin) sendRaw({ t: "join", roomId: rejoin.roomId, nick: opts.nick, rejoin: true });
+          stopPing();
+          pingTimer = setInterval(() => sendRaw({ t: "ping" }), PING_MS);
+          cb.onOpen?.(wasRetry);
+        });
+        task.onMessage((r) => {
+          if (closed) return;
+          try {
+            const msg = typeof r.data === "string" ? JSON.parse(r.data) : null;
+            if (!msg || typeof msg.t !== "string") return;
+            switch (msg.t) {
+              case "room":
+                cb.onRoom?.({
+                  roomId: String(msg.roomId ?? ""),
+                  role: msg.role === "host" ? "host" : "guest",
+                  levelId: typeof msg.levelId === "number" ? msg.levelId : void 0,
+                  difficulty: typeof msg.difficulty === "string" ? msg.difficulty : void 0,
+                  hostNick: typeof msg.hostNick === "string" ? msg.hostNick : void 0
+                });
+                break;
+              case "peer":
+                cb.onPeer?.(
+                  String(msg.nick ?? ""),
+                  msg.status === "lost" ? "lost" : msg.status === "back" ? "back" : "joined"
+                );
+                break;
+              case "cmd":
+                if (msg.cmd && typeof msg.cmd === "object") cb.onCmd?.(Number(msg.player) || 0, msg.cmd);
+                break;
+              case "snap":
+                if (msg.state && typeof msg.state === "object") {
+                  cb.onSnap?.(msg.state, Array.isArray(msg.events) ? msg.events : []);
+                }
+                break;
+              case "end":
+                cb.onEnd?.(!!msg.won, typeof msg.reason === "string" ? msg.reason : void 0);
+                break;
+              case "error":
+                cb.onError?.(String(msg.code ?? "unknown"));
+                break;
+              default:
+                break;
+            }
+          } catch {
+          }
+        });
+        task.onClose(onDead);
+        task.onError(() => {
+        });
+      };
+      if (typeof wxImpl?.connectSocket !== "function" || !opts.url) return null;
+      let task = null;
+      let opened = false;
+      let everOpened = false;
+      let attempts = 0;
+      let closed = false;
+      let rejoin = null;
+      let pingTimer = null;
+      let retryTimer = null;
+      connect();
+      return {
+        get connected() {
+          return opened && !closed;
+        },
+        send: sendRaw,
+        setRejoinInfo(info2) {
+          rejoin = info2;
+        },
+        close() {
+          closed = true;
+          stopPing();
+          if (retryTimer !== null) clearTimeout(retryTimer);
+          retryTimer = null;
+          try {
+            task?.close({});
+          } catch {
+          }
+        }
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  // src/ghost.ts
+  var SNAP_DT = 0.2;
+  function createGhostEngine(difficulty, levelId, sendCmd) {
+    const base = createEngine(difficulty, levelId, { coop: true });
+    const state = base.state;
+    const evBuf = [];
+    const lerp = /* @__PURE__ */ new Map();
+    let lerpT = SNAP_DT;
+    function applySnap(net, events) {
+      const prev = /* @__PURE__ */ new Map();
+      for (const e of state.enemies) prev.set(e.id, e.dist);
+      const { particles, beams, rings, floaters } = state;
+      Object.assign(state, net);
+      state.particles = particles;
+      state.beams = beams;
+      state.rings = rings;
+      state.floaters = floaters;
+      if (state.golds) state.gold = state.golds[1];
+      lerp.clear();
+      for (const e of state.enemies) {
+        const p = prev.get(e.id);
+        lerp.set(e.id, { from: p ?? Math.max(0, e.dist - e.speed * CELL * SNAP_DT), to: e.dist });
+      }
+      lerpT = 0;
+      evBuf.push(...events);
+    }
+    function tick(dt) {
+      if (lerpT >= SNAP_DT) return;
+      lerpT = Math.min(SNAP_DT, lerpT + dt);
+      const f = lerpT / SNAP_DT;
+      for (const e of state.enemies) {
+        const seg = lerp.get(e.id);
+        if (seg) e.dist = seg.from + (seg.to - seg.from) * f;
+      }
+    }
+    return {
+      state,
+      difficulty,
+      map: base.map,
+      level: base.level,
+      tick,
+      applySnap,
+      // 指令上网（乐观返回 true；越权/非法指令由主机引擎拒绝，下个快照自然纠偏）
+      dispatch(cmd) {
+        sendCmd(cmd);
+        return true;
+      },
+      dispatchAs(_player, cmd) {
+        sendCmd(cmd);
+        return true;
+      },
+      serializeNet() {
+        const { particles, beams, rings, floaters, ...rest } = state;
+        return rest;
+      },
+      subscribe() {
+        return () => {
+        };
+      },
+      drainEvents() {
+        return evBuf.splice(0);
+      }
+    };
+  }
+
   // src/skins/abyss.ts
   var pressPt = null;
   var segAnim = {};
@@ -4943,8 +5361,8 @@
       env2.app.difficulty = env2.DIFF_LIST[i];
       env2.track("difficulty_select", { difficulty: env2.app.difficulty });
     }, time);
-    holoSeg(env2, MARGIN2 + diffW + 10, env2.TOP_SAFE + 4, segW - diffW - 10, ["\u5355\u4EBA", "\u53CC\u4EBA\u540C\u5C4F"], env2.app.coop ? 1 : 0, "coop", () => {
-      env2.toggleCoop();
+    holoSeg(env2, MARGIN2 + diffW + 10, env2.TOP_SAFE + 4, segW - diffW - 10, ["\u5355\u4EBA", "\u540C\u5C4F", "\u8054\u673A"], env2.app.mode === "coop" ? 1 : env2.app.mode === "online" ? 2 : 0, "coop", (i) => {
+      env2.setMode(i === 1 ? "coop" : i === 2 ? "online" : "single");
       env2.buzz("light");
     }, time);
     const homeTop2 = env2.homeTop;
@@ -5542,6 +5960,7 @@
     holoAtmosphere(env2, time);
     const won = env2.app.result.won;
     const st = env2.app.engine.state;
+    const oi = env2.getOnlineInfo();
     const t = (Date.now() - env2.getScreenAt()) / 1e3;
     if (won && t < 3) {
       const r0 = env2.rng(99);
@@ -5575,7 +5994,7 @@
       ctx2.fillRect(0, 0, VW2, env2.VH);
       ctx2.restore();
     }
-    holoHeader(env2, time, env2.app.coop ? "\u534F\u540C\u4F5C\u6218\u7ED3\u7B97" : "\u6218\u6597\u7ED3\u7B97", () => env2.goto("home"));
+    holoHeader(env2, time, env2.app.coop || oi ? "\u534F\u540C\u4F5C\u6218\u7ED3\u7B97" : "\u6218\u6597\u7ED3\u7B97", () => env2.goto("home"));
     const y0 = env2.TOP_SAFE + 16;
     const bt = Math.min(1, t / 0.45);
     const bounce = 1 + 2.7 * (bt - 1) ** 3 + 1.7 * (bt - 1) ** 2;
@@ -5586,20 +6005,22 @@
     env2.fillText(won ? "\u2605 \u9632\u7EBF\u5B88\u4F4F\u4E86" : "\u2715 \u9632\u7EBF\u5931\u5B88", 0, 0, { size: 26, color: won ? env2.C.green : env2.C.pink, align: "center" });
     ctx2.restore();
     env2.fillText(
-      won ? `\u7B2C ${env2.app.levelId} \u7AE0 \xB7 ${env2.LEVELS.find((l) => l.id === env2.app.levelId)?.name ?? ""}` : `\u6491\u5230\u4E86\u7B2C ${st.wave} / ${st.totalWaves} \u6CE2`,
+      won ? oi ? "\u5728\u7EBF\u534F\u540C \xB7 \u53CC\u5B50\u661F\u95E8" : `\u7B2C ${env2.app.levelId} \u7AE0 \xB7 ${env2.LEVELS.find((l) => l.id === env2.app.levelId)?.name ?? ""}` : `\u6491\u5230\u4E86\u7B2C ${st.wave} / ${st.totalWaves} \u6CE2`,
       VW2 / 2,
       y0 + 32,
       { size: 13, color: env2.C.sub, align: "center", weight: "normal" }
     );
     const settle = env2.getLastSettlement();
+    const myKills = oi ? st.killsBy?.[oi.player] ?? st.kills : st.kills;
     const rows = [
-      ["\u51FB\u6740", String(st.kills), st.kills],
+      ["\u51FB\u6740", String(myKills), myKills],
       ["\u6F0F\u602A", String(st.leaked), st.leaked],
       ["\u5269\u4F59\u751F\u547D", `${st.lives} / ${st.maxLives}`, null],
       ["\u8D5A\u53D6\u91D1\u5E01", String(st.goldEarned), st.goldEarned],
       ["\u6218\u672F\u6A21\u5757", String(st.techs.length), st.techs.length],
       ["\u79EF\u5206", `+${settle?.score ?? 0}`, settle?.score ?? 0, env2.C.gold, true]
     ];
+    if (oi) rows.splice(1, 0, ["\u5728\u7EBF\u534F\u540C", `\u961F\u53CB ${oi.peerNick || "\u2014"}`, null, env2.C.cyan]);
     const px = 24;
     const pw = VW2 - 48;
     const py = y0 + 58;
@@ -5663,7 +6084,7 @@
     ctx2.save();
     ctx2.globalAlpha = ge;
     env2.fillText(["\u5B8C\u7F8E\u9632\u7EBF", "\u9632\u5B88\u597D\u624B", "\u5B88\u4F4F\u9632\u7EBF", "\u9632\u7EBF\u5931\u5B88"][["S", "A", "B", "D"].indexOf(grade)], gxp + 46, gyp - 8, { size: 15, color: gradeColor });
-    env2.fillText(won ? "\u4E0B\u4E00\u7AE0\u89E3\u9501\u5DF2\u8BB0\u5F55" : "\u518D\u6311\u6218\u4E00\u6B21\u5C31\u80FD\u901A\u8FC7", gxp + 46, gyp + 12, { size: 10, color: env2.C.sub, weight: "normal" });
+    env2.fillText(won ? oi ? "\u534F\u540C\u52A0\u6210 \xD71.2 \u5DF2\u5165\u8D26" : "\u4E0B\u4E00\u7AE0\u89E3\u9501\u5DF2\u8BB0\u5F55" : "\u518D\u6311\u6218\u4E00\u6B21\u5C31\u80FD\u901A\u8FC7", gxp + 46, gyp + 12, { size: 10, color: env2.C.sub, weight: "normal" });
     const rprog = env2.getRankProgress();
     env2.fillText(
       rprog.next === null ? `${rprog.name} \xB7 \u5DF2\u8FBE\u6700\u9AD8\u519B\u8854` : `${rprog.name} \xB7 \u8DDD\u300C${rprog.nextName}\u300D\u8FD8\u5DEE ${(rprog.next - rprog.points).toLocaleString("en-US")} \u5206`,
@@ -5674,7 +6095,7 @@
     ctx2.restore();
     let y = gyp + 48;
     const nextId = env2.app.levelId + 1;
-    const hasNext = env2.LEVELS.some((l) => l.id === nextId);
+    const hasNext = !oi && env2.LEVELS.some((l) => l.id === nextId);
     const bp = enterP(env2, 3);
     ctx2.save();
     ctx2.globalAlpha = bp;
@@ -6398,16 +6819,21 @@
       });
     });
     const coopX = MARGIN2 + diffW + 10;
-    const coopTabW = (fullW - diffW - 10 - 8) / 2;
-    ["\u5355\u4EBA", "\u53CC\u4EBA"].forEach((label, i) => {
-      const x = coopX + i * (coopTabW + 8);
-      const on = (env2.app.coop ? 1 : 0) === i;
+    const coopTabW = (fullW - diffW - 10 - 12) / 3;
+    const MODE_TABS = [
+      ["\u5355\u4EBA", "SOLO", "single"],
+      ["\u540C\u5C4F", "CO-OP", "coop"],
+      ["\u8054\u673A", "ONLINE", "online"]
+    ];
+    MODE_TABS.forEach(([label, en, mode], i) => {
+      const x = coopX + i * (coopTabW + 6);
+      const on = env2.app.mode === mode;
       ctx2.save();
       env2.rr(x, tabY, coopTabW, 40, 9);
       if (on) {
         const g = ctx2.createLinearGradient(x, tabY, x, tabY + 40);
-        g.addColorStop(0, i === 1 ? env2.C.green : env2.C.gold);
-        g.addColorStop(1, env2.shade(i === 1 ? env2.C.green : env2.C.gold));
+        g.addColorStop(0, i >= 1 ? env2.C.green : env2.C.gold);
+        g.addColorStop(1, env2.shade(i >= 1 ? env2.C.green : env2.C.gold));
         ctx2.fillStyle = g;
         ctx2.fill();
       } else {
@@ -6423,7 +6849,7 @@
         color: on ? "#1A1209" : env2.C.text,
         align: "center"
       });
-      env2.fillText(i === 1 ? "CO-OP" : "SOLO", x + coopTabW / 2, tabY + 30, {
+      env2.fillText(en, x + coopTabW / 2, tabY + 30, {
         size: 8,
         color: on ? "rgba(26,18,9,0.65)" : env2.C.dim,
         align: "center",
@@ -6435,10 +6861,10 @@
         y: tabY,
         w: coopTabW,
         h: 40,
-        label: "",
+        label: `mode-${mode}`,
         cb: () => {
-          if ((env2.app.coop ? 1 : 0) !== i) {
-            env2.toggleCoop();
+          if (env2.app.mode !== mode) {
+            env2.setMode(mode);
             env2.buzz("light");
           }
         }
@@ -6997,6 +7423,7 @@
     emberBg(env2, time);
     const won = env2.app.result.won;
     const st = env2.app.engine.state;
+    const oi = env2.getOnlineInfo();
     const t = (Date.now() - env2.getScreenAt()) / 1e3;
     if (!won) {
       ctx2.save();
@@ -7008,7 +7435,7 @@
       ctx2.fillRect(0, 0, VW2, env2.VH);
       ctx2.restore();
     }
-    emberHeader(env2, env2.app.coop ? "\u534F\u540C\u6218\u540E\u62A5\u544A" : "\u6218\u540E\u62A5\u544A", env2.app.coop ? "CO-OP AFTER ACTION REPORT" : "AFTER ACTION REPORT", () => env2.goto("home"));
+    emberHeader(env2, env2.app.coop || oi ? "\u534F\u540C\u6218\u540E\u62A5\u544A" : "\u6218\u540E\u62A5\u544A", env2.app.coop || oi ? "CO-OP AFTER ACTION REPORT" : "AFTER ACTION REPORT", () => env2.goto("home"));
     const px = MARGIN2;
     const pw = VW2 - MARGIN2 * 2;
     const bandY = env2.TOP_SAFE + 10;
@@ -7028,20 +7455,22 @@
       align: "center"
     });
     env2.fillText(
-      won ? `\u7B2C ${env2.app.levelId} \u7AE0 \xB7 ${env2.LEVELS.find((l) => l.id === env2.app.levelId)?.name ?? ""}` : `\u6491\u5230\u4E86\u7B2C ${st.wave} / ${st.totalWaves} \u6CE2`,
+      won ? oi ? "\u5728\u7EBF\u534F\u540C \xB7 \u53CC\u5B50\u661F\u95E8" : `\u7B2C ${env2.app.levelId} \u7AE0 \xB7 ${env2.LEVELS.find((l) => l.id === env2.app.levelId)?.name ?? ""}` : `\u6491\u5230\u4E86\u7B2C ${st.wave} / ${st.totalWaves} \u6CE2`,
       VW2 / 2,
       bandY + 50,
       { size: 12, color: env2.C.sub, align: "center", weight: "normal" }
     );
     const settle = env2.getLastSettlement();
+    const myKills = oi ? st.killsBy?.[oi.player] ?? st.kills : st.kills;
     const rows = [
-      ["\u51FB\u6740", String(st.kills), st.kills],
+      ["\u51FB\u6740", String(myKills), myKills],
       ["\u6F0F\u602A", String(st.leaked), st.leaked],
       ["\u5269\u4F59\u751F\u547D", `${st.lives} / ${st.maxLives}`, null],
       ["\u8D5A\u53D6\u91D1\u5E01", String(st.goldEarned), st.goldEarned],
       ["\u6218\u672F\u6A21\u5757", String(st.techs.length), st.techs.length],
       ["\u79EF\u5206", `+${settle?.score ?? 0}`, settle?.score ?? 0, env2.C.gold, true]
     ];
+    if (oi) rows.splice(1, 0, ["\u5728\u7EBF\u534F\u540C", `\u961F\u53CB ${oi.peerNick || "\u2014"}`, null, env2.C.cyan]);
     const py = bandY + 64;
     const rowH = 33;
     const docH = rows.length * rowH + 42;
@@ -7108,7 +7537,7 @@
       size: 12,
       color: gradeColor
     });
-    env2.fillText(won ? "\u4E0B\u4E00\u7AE0\u89E3\u9501\u5DF2\u8BB0\u5F55" : "\u518D\u6311\u6218\u4E00\u6B21\u5C31\u80FD\u901A\u8FC7", px + pw - 120, py + docH - 16, {
+    env2.fillText(won ? oi ? "\u534F\u540C\u52A0\u6210 \xD71.2 \u5DF2\u5165\u8D26" : "\u4E0B\u4E00\u7AE0\u89E3\u9501\u5DF2\u8BB0\u5F55" : "\u518D\u6311\u6218\u4E00\u6B21\u5C31\u80FD\u901A\u8FC7", px + pw - 120, py + docH - 16, {
       size: 9,
       color: env2.C.sub,
       align: "center",
@@ -7123,7 +7552,7 @@
     );
     let y = py + docH + 40;
     const nextId = env2.app.levelId + 1;
-    const hasNext = env2.LEVELS.some((l) => l.id === nextId);
+    const hasNext = !oi && env2.LEVELS.some((l) => l.id === nextId);
     if (won) {
       env2.btn({ x: px, y, w: pw, h: 44, label: "\u25C8 \u53CC\u500D\u6218\u5229 \xB7 \u89C2\u770B\u89C6\u9891", color: env2.C.gold, cb: () => env2.showToast("\u5E7F\u544A\u6A21\u5757\u5F00\u53D1\u4E2D") });
       y += 54;
@@ -7994,10 +8423,15 @@
       });
     });
     const coopX = MARGIN2 + diffW + 10;
-    const coopTabW = (fullW - diffW - 10 - 8) / 2;
-    ["\u5355\u4EBA", "\u53CC\u4EBA"].forEach((label, i) => {
-      const x = coopX + i * (coopTabW + 8);
-      const on = (env2.app.coop ? 1 : 0) === i;
+    const coopTabW = (fullW - diffW - 10 - 12) / 3;
+    const MODE_TABS = [
+      ["\u5355\u4EBA", "single"],
+      ["\u540C\u5C4F", "coop"],
+      ["\u8054\u673A", "online"]
+    ];
+    MODE_TABS.forEach(([label, mode], i) => {
+      const x = coopX + i * (coopTabW + 6);
+      const on = env2.app.mode === mode;
       ctx2.save();
       env2.rr(x, tabY, coopTabW, tabH, 10);
       ctx2.fillStyle = on ? env2.ac(0.16) : "rgba(20,12,36,0.85)";
@@ -8007,7 +8441,7 @@
       ctx2.stroke();
       if (on) {
         const ug = ctx2.createLinearGradient(x, 0, x + coopTabW, 0);
-        ug.addColorStop(0, i === 1 ? "rgba(61,240,140,0.9)" : env2.ac(0.9));
+        ug.addColorStop(0, i === 1 ? "rgba(61,240,140,0.9)" : i === 2 ? "rgba(255,201,77,0.9)" : env2.ac(0.9));
         ug.addColorStop(1, "rgba(255,61,129,0.9)");
         ctx2.fillStyle = ug;
         ctx2.shadowColor = env2.C.cyan;
@@ -8025,10 +8459,10 @@
         y: tabY,
         w: coopTabW,
         h: tabH,
-        label: `coop-${i}`,
+        label: `mode-${mode}`,
         cb: () => {
-          if ((env2.app.coop ? 1 : 0) !== i) {
-            env2.toggleCoop();
+          if (env2.app.mode !== mode) {
+            env2.setMode(mode);
             env2.buzz("light");
           }
         }
@@ -8553,17 +8987,20 @@
     matrixBg(env2, time);
     const won = env2.app.result.won;
     const st = env2.app.engine.state;
+    const oi = env2.getOnlineInfo();
     const t = (Date.now() - env2.getScreenAt()) / 1e3;
-    drawMxHeader(env2, env2.app.coop ? "\u534F\u540C\u4F5C\u6218\u7ED3\u7B97 // CO-OP" : "\u6218\u6597\u7ED3\u7B97", () => env2.goto("home"));
+    drawMxHeader(env2, env2.app.coop || oi ? "\u534F\u540C\u4F5C\u6218\u7ED3\u7B97 // CO-OP" : "\u6218\u6597\u7ED3\u7B97", () => env2.goto("home"));
     const lvName = env2.LEVELS.find((l) => l.id === env2.app.levelId)?.name ?? "";
-    const head = won ? [[`> MISSION ${env2.app.levelId} // ${lvName}`, env2.C.cyan], ["> STATUS: \u9632\u7EBF\u5B88\u4F4F\u4E86 \u2713", env2.C.green]] : [[`> MISSION ${env2.app.levelId} // ${lvName}`, env2.C.cyan], [`> STATUS: \u9632\u7EBF\u5931\u5B88 \xB7 \u6491\u5230\u7B2C ${st.wave}/${st.totalWaves} \u6CE2`, env2.C.pink]];
+    const head = won ? [[`> MISSION ${oi ? "CO-OP" : env2.app.levelId} // ${oi ? "\u53CC\u5B50\u661F\u95E8" : lvName}`, env2.C.cyan], ["> STATUS: \u9632\u7EBF\u5B88\u4F4F\u4E86 \u2713", env2.C.green]] : [[`> MISSION ${oi ? "CO-OP" : env2.app.levelId} // ${oi ? "\u53CC\u5B50\u661F\u95E8" : lvName}`, env2.C.cyan], [`> STATUS: \u9632\u7EBF\u5931\u5B88 \xB7 \u6491\u5230\u7B2C ${st.wave}/${st.totalWaves} \u6CE2`, env2.C.pink]];
+    const myKills = oi ? st.killsBy?.[oi.player] ?? st.kills : st.kills;
     const stats = [
-      ["\u51FB\u6740", st.kills],
+      ["\u51FB\u6740", myKills],
       ["\u6F0F\u602A", st.leaked],
       ["\u8D5A\u53D6\u91D1\u5E01", st.goldEarned],
       ["\u6218\u672F\u6A21\u5757", st.techs.length],
       ["\u79EF\u5206", env2.getLastSettlement()?.score ?? 0, env2.C.gold, true]
     ];
+    if (oi) stats.splice(1, 0, [`\u961F\u53CB ${oi.peerNick || "\u2014"}`, -1, env2.C.cyan]);
     const px = 24;
     const pw = VW2 - 48;
     const py = TOP_SAFE2 + 14;
@@ -8584,6 +9021,10 @@
       if (at <= 0) return;
       const shown = Math.round(num * Math.min(1, at / 0.55));
       env2.fillText(`> ${label}`, px + 18, ly, { size: 12, color: color ?? env2.C.sub, weight: "normal" });
+      if (num < 0) {
+        ly += lineH;
+        return;
+      }
       env2.fillText(`${plus ? "+" : ""}${shown}`, px + pw - 18, ly, { size: 15, align: "right", font: env2.RES_FONT(), color });
       if (at < 0.55) {
         const sx = px + pw - 60 + at * 40;
@@ -8624,7 +9065,7 @@
       ctx2.stroke();
       ctx2.restore();
       env2.fillText(["\u5B8C\u7F8E\u9632\u7EBF", "\u9632\u5B88\u597D\u624B", "\u5B88\u4F4F\u9632\u7EBF", "\u9632\u7EBF\u5931\u5B88"][["S", "A", "B", "D"].indexOf(grade)], gx + 52, gy - 8, { size: 15, color: gradeColor });
-      env2.fillText(won ? "\u4E0B\u4E00\u7AE0\u89E3\u9501\u5DF2\u8BB0\u5F55" : "\u518D\u6311\u6218\u4E00\u6B21\u5C31\u80FD\u901A\u8FC7", gx + 52, gy + 14, { size: 10, color: env2.C.sub, weight: "normal" });
+      env2.fillText(won ? oi ? "\u534F\u540C\u52A0\u6210 \xD71.2 \u5DF2\u5165\u8D26" : "\u4E0B\u4E00\u7AE0\u89E3\u9501\u5DF2\u8BB0\u5F55" : "\u518D\u6311\u6218\u4E00\u6B21\u5C31\u80FD\u901A\u8FC7", gx + 52, gy + 14, { size: 10, color: env2.C.sub, weight: "normal" });
       const rprog = env2.getRankProgress();
       env2.fillText(
         rprog.next === null ? `> RANK: ${rprog.name} \xB7 \u5DF2\u8FBE\u6700\u9AD8\u519B\u8854` : `> RANK: ${rprog.name} \xB7 \u8DDD\u300C${rprog.nextName}\u300D\u8FD8\u5DEE ${(rprog.next - rprog.points).toLocaleString("en-US")} \u5206`,
@@ -8635,7 +9076,7 @@
     }
     let y = py + panelH + 108;
     const nextId = env2.app.levelId + 1;
-    const hasNext = env2.LEVELS.some((l) => l.id === nextId);
+    const hasNext = !oi && env2.LEVELS.some((l) => l.id === nextId);
     if (won) {
       env2.btn({ x: px, y, w: pw, h: 48, label: "\u25C8 \u53CC\u500D\u6218\u5229 \xB7 \u89C2\u770B\u89C6\u9891", color: env2.C.gold, cb: () => env2.showToast("\u5E7F\u544A\u6A21\u5757\u5F00\u53D1\u4E2D") });
       y += 60;
@@ -9369,7 +9810,7 @@
                   configureAnalytics({
                     endpoint: API_BASE,
                     getOpenid: () => session?.openid ?? "",
-                    getBuildId: () => true ? "b1004-2249" : "dev"
+                    getBuildId: () => true ? "b1005-0008" : "dev"
                   });
                   track("login_ok", { level: 1 });
                   mergeScoreWithCloud();
@@ -10203,16 +10644,32 @@
     result: null,
     techShownAt: 0,
     techPickedAt: 0,
-    // 双人同屏协作开关（§4.1 A 档；按会话保持，不落盘）
-    coop: false
+    // 双人同屏协作开关（§4.1 A 档；按会话保持，不落盘）。与 mode 同步：coop === (mode==='coop')
+    coop: false,
+    // 玩法模式三档（§4.3 C 档）：单人 / 双人同屏 / 在线联机
+    mode: "single",
+    // 分享卡片带入的待加入房间码（邀请横幅数据源）
+    pendingRoom: null
   };
+  function setMode(m) {
+    if (app.mode === m) return;
+    app.mode = m;
+    app.coop = m === "coop";
+    track("coop_toggle", { mode: m === "single" ? 0 : m === "coop" ? 1 : 2 });
+  }
   function toggleCoop() {
-    app.coop = !app.coop;
-    track("coop_toggle", { mode: app.coop ? 1 : 0 });
+    setMode(app.mode === "coop" ? "single" : "coop");
+  }
+  try {
+    const room = wx.getLaunchOptionsSync?.().query?.room;
+    if (typeof room === "string" && /^[A-Z0-9]{4,8}$/.test(room)) app.pendingRoom = room;
+  } catch {
   }
   var screenAt = Date.now();
   function goto(s) {
     if (app.screen === s) return;
+    if (app.screen === "battle" && online) teardownOnline(!online.ended);
+    if (app.screen === "result" && s !== "result") onlineResultInfo = null;
     app.screen = s;
     screenAt = Date.now();
   }
@@ -10419,6 +10876,10 @@
     else if (app.screen === "briefing") startNarration(app.levelId);
   }
   function gotoBriefing(levelId) {
+    if (app.mode === "online") {
+      enterLobby();
+      return;
+    }
     app.levelId = levelId;
     track("chapter_select", { level_id: levelId });
     goto("briefing");
@@ -10645,7 +11106,7 @@
     const dim = 0.4 + 0.3 * Math.sin(t * 1.1);
     fillText("\u6DF1\u7A7A\u76D1\u542C\u7AD9 \xB7 \u7B2C 41 \u8F68\u9053\u5468\u671F", VW / 2, VH - 46, { size: 9, color: `rgba(124,141,176,${dim})`, align: "center", weight: "normal" });
     fillText("SIGNAL FADING", VW / 2, VH - 30, { size: 8, color: `rgba(255,61,129,${dim * 0.8})`, align: "center", weight: "600" });
-    fillText(true ? "b1004-2249" : "dev", VW - 10, VH - 10, { size: 8, color: "rgba(124,141,176,0.4)", align: "right", weight: "normal" });
+    fillText(true ? "b1005-0008" : "dev", VW - 10, VH - 10, { size: 8, color: "rgba(124,141,176,0.4)", align: "right", weight: "normal" });
     const menuA = Math.min(1, Math.max(0, (t - 1) / 0.5));
     if (menuA <= 0) {
       if (t > 0.2) hitBox({ x: 0, y: 0, w: VW, h: VH, label: "", cb: () => {
@@ -10759,7 +11220,7 @@
       app.difficulty = DIFF_LIST[i];
       track("difficulty_select", { difficulty: app.difficulty });
     });
-    segControl(MARGIN + diffW + 10, segY, segW - diffW - 10, ["\u5355\u4EBA", "\u53CC\u4EBA\u540C\u5C4F"], app.coop ? 1 : 0, "coop", () => toggleCoop());
+    segControl(MARGIN + diffW + 10, segY, segW - diffW - 10, ["\u5355\u4EBA", "\u540C\u5C4F", "\u8054\u673A"], app.mode === "coop" ? 1 : app.mode === "online" ? 2 : 0, "coop", (i) => setMode(i === 1 ? "coop" : i === 2 ? "online" : "single"));
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, homeTop, VW, homeBottom - homeTop);
@@ -10956,9 +11417,7 @@
   var fxFrame = 0;
   var battleStartAt = 0;
   var lastSettlement = null;
-  function startBattle() {
-    stopNarration();
-    app.engine = createEngine(app.difficulty, app.levelId);
+  function initBattleView() {
     app.placing = null;
     app.selectedId = null;
     app.result = null;
@@ -10969,8 +11428,358 @@
     pathPixels = app.engine.map.paths.map((p) => p.pixels);
     battleStartAt = Date.now();
     coopClearTouches();
+  }
+  function startBattle() {
+    stopNarration();
+    app.engine = createEngine(app.difficulty, app.levelId);
+    initBattleView();
     track("game_start", { level_id: app.levelId, difficulty: app.difficulty, coop: app.coop ? 1 : 0 });
     goto("battle");
+  }
+  var online = null;
+  var snapEvents = [];
+  var onlineResultInfo = null;
+  function getOnlineInfo() {
+    if (online) return { peerNick: online.peerNick, player: online.player };
+    return onlineResultInfo;
+  }
+  function roomHash(roomId) {
+    let h = 0;
+    for (const ch of roomId) h = (h + ch.charCodeAt(0)) % 1e5;
+    return h;
+  }
+  function teardownOnline(sendLeave) {
+    const sess = online;
+    if (!sess) return;
+    online = null;
+    if (sess.snapTimer !== null) clearInterval(sess.snapTimer);
+    const conn = sess.conn;
+    if (conn) {
+      if (sendLeave) conn.send({ t: "leave" });
+      conn.close();
+    }
+  }
+  function settleOnline(won) {
+    const sess = online;
+    if (app.result || !app.engine || !sess) return;
+    app.result = { won };
+    if (sess.player === 0 && !sess.ended) sess.conn?.send({ t: "end", won });
+    sess.ended = true;
+    onlineResultInfo = { peerNick: sess.peerNick, player: sess.player };
+    const st0 = app.engine.state;
+    const myKills = st0.killsBy?.[sess.player] ?? st0.kills;
+    const gained = Math.round(calcScore({ ...st0, kills: myKills }, app.difficulty, 0, won) * 1.2);
+    const grade = battleGrade(st0, won);
+    lastSettlement = { score: gained, grade };
+    const rankBefore = commanderRank();
+    scoreProfile.points += gained;
+    scoreProfile.spendable += gained;
+    if (gained > scoreProfile.bestSingle) scoreProfile.bestSingle = gained;
+    scoreProfile.updatedAt = Date.now();
+    saveScore();
+    coopClearTouches();
+    syncScoreToCloud();
+    track("score_gain", { score: gained, grade, level_id: 0, coop: 2 });
+    track("game_end", {
+      level_id: 0,
+      difficulty: app.difficulty,
+      result: won ? "win" : "lose",
+      wave_reached: st0.wave,
+      duration_sec: Math.round((Date.now() - battleStartAt) / 1e3),
+      kills: myKills,
+      leaks: st0.leaked,
+      score: gained,
+      grade,
+      coop: 2
+    });
+    track("room_finish", { room_id: roomHash(sess.roomId), result: won ? "win" : "lose", wave: st0.wave });
+    const rankAfter = commanderRank();
+    if (rankAfter !== rankBefore) showToast(`\u664B\u5347 \xB7 ${rankAfter}`);
+    goto("result");
+  }
+  function makeNetHandlers(sess) {
+    return {
+      onOpen: (reconnected) => {
+        if (online !== sess) return;
+        sess.connecting = false;
+        if (reconnected) {
+          showToast("\u5DF2\u91CD\u65B0\u8FDE\u63A5");
+          return;
+        }
+        if (sess.intent.action === "create") {
+          sess.conn?.send({ t: "create", nick: displayNick(), levelId: 0, difficulty: app.difficulty });
+        } else {
+          sess.conn?.send({ t: "join", roomId: sess.intent.roomId, nick: displayNick() });
+        }
+      },
+      onRoom: (info2) => {
+        if (online !== sess) return;
+        if (sess.roomId) return;
+        sess.roomId = info2.roomId;
+        sess.conn?.setRejoinInfo({ roomId: info2.roomId });
+        if (info2.role === "host") {
+          sess.player = 0;
+          track("room_create", { room_id: roomHash(info2.roomId) });
+        } else {
+          sess.player = 1;
+          sess.peerNick = info2.hostNick ?? "";
+          sess.peerReady = true;
+          if (info2.difficulty === "easy" || info2.difficulty === "normal" || info2.difficulty === "hard") {
+            app.difficulty = info2.difficulty;
+          }
+          track("room_join", { room_id: roomHash(info2.roomId) });
+          showToast(`\u5DF2\u52A0\u5165 ${sess.peerNick || "\u597D\u53CB"} \u7684\u623F\u95F4`);
+        }
+      },
+      onPeer: (nick, status) => {
+        if (online !== sess) return;
+        if (status === "joined") {
+          sess.peerNick = nick;
+          sess.peerReady = true;
+          sess.peerLost = false;
+          showToast(`${nick} \u52A0\u5165\u4E86\u623F\u95F4`);
+          buzz("light");
+        } else if (status === "lost") {
+          sess.peerLost = true;
+          showToast("\u5BF9\u624B\u65AD\u7EBF\uFF0C\u7B49\u5F85\u91CD\u8FDE\u2026");
+        } else {
+          sess.peerLost = false;
+          showToast("\u5BF9\u624B\u5DF2\u91CD\u8FDE");
+        }
+      },
+      onCmd: (player, cmd) => {
+        if (online !== sess) return;
+        if (sess.player === 0 && app.engine && app.screen === "battle") app.engine.dispatchAs(player, cmd);
+      },
+      onSnap: (netState, events) => {
+        if (online !== sess || sess.player !== 1) return;
+        if (!app.engine) {
+          app.levelId = 0;
+          const conn = sess.conn;
+          app.engine = createGhostEngine(app.difficulty, 0, (cmd) => {
+            conn?.send({ t: "cmd", player: 1, cmd });
+          });
+          initBattleView();
+          sess.started = true;
+          track("game_start", { level_id: 0, difficulty: app.difficulty, coop: 2 });
+          goto("battle");
+        }
+        app.engine.applySnap(netState, events);
+      },
+      onEnd: (won, reason) => {
+        if (online !== sess) return;
+        sess.ended = true;
+        if (app.result) return;
+        if (app.screen === "battle" && app.engine) {
+          settleOnline(won);
+        } else {
+          showToast(reason === "peer_left" ? "\u5BF9\u624B\u79BB\u5F00\u4E86\u623F\u95F4" : "\u623F\u95F4\u5DF2\u89E3\u6563");
+          teardownOnline(false);
+          goto("home");
+        }
+      },
+      onError: (code) => {
+        if (online !== sess) return;
+        showToast(
+          code === "room_full" ? "\u623F\u95F4\u5DF2\u6EE1" : code === "room_not_found" ? "\u623F\u95F4\u4E0D\u5B58\u5728\u6216\u5DF2\u89E3\u6563" : code === "server_full" ? "\u670D\u52A1\u5668\u7E41\u5FD9\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5" : "\u8054\u673A\u5F02\u5E38\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5"
+        );
+        if (!sess.started) teardownOnline(false);
+      },
+      onReconnecting: (n) => {
+        if (online !== sess) return;
+        sess.connecting = true;
+        showToast(`\u8FDE\u63A5\u4E2D\u65AD\uFF0C\u6B63\u5728\u91CD\u8FDE\uFF08${n}/3\uFF09\u2026`);
+      },
+      onClose: () => {
+        if (online !== sess) return;
+        if (sess.started && app.screen === "battle" && app.engine) {
+          if (sess.player === 0) {
+            settleOnline(false);
+          } else {
+            showToast("\u8FDE\u63A5\u5DF2\u65AD\u5F00");
+            app.engine = null;
+            teardownOnline(false);
+            goto("home");
+          }
+        } else {
+          showToast("\u8FDE\u63A5\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC");
+          teardownOnline(false);
+        }
+      }
+    };
+  }
+  function openOnlineSession(intent) {
+    if (online) teardownOnline(false);
+    const sess = {
+      conn: null,
+      intent,
+      roomId: "",
+      player: intent.action === "create" ? 0 : 1,
+      peerNick: "",
+      peerReady: false,
+      peerLost: false,
+      started: false,
+      ended: false,
+      connecting: true,
+      snapTimer: null
+    };
+    online = sess;
+    const conn = connectCoop(wx, { url: wsUrlFromApiBase(API_BASE), nick: displayNick() }, makeNetHandlers(sess));
+    if (!conn) {
+      online = null;
+      showToast("\u5F53\u524D\u73AF\u5883\u4E0D\u652F\u6301\u8054\u673A");
+      return false;
+    }
+    sess.conn = conn;
+    return true;
+  }
+  function hostCreateRoom() {
+    openOnlineSession({ action: "create" });
+  }
+  function joinRoom(code) {
+    app.pendingRoom = null;
+    openOnlineSession({ action: "join", roomId: code });
+  }
+  function enterLobby() {
+    goto("lobby");
+    if (app.pendingRoom && !online) joinRoom(app.pendingRoom);
+  }
+  function shareInvite(roomId) {
+    track("share_click", { channel: "coop_invite" });
+    try {
+      wx.shareAppMessage?.({
+        title: `\u6765\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u548C\u6211\u534F\u540C\u9632\u5B88\u300C\u53CC\u5B50\u661F\u95E8\u300D\uFF01\u623F\u95F4\u7801 ${roomId}`,
+        imageUrl: "assets/share-cover.jpg",
+        query: `room=${roomId}`
+      });
+    } catch {
+    }
+    showToast("\u5206\u4EAB\u540E\u597D\u53CB\u70B9\u5F00\u5361\u7247\u5373\u53EF\u52A0\u5165");
+  }
+  function startOnlineBattle() {
+    const sess = online;
+    if (!sess || sess.player !== 0 || !sess.peerReady || sess.started) return;
+    stopNarration();
+    app.levelId = 0;
+    app.engine = createEngine(app.difficulty, 0, { coop: true });
+    initBattleView();
+    sess.started = true;
+    snapEvents.length = 0;
+    sess.snapTimer = setInterval(() => {
+      const eng = app.engine;
+      if (online !== sess || !eng || !sess.conn?.connected) return;
+      sess.conn.send({ t: "snap", state: eng.serializeNet(), events: snapEvents.splice(0) });
+    }, 200);
+    track("game_start", { level_id: 0, difficulty: app.difficulty, coop: 2 });
+    goto("battle");
+  }
+  function drawLobby() {
+    hooks = [];
+    drawSpaceBg(Date.now() / 1e3);
+    drawHeader("\u5728\u7EBF\u8054\u673A \xB7 \u53CC\u5B50\u661F\u95E8", { back: () => {
+      teardownOnline(true);
+      goto("home");
+    } });
+    const sess = online;
+    const px = MARGIN;
+    const pw = VW - MARGIN * 2;
+    let y = TOP_SAFE + 24;
+    panel(px, y, pw, 96, C.panelLine);
+    fillText("CO-OP ONLINE", px + 16, y + 20, { size: 10, color: C.cyan, weight: "600" });
+    fillText("\u4E0E\u597D\u53CB\u5404\u5B88\u4E00\u6761\u9632\u7EBF", px + 16, y + 42, { size: 15 });
+    fillText("\u5171\u4EAB\u751F\u547D \xB7 \u7ECF\u6D4E\u72EC\u7ACB \xB7 \u51FB\u6740\u5404\u8BA1 \xB7 \u7ED3\u7B97 \xD71.2", px + 16, y + 66, { size: 11, color: C.sub, weight: "normal" });
+    y += 116;
+    if (!sess) {
+      if (app.pendingRoom) {
+        btn({
+          x: px,
+          y,
+          w: pw,
+          h: 52,
+          label: `\u52A0\u5165\u597D\u53CB\u7684\u623F\u95F4 ${app.pendingRoom}`,
+          color: C.green,
+          primary: true,
+          cb: () => joinRoom(app.pendingRoom)
+        });
+        y += 66;
+      }
+      btn({ x: px, y, w: pw, h: 52, label: "\u271A \u521B\u5EFA\u623F\u95F4", color: C.cyan, primary: !app.pendingRoom, cb: hostCreateRoom });
+      y += 66;
+      fillText("\u5EFA\u623F\u540E\u9080\u8BF7\u597D\u53CB\uFF0C\u597D\u53CB\u70B9\u5F00\u5206\u4EAB\u5361\u7247\u5373\u53EF\u52A0\u5165", VW / 2, y + 10, { size: 11, color: C.dim, align: "center", weight: "normal" });
+      return;
+    }
+    if (sess.player === 0) {
+      panel(px, y, pw, 132, C.panelLine);
+      fillText("\u623F\u95F4\u7801", px + 16, y + 22, { size: 11, color: C.sub, weight: "normal" });
+      fillText(sess.roomId || "\xB7\xB7\xB7\xB7\xB7\xB7", VW / 2, y + 62, { size: 34, color: C.gold, align: "center", font: RES_FONT() });
+      fillText(
+        sess.connecting ? "\u8FDE\u63A5\u670D\u52A1\u5668\u4E2D\u2026" : sess.peerReady ? `${sess.peerNick} \u5DF2\u5C31\u4F4D` : "\u7B49\u5F85\u597D\u53CB\u52A0\u5165\u2026",
+        VW / 2,
+        y + 102,
+        { size: 12, color: sess.peerReady ? C.green : C.sub, align: "center", weight: "normal" }
+      );
+      y += 150;
+      btn({ x: px, y, w: pw, h: 46, label: "\u{1F4E3} \u9080\u8BF7\u597D\u53CB", color: C.pink, disabled: !sess.roomId, cb: () => shareInvite(sess.roomId) });
+      y += 60;
+      btn({
+        x: px,
+        y,
+        w: pw,
+        h: 54,
+        label: "\u25B6 \u5F00\u59CB\u6218\u6597",
+        color: C.green,
+        primary: true,
+        disabled: !sess.peerReady || sess.connecting,
+        cb: startOnlineBattle
+      });
+      y += 68;
+      fillText(`\u96BE\u5EA6 ${DIFFICULTIES[app.difficulty].name}\uFF08\u5EFA\u623F\u65F6\u9009\u5B9A\uFF09`, VW / 2, y + 8, { size: 11, color: C.dim, align: "center", weight: "normal" });
+    } else {
+      panel(px, y, pw, 120, C.panelLine);
+      fillText(`\u5DF2\u52A0\u5165 ${sess.peerNick || "\u597D\u53CB"} \u7684\u623F\u95F4`, VW / 2, y + 32, { size: 16, align: "center" });
+      fillText(`\u623F\u95F4\u7801 ${sess.roomId} \xB7 \u96BE\u5EA6 ${DIFFICULTIES[app.difficulty].name}`, VW / 2, y + 60, { size: 11, color: C.sub, align: "center", weight: "normal" });
+      const dots = ".".repeat(1 + Math.floor(Date.now() / 500) % 3);
+      fillText(sess.connecting ? "\u8FDE\u63A5\u670D\u52A1\u5668\u4E2D\u2026" : `\u7B49\u5F85\u4E3B\u673A\u5F00\u59CB\u6218\u6597${dots}`, VW / 2, y + 90, { size: 12, color: C.gold, align: "center", weight: "normal" });
+      y += 140;
+    }
+    if (sess.peerLost) {
+      fillText("\u26A0 \u5BF9\u624B\u65AD\u7EBF\uFF0C\u7B49\u5F85\u91CD\u8FDE\uFF0860s \u5185\uFF09\u2026", VW / 2, y + 10, { size: 12, color: C.red, align: "center" });
+    }
+  }
+  function drawTechWaiting() {
+    ctx.fillStyle = "rgba(7,11,24,0.85)";
+    ctx.fillRect(0, 0, VW, VH);
+    const pw2 = VW - 96;
+    const ph2 = 108;
+    const py2 = VH / 2 - ph2 / 2;
+    panel(48, py2, pw2, ph2, C.panelLine);
+    fillText("\u6218\u672F\u6A21\u5757\u6574\u5907\u4E2D", VW / 2, py2 + 34, { size: 16, align: "center" });
+    const dots = ".".repeat(1 + Math.floor(Date.now() / 500) % 3);
+    fillText(`\u7B49\u5F85\u4E3B\u673A\u9009\u62E9\u6218\u672F\u6A21\u5757${dots}`, VW / 2, py2 + 66, { size: 12, color: C.sub, align: "center", weight: "normal" });
+  }
+  function drawInviteBanner() {
+    const bx = MARGIN;
+    const bw = VW - MARGIN * 2;
+    const by = TOP_SAFE + 4;
+    panel(bx, by, bw, 64, "rgba(61,240,140,0.45)");
+    fillText("\u{1F91D} \u597D\u53CB\u9080\u4F60\u8054\u673A\u534F\u4F5C", bx + 16, by + 20, { size: 13, color: C.green });
+    fillText(`\u623F\u95F4\u7801 ${app.pendingRoom} \xB7 \u53CC\u5B50\u661F\u95E8`, bx + 16, by + 42, { size: 11, color: C.sub, weight: "normal" });
+    btn({
+      x: bx + bw - 140,
+      y: by + 14,
+      w: 96,
+      h: 36,
+      label: "\u63A5\u53D7\u9080\u8BF7",
+      color: C.green,
+      primary: true,
+      cb: () => {
+        setMode("online");
+        enterLobby();
+      }
+    });
+    btn({ x: bx + bw - 36, y: by + 14, w: 30, h: 36, label: "\u2715", color: C.sub, cb: () => {
+      app.pendingRoom = null;
+    } });
   }
   function drawBattle() {
     hooks = [];
@@ -11103,10 +11912,15 @@
     }
     if (st.phase === "tech" && st.techChoices) {
       if (!techShownAt) techShownAt = Date.now();
-      if (bm?.drawTechOverlay) bm.drawTechOverlay(env, engine);
+      if (online?.started && online.player === 1) drawTechWaiting();
+      else if (bm?.drawTechOverlay) bm.drawTechOverlay(env, engine);
       else drawTechOverlay4(st);
     } else {
       techShownAt = 0;
+    }
+    if (online?.peerLost) {
+      panel(40, VH * 0.16, VW - 80, 40, "rgba(255,90,90,0.5)");
+      fillText("\u26A0 \u5BF9\u624B\u65AD\u7EBF\uFF0C\u7B49\u5F85\u91CD\u8FDE\uFF0860s \u5185\uFF09\u2026", VW / 2, VH * 0.16 + 20, { size: 12, color: C.red, align: "center" });
     }
     if (showSettings) drawSettingsOverlay();
   }
@@ -11327,6 +12141,7 @@
     drawSpaceBg(time);
     const won = app.result.won;
     const st = app.engine.state;
+    const oi = getOnlineInfo();
     const t = (Date.now() - screenAt) / 1e3;
     if (won && t < 3) {
       const r0 = rng(99);
@@ -11360,7 +12175,7 @@
       ctx.fillRect(0, 0, VW, VH);
       ctx.restore();
     }
-    drawHeader(app.coop ? "\u534F\u540C\u4F5C\u6218\u7ED3\u7B97" : "\u6218\u6597\u7ED3\u7B97", { back: () => goto("home") });
+    drawHeader(app.coop || oi ? "\u534F\u540C\u4F5C\u6218\u7ED3\u7B97" : "\u6218\u6597\u7ED3\u7B97", { back: () => goto("home") });
     const y0 = TOP_SAFE + 16;
     const bt = Math.min(1, t / 0.45);
     const bounce = 1 + 2.7 * (bt - 1) ** 3 + 1.7 * (bt - 1) ** 2;
@@ -11370,20 +12185,22 @@
     fillText(won ? "\u2605 \u9632\u7EBF\u5B88\u4F4F\u4E86" : "\u2715 \u9632\u7EBF\u5931\u5B88", 0, 0, { size: 26, color: won ? C.green : C.pink, align: "center" });
     ctx.restore();
     fillText(
-      won ? `\u7B2C ${app.levelId} \u7AE0 \xB7 ${LEVELS.find((l) => l.id === app.levelId)?.name ?? ""}` : `\u6491\u5230\u4E86\u7B2C ${st.wave} / ${st.totalWaves} \u6CE2`,
+      won ? oi ? "\u5728\u7EBF\u534F\u540C \xB7 \u53CC\u5B50\u661F\u95E8" : `\u7B2C ${app.levelId} \u7AE0 \xB7 ${LEVELS.find((l) => l.id === app.levelId)?.name ?? ""}` : `\u6491\u5230\u4E86\u7B2C ${st.wave} / ${st.totalWaves} \u6CE2`,
       VW / 2,
       y0 + 32,
       { size: 13, color: C.sub, align: "center", weight: "normal" }
     );
-    const gained = calcScore(st, app.difficulty, app.levelId, won);
+    const gained = lastSettlement ? lastSettlement.score : calcScore(st, app.difficulty, app.levelId, won);
+    const myKills = oi ? st.killsBy?.[oi.player] ?? st.kills : st.kills;
     const rows = [
-      ["\u51FB\u6740", String(st.kills), st.kills],
+      ["\u51FB\u6740", String(myKills), myKills],
       ["\u6F0F\u602A", String(st.leaked), st.leaked],
       ["\u5269\u4F59\u751F\u547D", `${st.lives} / ${st.maxLives}`, null],
       ["\u8D5A\u53D6\u91D1\u5E01", String(st.goldEarned), st.goldEarned],
       ["\u6218\u672F\u6A21\u5757", String(st.techs.length), st.techs.length],
       ["\u79EF\u5206", `+${gained}`, gained, C.gold, true]
     ];
+    if (oi) rows.splice(1, 0, ["\u5728\u7EBF\u534F\u540C", `\u961F\u53CB ${oi.peerNick || "\u2014"}`, null, C.cyan]);
     const px = 24;
     const pw = VW - 48;
     const py = y0 + 58;
@@ -11417,7 +12234,7 @@
     ctx.stroke();
     fillText(grade, gx, gy3 + 8, { size: 30, color: gradeColor, align: "center", font: RES_FONT() });
     fillText(["\u5B8C\u7F8E\u9632\u7EBF", "\u9632\u5B88\u597D\u624B", "\u5B88\u4F4F\u9632\u7EBF", "\u9632\u7EBF\u5931\u5B88"][["S", "A", "B", "D"].indexOf(grade)], gx + 44, gy3 - 4, { size: 15, color: gradeColor });
-    fillText(won ? "\u4E0B\u4E00\u7AE0\u89E3\u9501\u5DF2\u8BB0\u5F55" : "\u518D\u6311\u6218\u4E00\u6B21\u5C31\u80FD\u901A\u8FC7", gx + 44, gy3 + 18, { size: 10, color: C.sub, align: "center", weight: "normal" });
+    fillText(won ? oi ? "\u534F\u540C\u52A0\u6210 \xD71.2 \u5DF2\u5165\u8D26" : "\u4E0B\u4E00\u7AE0\u89E3\u9501\u5DF2\u8BB0\u5F55" : "\u518D\u6311\u6218\u4E00\u6B21\u5C31\u80FD\u901A\u8FC7", gx + 44, gy3 + 18, { size: 10, color: C.sub, align: "center", weight: "normal" });
     const rp = rankProgress();
     fillText(
       rp.next === null ? `${rp.name} \xB7 \u5DF2\u8FBE\u6700\u9AD8\u519B\u8854` : `${rp.name} \xB7 \u8DDD\u300C${rp.nextName}\u300D\u8FD8\u5DEE ${(rp.next - rp.points).toLocaleString("en-US")} \u5206`,
@@ -11428,7 +12245,7 @@
     ctx.restore();
     let y = py + rows.length * rowH + 40;
     const nextId = app.levelId + 1;
-    const hasNext = LEVELS.some((l) => l.id === nextId);
+    const hasNext = !oi && LEVELS.some((l) => l.id === nextId);
     if (won) {
       btn({ x: px, y, w: pw, h: 50, label: "\u25C8 \u53CC\u500D\u6218\u5229 \xB7 \u89C2\u770B\u89C6\u9891", color: C.gold, cb: () => {
         showToast("\u5E7F\u544A\u6A21\u5757\u5F00\u53D1\u4E2D");
@@ -11905,7 +12722,9 @@
       last = now;
       if (app.screen === "battle" && app.engine) {
         app.engine.tick(dt);
-        for (const ev of app.engine.drainEvents()) {
+        const evs = app.engine.drainEvents();
+        if (online?.player === 0 && online.started && evs.length) snapEvents.push(...evs);
+        for (const ev of evs) {
           if (ev.type === "leak") {
             sfx.play("leak");
             buzz("heavy");
@@ -11917,8 +12736,13 @@
             buzz("heavy");
           } else if (ev.type === "sfx") sfx.play(ev.name);
           else if (ev.type === "gameOver") {
+            if (app.result) continue;
             sfx.play(ev.won ? "victory" : "defeat");
             buzz(ev.won ? "medium" : "heavy");
+            if (online) {
+              settleOnline(ev.won);
+              continue;
+            }
             app.result = { won: ev.won };
             const st0 = app.engine.state;
             const levelId = app.engine.level.id;
@@ -11961,6 +12785,8 @@
       else if (app.screen === "battle" && app.engine) drawBattle();
       else if (app.screen === "codex") drawCodex4(now / 1e3);
       else if (app.screen === "result" && app.engine) drawResult4(now / 1e3);
+      else if (app.screen === "lobby") drawLobby();
+      if (app.pendingRoom && (app.screen === "home" || app.screen === "splash")) drawInviteBanner();
       const ft = (Date.now() - screenAt) / 240;
       if (ft < 1) {
         if (skin.transition === "wipe") {
@@ -12120,6 +12946,8 @@
     authUser,
     openFeedback,
     toggleCoop,
+    setMode,
+    getOnlineInfo,
     // 主动拉起分享（判空包装 wx.shareAppMessage）
     shareAppMessage: (o) => {
       try {
@@ -12499,6 +13327,16 @@
   try {
     globalThis.__SRD = app;
     globalThis.__SRD_HOOKS = { get: () => hooks };
+    globalThis.__SRD_NET = {
+      get session() {
+        return online;
+      },
+      setMode,
+      enterLobby,
+      hostCreateRoom,
+      joinRoom,
+      startOnlineBattle
+    };
   } catch {
   }
 })();

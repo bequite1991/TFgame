@@ -5,26 +5,43 @@ import {
 import { getLevel } from './levels';
 import { TECH_LIST } from './config';
 import type {
-  Command, Difficulty, EnemyState, GameEngine, GameEvent, GameState, SpawnItem, TechId, TowerState,
+  Command, Difficulty, EnemyState, GameEngine, GameEvent, GameState, NetGameState, SpawnItem, TechId, TowerState,
 } from './types';
 
 let uid = 1;
 
-export function createEngine(difficulty: Difficulty, levelId: number = 1): GameEngine {
+export interface EngineOptions {
+  /** 双人协作模式：双路地图 + 共享生命 + 经济独立（golds）+ 科技主机为准 */
+  coop?: boolean;
+  /** 协作模式双方起始金币；缺省各为 normal 难度标准起始金（难度系数仍经 hpMul/speedMul 生效） */
+  startGold?: [number, number];
+}
+
+export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?: EngineOptions): GameEngine {
   const diff = DIFFICULTIES[difficulty];
   const level = getLevel(levelId);
   const map = buildLevelMap(level.paths);
   const lowSpec =
     typeof navigator !== 'undefined' && (navigator.hardwareConcurrency ?? 8) <= 4;
   const particleScale = lowSpec ? 0.5 : 1;
+  const coop = !!opts?.coop;
+  const startGolds: [number, number] | null = coop
+    ? [
+        opts?.startGold?.[0] ?? DIFFICULTIES.normal.gold,
+        opts?.startGold?.[1] ?? DIFFICULTIES.normal.gold,
+      ]
+    : null;
 
   const state: GameState = {
     phase: 'prep',
     clock: 0,
     timeSec: 0,
-    gold: diff.gold,
+    gold: startGolds ? startGolds[0] : diff.gold,
     lives: diff.lives,
     maxLives: diff.lives,
+    coop,
+    golds: startGolds,
+    killsBy: coop ? [0, 0] : null,
     wave: 1,
     totalWaves: level.waves.length,
     prepT: PREP_TIME,
@@ -85,6 +102,24 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1): GameE
   const pushEvent = (e: GameEvent) => state.events.push(e);
 
   // ---------- 工具 ----------
+
+  /** 玩家金币池：协作读 golds[player]，单人读 state.gold；写回时同步 gold=golds[0] 镜像 */
+  function goldOf(player: number): number {
+    return state.golds ? state.golds[player] : state.gold;
+  }
+
+  function setGold(player: number, value: number) {
+    if (state.golds) {
+      state.golds[player] = value;
+      state.gold = state.golds[0]; // 镜像主机池，供 UI 与兼容逻辑读取
+    } else {
+      state.gold = value;
+    }
+  }
+
+  function addGold(player: number, delta: number) {
+    setGold(player, goldOf(player) + delta);
+  }
 
   function addFloater(x: number, y: number, text: string, color: string) {
     state.floaters.push({ id: uid++, x, y, text, color, ttl: 0.9, maxTtl: 0.9 });
@@ -207,7 +242,15 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1): GameE
     e.hp = 0;
     state.kills += 1;
     const earned = Math.max(1, Math.round(e.reward * goldMul()));
-    state.gold += earned;
+    if (state.golds) {
+      // 协作：击杀金币归击杀塔的主人；塔被卖后飞行弹体/灼烧区命中时 tower 为 undefined，归主机
+      const owner = tower?.owner ?? 0;
+      state.golds[owner] += earned;
+      state.gold = state.golds[0];
+      if (tower) state.killsBy![owner] += 1;
+    } else {
+      state.gold += earned;
+    }
     state.goldEarned += earned;
     if (tower) tower.kills += 1;
     const p = map.posAt(e.path, e.dist);
@@ -487,7 +530,15 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1): GameE
 
   function clearWave() {
     const def = level.waves[state.wave - 1];
-    state.gold += def.bonus;
+    if (state.golds) {
+      // 协作：波次奖励双方平分（奇数时主机多得 1，保证两池之和精确等于 bonus）
+      const half = Math.round(def.bonus / 2);
+      state.golds[0] += half;
+      state.golds[1] += def.bonus - half;
+      state.gold = state.golds[0];
+    } else {
+      state.gold += def.bonus;
+    }
     state.goldEarned += def.bonus;
     addFloater(270, 120, `波次奖励 +${def.bonus}`, '#FFC94D');
     pushEvent({ type: 'waveClear', wave: state.wave, bonus: def.bonus });
@@ -677,15 +728,18 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1): GameE
 
   // ---------- 命令 ----------
 
-  function dispatch(cmd: Command): boolean {
+  function dispatchAs(player: number, cmd: Command): boolean {
     if (state.phase === 'tech') {
       // 科技选择期间：只接受 PICK_TECH
       if (cmd.type !== 'PICK_TECH') return false;
+      // 协作：科技三选一以主机（player 0）为准，客机不可代选
+      if (state.coop && player !== 0) return false;
       if (!state.techChoices?.includes(cmd.id)) return false;
       state.techs.push(cmd.id);
       state.techChoices = null;
       if (cmd.id === 'supply') {
-        state.gold += 200;
+        // 协作 MVP：空投归主机池（简化处理）
+        addGold(0, 200);
         state.goldEarned += 200;
         addFloater(270, 120, '后勤空投 +200', '#FFC94D');
       }
@@ -722,8 +776,8 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1): GameE
       const cost = def.levels[0].cost;
       if (!map.isBuildable(cmd.col, cmd.row)) return false;
       if (state.towers.some((t) => t.col === cmd.col && t.row === cmd.row)) return false;
-      if (state.gold < cost) return false;
-      state.gold -= cost;
+      if (goldOf(player) < cost) return false;
+      setGold(player, goldOf(player) - cost);
       const c = { x: (cmd.col + 0.5) * CELL, y: (cmd.row + 0.5) * CELL };
       state.towers.push({
         id: uid++, type: cmd.tower, level: 0,
@@ -732,6 +786,7 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1): GameE
         aimX: c.x, aimY: c.y - 60,
         lastFireAt: -999,
         kills: 0, invested: cost,
+        owner: player,
       });
       if (!state.towerTypesBuilt.includes(cmd.tower)) state.towerTypesBuilt.push(cmd.tower);
       if (cmd.tower === 'frost') state.usedFrost = true;
@@ -743,9 +798,11 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1): GameE
     if (cmd.type === 'UPGRADE') {
       const t = state.towers.find((tw) => tw.id === cmd.id);
       if (!t || t.level >= 2) return false;
+      // 协作：只能操作自己的塔
+      if (state.coop && t.owner !== player) return false;
       const cost = TOWERS[t.type].levels[t.level + 1].cost;
-      if (state.gold < cost) return false;
-      state.gold -= cost;
+      if (goldOf(player) < cost) return false;
+      setGold(player, goldOf(player) - cost);
       t.level += 1;
       t.invested += cost;
       state.maxTowerLevel = Math.max(state.maxTowerLevel, t.level + 1);
@@ -760,8 +817,10 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1): GameE
       const i = state.towers.findIndex((tw) => tw.id === cmd.id);
       if (i < 0) return false;
       const t = state.towers[i];
+      // 协作：只能操作自己的塔
+      if (state.coop && t.owner !== player) return false;
       const refund = Math.floor(t.invested * SELL_RATE);
-      state.gold += refund;
+      addGold(player, refund);
       const c = towerCenter(t);
       addFloater(c.x, c.y - 20, `+${refund}`, '#FFC94D');
       addExplosion(c.x, c.y, '#7C8DB0', 8, 80);
@@ -772,6 +831,17 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1): GameE
     return false;
   }
 
+  /** 单人入口：恒以 player 0 执行，行为与联机改造前完全一致 */
+  function dispatch(cmd: Command): boolean {
+    return dispatchAs(0, cmd);
+  }
+
+  function serializeNet(): NetGameState {
+    // 剔除纯装饰数组省带宽；玩法数据（含 zones/techs/golds/killsBy/events）全量保留
+    const { particles, beams, rings, floaters, ...rest } = state;
+    return rest;
+  }
+
   return {
     state,
     difficulty,
@@ -779,6 +849,8 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1): GameE
     level,
     tick,
     dispatch,
+    dispatchAs,
+    serializeNet,
     subscribe(fn) {
       listeners.add(fn);
       return () => listeners.delete(fn);

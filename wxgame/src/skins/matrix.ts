@@ -402,12 +402,15 @@ function drawHome(env: SkinEnv, time: number) {
     });
   });
 
-  // —— 单人/双人同屏霓虹 tab（激活下划线：双人档用绿→粉渐变区分难度档） ——
+  // —— 单人/同屏/联机霓虹 tab（激活下划线：同屏绿渐变、联机金渐变以区分难度档） ——
   const coopX = MARGIN + diffW + 10;
-  const coopTabW = (fullW - diffW - 10 - 8) / 2;
-  (['单人', '双人'] as const).forEach((label, i) => {
-    const x = coopX + i * (coopTabW + 8);
-    const on = (env.app.coop ? 1 : 0) === i;
+  const coopTabW = (fullW - diffW - 10 - 12) / 3;
+  const MODE_TABS: [label: string, mode: 'single' | 'coop' | 'online'][] = [
+    ['单人', 'single'], ['同屏', 'coop'], ['联机', 'online'],
+  ];
+  MODE_TABS.forEach(([label, mode], i) => {
+    const x = coopX + i * (coopTabW + 6);
+    const on = env.app.mode === mode;
     ctx.save();
     env.rr(x, tabY, coopTabW, tabH, 10);
     ctx.fillStyle = on ? env.ac(0.16) : 'rgba(20,12,36,0.85)';
@@ -417,7 +420,7 @@ function drawHome(env: SkinEnv, time: number) {
     ctx.stroke();
     if (on) {
       const ug = ctx.createLinearGradient(x, 0, x + coopTabW, 0);
-      ug.addColorStop(0, i === 1 ? 'rgba(61,240,140,0.9)' : env.ac(0.9));
+      ug.addColorStop(0, i === 1 ? 'rgba(61,240,140,0.9)' : i === 2 ? 'rgba(255,201,77,0.9)' : env.ac(0.9));
       ug.addColorStop(1, 'rgba(255,61,129,0.9)');
       ctx.fillStyle = ug;
       ctx.shadowColor = env.C.cyan;
@@ -429,8 +432,8 @@ function drawHome(env: SkinEnv, time: number) {
       size: 13, color: on ? env.C.text : env.C.dim, align: 'center',
     });
     env.hitBox({
-      x, y: tabY, w: coopTabW, h: tabH, label: `coop-${i}`,
-      cb: () => { if ((env.app.coop ? 1 : 0) !== i) { env.toggleCoop(); env.buzz('light'); } },
+      x, y: tabY, w: coopTabW, h: tabH, label: `mode-${mode}`,
+      cb: () => { if (env.app.mode !== mode) { env.setMode(mode); env.buzz('light'); } },
     });
   });
 
@@ -954,21 +957,25 @@ function drawResult(env: SkinEnv, time: number) {
   matrixBg(env, time);
   const won = env.app.result!.won;
   const st = env.app.engine!.state;
+  const oi = env.getOnlineInfo(); // 在线局信息（结算页展示队友/个人击杀用）
   const t = (Date.now() - env.getScreenAt()) / 1000;
-  drawMxHeader(env, env.app.coop ? '协同作战结算 // CO-OP' : '战斗结算', () => env.goto('home'));
+  drawMxHeader(env, env.app.coop || oi ? '协同作战结算 // CO-OP' : '战斗结算', () => env.goto('home'));
 
   // 终端战绩面板：逐行打印，数字滚动递增
   const lvName = env.LEVELS.find((l) => l.id === env.app.levelId)?.name ?? '';
   const head: [string, string][] = won
-    ? [[`> MISSION ${env.app.levelId} // ${lvName}`, env.C.cyan], ['> STATUS: 防线守住了 ✓', env.C.green]]
-    : [[`> MISSION ${env.app.levelId} // ${lvName}`, env.C.cyan], [`> STATUS: 防线失守 · 撑到第 ${st.wave}/${st.totalWaves} 波`, env.C.pink]];
+    ? [[`> MISSION ${oi ? 'CO-OP' : env.app.levelId} // ${oi ? '双子星门' : lvName}`, env.C.cyan], ['> STATUS: 防线守住了 ✓', env.C.green]]
+    : [[`> MISSION ${oi ? 'CO-OP' : env.app.levelId} // ${oi ? '双子星门' : lvName}`, env.C.cyan], [`> STATUS: 防线失守 · 撑到第 ${st.wave}/${st.totalWaves} 波`, env.C.pink]];
+  // 在线局：击杀数按个人击杀分账显示
+  const myKills = oi ? (st.killsBy?.[oi.player] ?? st.kills) : st.kills;
   const stats: [label: string, num: number, color?: string, plus?: boolean][] = [
-    ['击杀', st.kills],
+    ['击杀', myKills],
     ['漏怪', st.leaked],
     ['赚取金币', st.goldEarned],
     ['战术模块', st.techs.length],
     ['积分', env.getLastSettlement()?.score ?? 0, env.C.gold, true],
   ];
+  if (oi) stats.splice(1, 0, [`队友 ${oi.peerNick || '—'}`, -1, env.C.cyan]); // num=-1：打印行不滚数字（见下行特判）
   const px = 24;
   const pw = VW - 48;
   const py = TOP_SAFE + 14;
@@ -989,6 +996,7 @@ function drawResult(env: SkinEnv, time: number) {
     if (at <= 0) return;
     const shown = Math.round(num * Math.min(1, at / 0.55));
     env.fillText(`> ${label}`, px + 18, ly, { size: 12, color: color ?? env.C.sub, weight: 'normal' });
+    if (num < 0) { ly += lineH; return; } // 纯文本行（在线局队友昵称）：不滚数字
     // 数字滚动 + 扫过的亮光
     env.fillText(`${plus ? '+' : ''}${shown}`, px + pw - 18, ly, { size: 15, align: 'right', font: env.RES_FONT(), color });
     if (at < 0.55) {
@@ -1033,7 +1041,7 @@ function drawResult(env: SkinEnv, time: number) {
     ctx.stroke();
     ctx.restore();
     env.fillText(['完美防线', '防守好手', '守住防线', '防线失守'][['S', 'A', 'B', 'D'].indexOf(grade)], gx + 52, gy - 8, { size: 15, color: gradeColor });
-    env.fillText(won ? '下一章解锁已记录' : '再挑战一次就能通过', gx + 52, gy + 14, { size: 10, color: env.C.sub, weight: 'normal' });
+    env.fillText(won ? (oi ? '协同加成 ×1.2 已入账' : '下一章解锁已记录') : '再挑战一次就能通过', gx + 52, gy + 14, { size: 10, color: env.C.sub, weight: 'normal' });
     // 军衔进度副文案（终端风格前缀；满级显示已达最高军衔）
     const rprog = env.getRankProgress();
     env.fillText(
@@ -1047,7 +1055,7 @@ function drawResult(env: SkinEnv, time: number) {
   // 动作按钮（语义与默认一致）
   let y = py + panelH + 108;
   const nextId = env.app.levelId + 1;
-  const hasNext = env.LEVELS.some((l) => l.id === nextId);
+  const hasNext = !oi && env.LEVELS.some((l) => l.id === nextId); // 联机协作图不是战役关，无「进入下一章」
   if (won) {
     env.btn({ x: px, y, w: pw, h: 48, label: '◈ 双倍战利 · 观看视频', color: env.C.gold, cb: () => env.showToast('广告模块开发中') });
     y += 60;

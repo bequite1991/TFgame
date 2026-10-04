@@ -18,8 +18,11 @@ import type { hash01 } from '../game/fx';
 import type { sfx } from '../audio';
 import type { track } from '../analytics';
 
-/** 界面屏幕标识（与 main.ts 的 Screen 一致） */
-export type Screen = 'splash' | 'home' | 'briefing' | 'battle' | 'result' | 'codex';
+/** 界面屏幕标识（与 main.ts 的 Screen 一致；lobby 为在线联机大厅，皮肤无接管、走内置兜底） */
+export type Screen = 'splash' | 'home' | 'briefing' | 'battle' | 'result' | 'codex' | 'lobby';
+
+/** 玩法模式三档：单人 / 双人同屏 / 在线联机（app.coop 布尔与之同步：mode==='coop'） */
+export type PlayMode = 'single' | 'coop' | 'online';
 
 /** 触屏点（CSS 像素） */
 export interface TouchPoint { x: number; y: number }
@@ -65,8 +68,12 @@ export interface AppState {
   result: { won: boolean } | null;
   techShownAt: number;
   techPickedAt: number;
-  /** 双人同屏协作开关（§4.1 A 档；按会话保持，不落盘） */
+  /** 双人同屏协作开关（§4.1 A 档；按会话保持，不落盘）。与 mode 同步：coop === (mode==='coop') */
   coop: boolean;
+  /** 玩法模式三档（§4.3 C 档；按会话保持，不落盘） */
+  mode: PlayMode;
+  /** 分享卡片带入的待加入房间码（splash/home 顶部邀请横幅数据源；接受或关闭后清空） */
+  pendingRoom: string | null;
 }
 
 /** 图鉴页签 */
@@ -206,6 +213,10 @@ export interface SkinEnv {
   authUser(): void;                 // 拉起微信头像昵称授权
   openFeedback(): void;             // 客服会话 → 回退复制反馈邮箱
   toggleCoop(): void;               // 切换 单人/双人同屏（翻转 app.coop + track coop_toggle）
+  /** 切换玩法模式三档（同步 app.coop + track coop_toggle: 0单人/1同屏/2在线） */
+  setMode(m: PlayMode): void;
+  /** 在线局信息（结算页展示队友用）：联机会话存活时取会话，否则取最近一局结算快照；无在线局为 null */
+  getOnlineInfo(): { peerNick: string; player: number } | null;
   /** 主动拉起微信分享（判空包装 wx.shareAppMessage；不支持的环境静默跳过） */
   shareAppMessage(o: { title: string; imageUrl?: string }): void;
   commanderRank(): string;
