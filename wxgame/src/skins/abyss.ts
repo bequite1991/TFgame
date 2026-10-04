@@ -358,14 +358,14 @@ function drawHome(env: SkinEnv, time: number) {
   holoAtmosphere(env, time);
   holoHeader(env, time, '高塔防线 · 战役选择', () => env.goto('splash'));
 
-  // 难度分段（全息舱样式，行为与默认一致）+ 右侧 单人/双人同屏 切换（§4.1）
+  // 难度分段（全息舱样式，行为与默认一致）+ 右侧 单人/在线联机 切换
   const segW = VW - MARGIN * 2;
   const diffW = Math.round(segW * 0.6);
   holoSeg(env, MARGIN, env.TOP_SAFE + 4, diffW, env.DIFF_LIST.map((d) => env.DIFFICULTIES[d].name), env.DIFF_LIST.indexOf(env.app.difficulty), 'diff', (i) => {
     env.app.difficulty = env.DIFF_LIST[i];
     env.track('difficulty_select', { difficulty: env.app.difficulty });
   }, time);
-  holoSeg(env, MARGIN + diffW + 10, env.TOP_SAFE + 4, segW - diffW - 10, ['单人', '同屏', '联机'], env.app.mode === 'coop' ? 1 : env.app.mode === 'online' ? 2 : 0, 'coop', (i) => { env.setMode(i === 1 ? 'coop' : i === 2 ? 'online' : 'single'); env.buzz('light'); }, time);
+  holoSeg(env, MARGIN + diffW + 10, env.TOP_SAFE + 4, segW - diffW - 10, ['单人', '联机'], env.app.mode === 'online' ? 1 : 0, 'mode', (i) => { env.setMode(i === 1 ? 'online' : 'single'); env.buzz('light'); }, time);
 
   // 关卡卡列表（几何与默认一致，滚动由主文件触摸驱动）
   const homeTop = env.homeTop;
@@ -568,21 +568,6 @@ function drawBriefing(env: SkinEnv, time: number) {
   ctx.stroke();
   ctx.restore();
   env.fillText(diffTxt, VW / 2, afterY + 0.5, { size: 11, color: env.C.gold, align: 'center' });
-  // 双人同屏：注明分工（§4.1：P1 建造 · P2 指挥；绿色全息胶囊）
-  if (env.app.coop) {
-    const coopTxt = '双人同屏 · P1 建造 · P2 指挥';
-    ctx.save();
-    ctx.font = 'bold 11px sans-serif';
-    const cw = ctx.measureText(coopTxt).width + 24;
-    env.rr(VW / 2 - cw / 2, afterY + 13, cw, 22, 11);
-    ctx.fillStyle = 'rgba(61,240,140,0.12)';
-    ctx.fill();
-    ctx.strokeStyle = `rgba(61,240,140,${0.3 + 0.2 * Math.sin(time * 2.2)})`;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.restore();
-    env.fillText(coopTxt, VW / 2, afterY + 24.5, { size: 11, color: env.C.green, align: 'center' });
-  }
 
   holoBtn(env, { x: VW / 2 - 100, y: afterY + 42, w: 200, h: 54, label: '▶ 出 击', primary: true, cb: () => env.startBattle() }, time);
   holoBtn(env, { x: VW / 2 - 100, y: afterY + 118, w: 200, h: 46, label: '返回选关', color: env.C.sub, cb: () => { env.stopNarration(); env.goto('home'); } }, time);
@@ -699,7 +684,7 @@ function drawBattleHUD(env: SkinEnv, engine: GameEngine) {
     const summary = [...new Set(groups.map((gsp) => `${env.ENEMIES[gsp.type].name}×${gsp.count}`))].join(' ');
     env.fillText(`${isBossWave ? '⚠ BOSS 波 · ' : ''}${summary}`, VW / 2, by2 + 34, { size: 9, color: isBossWave ? env.C.pink : '#FF9F43', align: 'center', weight: 'normal' });
     env.fillText(
-      env.app.coop ? 'P1 建造防线 · P2 把握升级与科技时机' : isBossWave ? '建议留好金币与穿甲火力' : '据此提前调整布防',
+      isBossWave ? '建议留好金币与穿甲火力' : '据此提前调整布防',
       VW / 2, by2 + 47, { size: 9, color: env.C.sub, align: 'center', weight: 'normal' },
     );
     holoBtn(env, { x: VW / 2 - 62, y: by2 + 66, w: 124, h: 36, label: '▶ 立即开战', color: env.C.gold, primary: true, cb: () => env.engineCmd({ type: 'SKIP_PREP' }) }, time);
@@ -1027,7 +1012,7 @@ function drawResult(env: SkinEnv, time: number) {
     ctx.restore();
   }
 
-  holoHeader(env, time, env.app.coop || oi ? '协同作战结算' : '战斗结算', () => env.goto('home'));
+  holoHeader(env, time, oi ? '协同作战结算' : '战斗结算', () => env.goto('home'));
   const y0 = env.TOP_SAFE + 16;
   // 标题回弹入场 + 全息错位残影
   const bt = Math.min(1, t / 0.45);

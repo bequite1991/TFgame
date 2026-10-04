@@ -361,7 +361,7 @@ function drawHome(env: SkinEnv, time: number) {
   matrixBg(env, time);
   drawMxHeader(env, '战役选择', () => env.goto('splash'));
 
-  // —— 难度霓虹 tab（钉在顶部）+ 右侧 单人/双人 切换（§4.1） ——
+  // —— 难度霓虹 tab（钉在顶部）+ 右侧 单人/联机 切换 ——
   const tabY = TOP_SAFE + 8;
   const tabH = 36;
   const fullW = VW - MARGIN * 2;
@@ -402,37 +402,37 @@ function drawHome(env: SkinEnv, time: number) {
     });
   });
 
-  // —— 单人/同屏/联机霓虹 tab（激活下划线：同屏绿渐变、联机金渐变以区分难度档） ——
-  const coopX = MARGIN + diffW + 10;
-  const coopTabW = (fullW - diffW - 10 - 12) / 3;
-  const MODE_TABS: [label: string, mode: 'single' | 'coop' | 'online'][] = [
-    ['单人', 'single'], ['同屏', 'coop'], ['联机', 'online'],
+  // —— 单人/联机霓虹 tab（激活下划线：联机金渐变以区分难度档） ——
+  const modeX = MARGIN + diffW + 10;
+  const modeTabW = (fullW - diffW - 10 - 8) / 2;
+  const MODE_TABS: [label: string, mode: 'single' | 'online'][] = [
+    ['单人', 'single'], ['联机', 'online'],
   ];
   MODE_TABS.forEach(([label, mode], i) => {
-    const x = coopX + i * (coopTabW + 6);
+    const x = modeX + i * (modeTabW + 8);
     const on = env.app.mode === mode;
     ctx.save();
-    env.rr(x, tabY, coopTabW, tabH, 10);
+    env.rr(x, tabY, modeTabW, tabH, 10);
     ctx.fillStyle = on ? env.ac(0.16) : 'rgba(20,12,36,0.85)';
     ctx.fill();
     ctx.strokeStyle = on ? env.ac(0.8) : 'rgba(110,92,142,0.4)';
     ctx.lineWidth = on ? 1.5 : 1;
     ctx.stroke();
     if (on) {
-      const ug = ctx.createLinearGradient(x, 0, x + coopTabW, 0);
-      ug.addColorStop(0, i === 1 ? 'rgba(61,240,140,0.9)' : i === 2 ? 'rgba(255,201,77,0.9)' : env.ac(0.9));
+      const ug = ctx.createLinearGradient(x, 0, x + modeTabW, 0);
+      ug.addColorStop(0, i === 1 ? 'rgba(255,201,77,0.9)' : env.ac(0.9));
       ug.addColorStop(1, 'rgba(255,61,129,0.9)');
       ctx.fillStyle = ug;
       ctx.shadowColor = env.C.cyan;
       ctx.shadowBlur = 6;
-      ctx.fillRect(x + 8, tabY + tabH - 3, coopTabW - 16, 2);
+      ctx.fillRect(x + 8, tabY + tabH - 3, modeTabW - 16, 2);
     }
     ctx.restore();
-    env.fillText(label, x + coopTabW / 2, tabY + tabH / 2, {
+    env.fillText(label, x + modeTabW / 2, tabY + tabH / 2, {
       size: 13, color: on ? env.C.text : env.C.dim, align: 'center',
     });
     env.hitBox({
-      x, y: tabY, w: coopTabW, h: tabH, label: `mode-${mode}`,
+      x, y: tabY, w: modeTabW, h: tabH, label: `mode-${mode}`,
       cb: () => { if (env.app.mode !== mode) { env.setMode(mode); env.buzz('light'); } },
     });
   });
@@ -548,7 +548,7 @@ function drawHome(env: SkinEnv, time: number) {
 
 /** 简报打印行缓存（段落按宽度重排一次，后续每帧只做切片） */
 function briefLines(env: SkinEnv, lv: SkinEnv['LEVELS'][number], textW: number, size: number): [string, string][] {
-  const key = `${lv.id}|${textW}|${env.skin.id}|${env.app.difficulty}|${env.app.coop ? 1 : 0}`;
+  const key = `${lv.id}|${textW}|${env.skin.id}|${env.app.difficulty}`;
   if (briefCache && briefCache.key === key) return briefCache.lines;
   const per = Math.max(6, Math.floor(textW / size));
   const body = 'rgba(164,143,200,0.95)';
@@ -564,8 +564,6 @@ function briefLines(env: SkinEnv, lv: SkinEnv['LEVELS'][number], textW: number, 
   const bossTxt = lv.waves.filter((w) => w.isBoss).map((w) => `W${w.wave}`).join(' ');
   lines.push([`> 波次 ${lv.waves.length} · BOSS ${bossTxt || '—'}`, '#FF9F43']);
   lines.push([`> 难度 ${env.DIFFICULTIES[env.app.difficulty].name} · ${env.DIFFICULTIES[env.app.difficulty].label}`, env.C.gold]);
-  // 双人同屏：终端行注明分工（§4.1）
-  if (env.app.coop) lines.push(['> CO-OP 双人同屏 // P1 建造 · P2 指挥', env.C.green]);
   briefCache = { key, lines };
   return lines;
 }
@@ -761,7 +759,7 @@ function drawBattleHUD(env: SkinEnv, engine: GameEngine) {
       size: 9, color: isBossWave ? env.C.pink : '#FF9F43', align: 'center', weight: 'normal',
     });
     env.fillText(
-      env.app.coop ? 'P1 建造防线 · P2 把握升级与科技时机' : isBossWave ? '建议留好金币与穿甲火力' : '据此提前调整布防',
+      isBossWave ? '建议留好金币与穿甲火力' : '据此提前调整布防',
       VW / 2, py + 54, { size: 9, color: env.C.sub, align: 'center', weight: 'normal' },
     );
     chargeButton(env, VW / 2 - 85, py + 84, 170, 42, '▶ 长按开战', () => env.engineCmd({ type: 'SKIP_PREP' }));
@@ -959,7 +957,7 @@ function drawResult(env: SkinEnv, time: number) {
   const st = env.app.engine!.state;
   const oi = env.getOnlineInfo(); // 在线局信息（结算页展示队友/个人击杀用）
   const t = (Date.now() - env.getScreenAt()) / 1000;
-  drawMxHeader(env, env.app.coop || oi ? '协同作战结算 // CO-OP' : '战斗结算', () => env.goto('home'));
+  drawMxHeader(env, oi ? '协同作战结算 // CO-OP' : '战斗结算', () => env.goto('home'));
 
   // 终端战绩面板：逐行打印，数字滚动递增
   const lvName = env.LEVELS.find((l) => l.id === env.app.levelId)?.name ?? '';

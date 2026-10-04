@@ -5361,8 +5361,8 @@
       env2.app.difficulty = env2.DIFF_LIST[i];
       env2.track("difficulty_select", { difficulty: env2.app.difficulty });
     }, time);
-    holoSeg(env2, MARGIN2 + diffW + 10, env2.TOP_SAFE + 4, segW - diffW - 10, ["\u5355\u4EBA", "\u540C\u5C4F", "\u8054\u673A"], env2.app.mode === "coop" ? 1 : env2.app.mode === "online" ? 2 : 0, "coop", (i) => {
-      env2.setMode(i === 1 ? "coop" : i === 2 ? "online" : "single");
+    holoSeg(env2, MARGIN2 + diffW + 10, env2.TOP_SAFE + 4, segW - diffW - 10, ["\u5355\u4EBA", "\u8054\u673A"], env2.app.mode === "online" ? 1 : 0, "mode", (i) => {
+      env2.setMode(i === 1 ? "online" : "single");
       env2.buzz("light");
     }, time);
     const homeTop2 = env2.homeTop;
@@ -5559,20 +5559,6 @@
     ctx2.stroke();
     ctx2.restore();
     env2.fillText(diffTxt, VW2 / 2, afterY + 0.5, { size: 11, color: env2.C.gold, align: "center" });
-    if (env2.app.coop) {
-      const coopTxt = "\u53CC\u4EBA\u540C\u5C4F \xB7 P1 \u5EFA\u9020 \xB7 P2 \u6307\u6325";
-      ctx2.save();
-      ctx2.font = "bold 11px sans-serif";
-      const cw = ctx2.measureText(coopTxt).width + 24;
-      env2.rr(VW2 / 2 - cw / 2, afterY + 13, cw, 22, 11);
-      ctx2.fillStyle = "rgba(61,240,140,0.12)";
-      ctx2.fill();
-      ctx2.strokeStyle = `rgba(61,240,140,${0.3 + 0.2 * Math.sin(time * 2.2)})`;
-      ctx2.lineWidth = 1;
-      ctx2.stroke();
-      ctx2.restore();
-      env2.fillText(coopTxt, VW2 / 2, afterY + 24.5, { size: 11, color: env2.C.green, align: "center" });
-    }
     holoBtn(env2, { x: VW2 / 2 - 100, y: afterY + 42, w: 200, h: 54, label: "\u25B6 \u51FA \u51FB", primary: true, cb: () => env2.startBattle() }, time);
     holoBtn(env2, { x: VW2 / 2 - 100, y: afterY + 118, w: 200, h: 46, label: "\u8FD4\u56DE\u9009\u5173", color: env2.C.sub, cb: () => {
       env2.stopNarration();
@@ -5675,7 +5661,7 @@
       const summary = [...new Set(groups.map((gsp) => `${env2.ENEMIES[gsp.type].name}\xD7${gsp.count}`))].join(" ");
       env2.fillText(`${isBossWave ? "\u26A0 BOSS \u6CE2 \xB7 " : ""}${summary}`, VW2 / 2, by2 + 34, { size: 9, color: isBossWave ? env2.C.pink : "#FF9F43", align: "center", weight: "normal" });
       env2.fillText(
-        env2.app.coop ? "P1 \u5EFA\u9020\u9632\u7EBF \xB7 P2 \u628A\u63E1\u5347\u7EA7\u4E0E\u79D1\u6280\u65F6\u673A" : isBossWave ? "\u5EFA\u8BAE\u7559\u597D\u91D1\u5E01\u4E0E\u7A7F\u7532\u706B\u529B" : "\u636E\u6B64\u63D0\u524D\u8C03\u6574\u5E03\u9632",
+        isBossWave ? "\u5EFA\u8BAE\u7559\u597D\u91D1\u5E01\u4E0E\u7A7F\u7532\u706B\u529B" : "\u636E\u6B64\u63D0\u524D\u8C03\u6574\u5E03\u9632",
         VW2 / 2,
         by2 + 47,
         { size: 9, color: env2.C.sub, align: "center", weight: "normal" }
@@ -5994,7 +5980,7 @@
       ctx2.fillRect(0, 0, VW2, env2.VH);
       ctx2.restore();
     }
-    holoHeader(env2, time, env2.app.coop || oi ? "\u534F\u540C\u4F5C\u6218\u7ED3\u7B97" : "\u6218\u6597\u7ED3\u7B97", () => env2.goto("home"));
+    holoHeader(env2, time, oi ? "\u534F\u540C\u4F5C\u6218\u7ED3\u7B97" : "\u6218\u6597\u7ED3\u7B97", () => env2.goto("home"));
     const y0 = env2.TOP_SAFE + 16;
     const bt = Math.min(1, t / 0.45);
     const bounce = 1 + 2.7 * (bt - 1) ** 3 + 1.7 * (bt - 1) ** 2;
@@ -6818,22 +6804,21 @@
         }
       });
     });
-    const coopX = MARGIN2 + diffW + 10;
-    const coopTabW = (fullW - diffW - 10 - 12) / 3;
+    const modeX = MARGIN2 + diffW + 10;
+    const modeTabW = (fullW - diffW - 10 - 8) / 2;
     const MODE_TABS = [
       ["\u5355\u4EBA", "SOLO", "single"],
-      ["\u540C\u5C4F", "CO-OP", "coop"],
       ["\u8054\u673A", "ONLINE", "online"]
     ];
     MODE_TABS.forEach(([label, en, mode], i) => {
-      const x = coopX + i * (coopTabW + 6);
+      const x = modeX + i * (modeTabW + 8);
       const on = env2.app.mode === mode;
       ctx2.save();
-      env2.rr(x, tabY, coopTabW, 40, 9);
+      env2.rr(x, tabY, modeTabW, 40, 9);
       if (on) {
         const g = ctx2.createLinearGradient(x, tabY, x, tabY + 40);
-        g.addColorStop(0, i >= 1 ? env2.C.green : env2.C.gold);
-        g.addColorStop(1, env2.shade(i >= 1 ? env2.C.green : env2.C.gold));
+        g.addColorStop(0, i === 1 ? env2.C.green : env2.C.gold);
+        g.addColorStop(1, env2.shade(i === 1 ? env2.C.green : env2.C.gold));
         ctx2.fillStyle = g;
         ctx2.fill();
       } else {
@@ -6844,12 +6829,12 @@
         ctx2.stroke();
       }
       ctx2.restore();
-      env2.fillText(label, x + coopTabW / 2, tabY + 15, {
+      env2.fillText(label, x + modeTabW / 2, tabY + 15, {
         size: 13,
         color: on ? "#1A1209" : env2.C.text,
         align: "center"
       });
-      env2.fillText(en, x + coopTabW / 2, tabY + 30, {
+      env2.fillText(en, x + modeTabW / 2, tabY + 30, {
         size: 8,
         color: on ? "rgba(26,18,9,0.65)" : env2.C.dim,
         align: "center",
@@ -6859,7 +6844,7 @@
       env2.hitBox({
         x,
         y: tabY,
-        w: coopTabW,
+        w: modeTabW,
         h: 40,
         label: `mode-${mode}`,
         cb: () => {
@@ -7036,8 +7021,7 @@
     const textW = bw - 32;
     let totalLines = 0;
     for (const para of lv.briefing) totalLines += env2.wrapCount(para, textW, textSize) + 0.6;
-    const coopH = env2.app.coop ? 18 : 0;
-    const docH = 40 + bannerH + 10 + Math.ceil(totalLines * lineH) + 44 + coopH;
+    const docH = 40 + bannerH + 10 + Math.ceil(totalLines * lineH) + 44;
     env2.panel(bx, docY, bw, docH, env2.C.panelLine);
     rivets(env2, bx, docY, bw, docH);
     env2.fillText(`NO. SRD-${String(lv.id).padStart(3, "0")}`, bx + 16, docY + 16, {
@@ -7060,14 +7044,6 @@
     });
     let ty = docY + 44 + bannerH + 22;
     for (const para of lv.briefing) ty = env2.wrapBlock(para, bx + 16, ty, textW, { size: textSize, color: "rgba(255,243,226,0.85)" }) + lineH * 0.6;
-    if (env2.app.coop) {
-      env2.fillText(
-        "\u534F\u540C\u5206\u5DE5\uFF1AP1 \u5DE5\u7A0B\u5B98\u5EFA\u9020\u5E03\u9632 \xB7 P2 \u6218\u672F\u5B98\u5347\u7EA7\u4E0E\u79D1\u6280",
-        bx + 16,
-        docY + docH - 26 - coopH,
-        { size: 10, color: env2.C.green, weight: "normal" }
-      );
-    }
     env2.fillText(
       `\u6267\u884C\u96BE\u5EA6\uFF1A${env2.DIFFICULTIES[env2.app.difficulty].name} \xB7 ${env2.DIFFICULTIES[env2.app.difficulty].label}`,
       bx + 16,
@@ -7203,7 +7179,7 @@
         weight: "normal"
       });
       env2.fillText(
-        env2.app.coop ? "P1 \u5EFA\u9020\u9632\u7EBF \xB7 P2 \u628A\u63E1\u5347\u7EA7\u4E0E\u79D1\u6280\u65F6\u673A" : isBossWave ? "\u5EFA\u8BAE\u7559\u597D\u91D1\u5E01\u4E0E\u7A7F\u7532\u706B\u529B" : "\u636E\u6B64\u63D0\u524D\u8C03\u6574\u5E03\u9632",
+        isBossWave ? "\u5EFA\u8BAE\u7559\u597D\u91D1\u5E01\u4E0E\u7A7F\u7532\u706B\u529B" : "\u636E\u6B64\u63D0\u524D\u8C03\u6574\u5E03\u9632",
         env2.VW / 2,
         py + 58,
         {
@@ -7435,7 +7411,7 @@
       ctx2.fillRect(0, 0, VW2, env2.VH);
       ctx2.restore();
     }
-    emberHeader(env2, env2.app.coop || oi ? "\u534F\u540C\u6218\u540E\u62A5\u544A" : "\u6218\u540E\u62A5\u544A", env2.app.coop || oi ? "CO-OP AFTER ACTION REPORT" : "AFTER ACTION REPORT", () => env2.goto("home"));
+    emberHeader(env2, oi ? "\u534F\u540C\u6218\u540E\u62A5\u544A" : "\u6218\u540E\u62A5\u544A", oi ? "CO-OP AFTER ACTION REPORT" : "AFTER ACTION REPORT", () => env2.goto("home"));
     const px = MARGIN2;
     const pw = VW2 - MARGIN2 * 2;
     const bandY = env2.TOP_SAFE + 10;
@@ -8422,34 +8398,33 @@
         }
       });
     });
-    const coopX = MARGIN2 + diffW + 10;
-    const coopTabW = (fullW - diffW - 10 - 12) / 3;
+    const modeX = MARGIN2 + diffW + 10;
+    const modeTabW = (fullW - diffW - 10 - 8) / 2;
     const MODE_TABS = [
       ["\u5355\u4EBA", "single"],
-      ["\u540C\u5C4F", "coop"],
       ["\u8054\u673A", "online"]
     ];
     MODE_TABS.forEach(([label, mode], i) => {
-      const x = coopX + i * (coopTabW + 6);
+      const x = modeX + i * (modeTabW + 8);
       const on = env2.app.mode === mode;
       ctx2.save();
-      env2.rr(x, tabY, coopTabW, tabH, 10);
+      env2.rr(x, tabY, modeTabW, tabH, 10);
       ctx2.fillStyle = on ? env2.ac(0.16) : "rgba(20,12,36,0.85)";
       ctx2.fill();
       ctx2.strokeStyle = on ? env2.ac(0.8) : "rgba(110,92,142,0.4)";
       ctx2.lineWidth = on ? 1.5 : 1;
       ctx2.stroke();
       if (on) {
-        const ug = ctx2.createLinearGradient(x, 0, x + coopTabW, 0);
-        ug.addColorStop(0, i === 1 ? "rgba(61,240,140,0.9)" : i === 2 ? "rgba(255,201,77,0.9)" : env2.ac(0.9));
+        const ug = ctx2.createLinearGradient(x, 0, x + modeTabW, 0);
+        ug.addColorStop(0, i === 1 ? "rgba(255,201,77,0.9)" : env2.ac(0.9));
         ug.addColorStop(1, "rgba(255,61,129,0.9)");
         ctx2.fillStyle = ug;
         ctx2.shadowColor = env2.C.cyan;
         ctx2.shadowBlur = 6;
-        ctx2.fillRect(x + 8, tabY + tabH - 3, coopTabW - 16, 2);
+        ctx2.fillRect(x + 8, tabY + tabH - 3, modeTabW - 16, 2);
       }
       ctx2.restore();
-      env2.fillText(label, x + coopTabW / 2, tabY + tabH / 2, {
+      env2.fillText(label, x + modeTabW / 2, tabY + tabH / 2, {
         size: 13,
         color: on ? env2.C.text : env2.C.dim,
         align: "center"
@@ -8457,7 +8432,7 @@
       env2.hitBox({
         x,
         y: tabY,
-        w: coopTabW,
+        w: modeTabW,
         h: tabH,
         label: `mode-${mode}`,
         cb: () => {
@@ -8578,7 +8553,7 @@
     drawOverlays2(env2);
   }
   function briefLines(env2, lv, textW, size) {
-    const key = `${lv.id}|${textW}|${env2.skin.id}|${env2.app.difficulty}|${env2.app.coop ? 1 : 0}`;
+    const key = `${lv.id}|${textW}|${env2.skin.id}|${env2.app.difficulty}`;
     if (briefCache && briefCache.key === key) return briefCache.lines;
     const per = Math.max(6, Math.floor(textW / size));
     const body = "rgba(164,143,200,0.95)";
@@ -8594,7 +8569,6 @@
     const bossTxt = lv.waves.filter((w) => w.isBoss).map((w) => `W${w.wave}`).join(" ");
     lines.push([`> \u6CE2\u6B21 ${lv.waves.length} \xB7 BOSS ${bossTxt || "\u2014"}`, "#FF9F43"]);
     lines.push([`> \u96BE\u5EA6 ${env2.DIFFICULTIES[env2.app.difficulty].name} \xB7 ${env2.DIFFICULTIES[env2.app.difficulty].label}`, env2.C.gold]);
-    if (env2.app.coop) lines.push(["> CO-OP \u53CC\u4EBA\u540C\u5C4F // P1 \u5EFA\u9020 \xB7 P2 \u6307\u6325", env2.C.green]);
     briefCache = { key, lines };
     return lines;
   }
@@ -8794,7 +8768,7 @@
         weight: "normal"
       });
       env2.fillText(
-        env2.app.coop ? "P1 \u5EFA\u9020\u9632\u7EBF \xB7 P2 \u628A\u63E1\u5347\u7EA7\u4E0E\u79D1\u6280\u65F6\u673A" : isBossWave ? "\u5EFA\u8BAE\u7559\u597D\u91D1\u5E01\u4E0E\u7A7F\u7532\u706B\u529B" : "\u636E\u6B64\u63D0\u524D\u8C03\u6574\u5E03\u9632",
+        isBossWave ? "\u5EFA\u8BAE\u7559\u597D\u91D1\u5E01\u4E0E\u7A7F\u7532\u706B\u529B" : "\u636E\u6B64\u63D0\u524D\u8C03\u6574\u5E03\u9632",
         VW2 / 2,
         py + 54,
         { size: 9, color: env2.C.sub, align: "center", weight: "normal" }
@@ -8989,7 +8963,7 @@
     const st = env2.app.engine.state;
     const oi = env2.getOnlineInfo();
     const t = (Date.now() - env2.getScreenAt()) / 1e3;
-    drawMxHeader(env2, env2.app.coop || oi ? "\u534F\u540C\u4F5C\u6218\u7ED3\u7B97 // CO-OP" : "\u6218\u6597\u7ED3\u7B97", () => env2.goto("home"));
+    drawMxHeader(env2, oi ? "\u534F\u540C\u4F5C\u6218\u7ED3\u7B97 // CO-OP" : "\u6218\u6597\u7ED3\u7B97", () => env2.goto("home"));
     const lvName = env2.LEVELS.find((l) => l.id === env2.app.levelId)?.name ?? "";
     const head = won ? [[`> MISSION ${oi ? "CO-OP" : env2.app.levelId} // ${oi ? "\u53CC\u5B50\u661F\u95E8" : lvName}`, env2.C.cyan], ["> STATUS: \u9632\u7EBF\u5B88\u4F4F\u4E86 \u2713", env2.C.green]] : [[`> MISSION ${oi ? "CO-OP" : env2.app.levelId} // ${oi ? "\u53CC\u5B50\u661F\u95E8" : lvName}`, env2.C.cyan], [`> STATUS: \u9632\u7EBF\u5931\u5B88 \xB7 \u6491\u5230\u7B2C ${st.wave}/${st.totalWaves} \u6CE2`, env2.C.pink]];
     const myKills = oi ? st.killsBy?.[oi.player] ?? st.kills : st.kills;
@@ -9534,7 +9508,6 @@
   };
 
   // src/main.ts
-  var touchId = (t) => t.identifier ?? 0;
   var canvas = wx.createCanvas();
   var info = wx.getSystemInfoSync();
   var VW = info.windowWidth;
@@ -9810,7 +9783,7 @@
                   configureAnalytics({
                     endpoint: API_BASE,
                     getOpenid: () => session?.openid ?? "",
-                    getBuildId: () => true ? "b1005-0008" : "dev"
+                    getBuildId: () => true ? "b1005-0023" : "dev"
                   });
                   track("login_ok", { level: 1 });
                   mergeScoreWithCloud();
@@ -10644,9 +10617,7 @@
     result: null,
     techShownAt: 0,
     techPickedAt: 0,
-    // 双人同屏协作开关（§4.1 A 档；按会话保持，不落盘）。与 mode 同步：coop === (mode==='coop')
-    coop: false,
-    // 玩法模式三档（§4.3 C 档）：单人 / 双人同屏 / 在线联机
+    // 玩法模式（§4.3 C 档）：单人 / 在线联机
     mode: "single",
     // 分享卡片带入的待加入房间码（邀请横幅数据源）
     pendingRoom: null
@@ -10654,11 +10625,7 @@
   function setMode(m) {
     if (app.mode === m) return;
     app.mode = m;
-    app.coop = m === "coop";
-    track("coop_toggle", { mode: m === "single" ? 0 : m === "coop" ? 1 : 2 });
-  }
-  function toggleCoop() {
-    setMode(app.mode === "coop" ? "single" : "coop");
+    track("coop_toggle", { mode: m === "online" ? 2 : 0 });
   }
   try {
     const room = wx.getLaunchOptionsSync?.().query?.room;
@@ -11106,7 +11073,7 @@
     const dim = 0.4 + 0.3 * Math.sin(t * 1.1);
     fillText("\u6DF1\u7A7A\u76D1\u542C\u7AD9 \xB7 \u7B2C 41 \u8F68\u9053\u5468\u671F", VW / 2, VH - 46, { size: 9, color: `rgba(124,141,176,${dim})`, align: "center", weight: "normal" });
     fillText("SIGNAL FADING", VW / 2, VH - 30, { size: 8, color: `rgba(255,61,129,${dim * 0.8})`, align: "center", weight: "600" });
-    fillText(true ? "b1005-0008" : "dev", VW - 10, VH - 10, { size: 8, color: "rgba(124,141,176,0.4)", align: "right", weight: "normal" });
+    fillText(true ? "b1005-0023" : "dev", VW - 10, VH - 10, { size: 8, color: "rgba(124,141,176,0.4)", align: "right", weight: "normal" });
     const menuA = Math.min(1, Math.max(0, (t - 1) / 0.5));
     if (menuA <= 0) {
       if (t > 0.2) hitBox({ x: 0, y: 0, w: VW, h: VH, label: "", cb: () => {
@@ -11220,7 +11187,7 @@
       app.difficulty = DIFF_LIST[i];
       track("difficulty_select", { difficulty: app.difficulty });
     });
-    segControl(MARGIN + diffW + 10, segY, segW - diffW - 10, ["\u5355\u4EBA", "\u540C\u5C4F", "\u8054\u673A"], app.mode === "coop" ? 1 : app.mode === "online" ? 2 : 0, "coop", (i) => setMode(i === 1 ? "coop" : i === 2 ? "online" : "single"));
+    segControl(MARGIN + diffW + 10, segY, segW - diffW - 10, ["\u5355\u4EBA", "\u8054\u673A"], app.mode === "online" ? 1 : 0, "mode", (i) => setMode(i === 1 ? "online" : "single"));
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, homeTop, VW, homeBottom - homeTop);
@@ -11388,20 +11355,6 @@
     ctx.stroke();
     ctx.restore();
     fillText(diffTxt, VW / 2, afterY + 0.5, { size: 11, color: C.gold, align: "center" });
-    if (app.coop) {
-      const coopTxt = "\u53CC\u4EBA\u540C\u5C4F \xB7 P1 \u5EFA\u9020 \xB7 P2 \u6307\u6325";
-      ctx.save();
-      ctx.font = "bold 11px sans-serif";
-      const cw = ctx.measureText(coopTxt).width + 24;
-      rr(VW / 2 - cw / 2, afterY + 13, cw, 22, 11);
-      ctx.fillStyle = "rgba(61,240,140,0.12)";
-      ctx.fill();
-      ctx.strokeStyle = "rgba(61,240,140,0.4)";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.restore();
-      fillText(coopTxt, VW / 2, afterY + 24.5, { size: 11, color: C.green, align: "center" });
-    }
     btn({ x: VW / 2 - 100, y: afterY + 42, w: 200, h: 54, label: "\u25B6 \u51FA \u51FB", primary: true, cb: startBattle });
     btn({ x: VW / 2 - 100, y: afterY + 118, w: 200, h: 46, label: "\u8FD4\u56DE\u9009\u5173", color: C.sub, cb: () => {
       stopNarration();
@@ -11427,13 +11380,12 @@
     bloom = new BloomLayer(W, H);
     pathPixels = app.engine.map.paths.map((p) => p.pixels);
     battleStartAt = Date.now();
-    coopClearTouches();
   }
   function startBattle() {
     stopNarration();
     app.engine = createEngine(app.difficulty, app.levelId);
     initBattleView();
-    track("game_start", { level_id: app.levelId, difficulty: app.difficulty, coop: app.coop ? 1 : 0 });
+    track("game_start", { level_id: app.levelId, difficulty: app.difficulty, coop: 0 });
     goto("battle");
   }
   var online = null;
@@ -11477,7 +11429,6 @@
     if (gained > scoreProfile.bestSingle) scoreProfile.bestSingle = gained;
     scoreProfile.updatedAt = Date.now();
     saveScore();
-    coopClearTouches();
     syncScoreToCloud();
     track("score_gain", { score: gained, grade, level_id: 0, coop: 2 });
     track("game_end", {
@@ -11865,7 +11816,7 @@
         const cCol = isBossWave ? C.pink : "#FF9F43";
         fillText(`${isBossWave ? "\u26A0 BOSS \u6CE2 \xB7 " : ""}${summary}`, VW / 2, by2 + 34, { size: 9, color: isBossWave ? C.pink : "#FF9F43", align: "center", weight: "normal" });
         fillText(
-          app.coop ? "P1 \u5EFA\u9020\u9632\u7EBF \xB7 P2 \u628A\u63E1\u5347\u7EA7\u4E0E\u79D1\u6280\u65F6\u673A" : isBossWave ? "\u5EFA\u8BAE\u7559\u597D\u91D1\u5E01\u4E0E\u7A7F\u7532\u706B\u529B" : "\u636E\u6B64\u63D0\u524D\u8C03\u6574\u5E03\u9632",
+          isBossWave ? "\u5EFA\u8BAE\u7559\u597D\u91D1\u5E01\u4E0E\u7A7F\u7532\u706B\u529B" : "\u636E\u6B64\u63D0\u524D\u8C03\u6574\u5E03\u9632",
           VW / 2,
           by2 + 47,
           { size: 9, color: C.sub, align: "center", weight: "normal" }
@@ -11878,15 +11829,6 @@
     if (barTouch?.mode === "drag" && dragPos && barTouch.type) {
       if (bm?.drawDragGhost) bm.drawDragGhost(env, engine, barTouch.type, dragPos);
       else drawDragGhost3(st, barTouch.type, dragPos);
-    }
-    if (app.coop) {
-      for (const [tid, bt] of coopBar) {
-        if (bt.mode !== "drag" || !bt.type) continue;
-        const dp = coopDrag.get(tid);
-        if (!dp) continue;
-        if (bm?.drawDragGhost) bm.drawDragGhost(env, engine, bt.type, dp);
-        else drawDragGhost3(st, bt.type, dp);
-      }
     }
     if (st.paused) {
       ctx.fillStyle = "rgba(7,11,24,0.6)";
@@ -12175,7 +12117,7 @@
       ctx.fillRect(0, 0, VW, VH);
       ctx.restore();
     }
-    drawHeader(app.coop || oi ? "\u534F\u540C\u4F5C\u6218\u7ED3\u7B97" : "\u6218\u6597\u7ED3\u7B97", { back: () => goto("home") });
+    drawHeader(oi ? "\u534F\u540C\u4F5C\u6218\u7ED3\u7B97" : "\u6218\u6597\u7ED3\u7B97", { back: () => goto("home") });
     const y0 = TOP_SAFE + 16;
     const bt = Math.min(1, t / 0.45);
     const bounce = 1 + 2.7 * (bt - 1) ** 3 + 1.7 * (bt - 1) ** 2;
@@ -12756,9 +12698,8 @@
             if (gained > (scoreProfile.perLevelBest[levelId] ?? 0)) scoreProfile.perLevelBest[levelId] = gained;
             scoreProfile.updatedAt = Date.now();
             saveScore();
-            coopClearTouches();
             syncScoreToCloud();
-            track("score_gain", { score: gained, grade, level_id: levelId, coop: app.coop ? 1 : 0 });
+            track("score_gain", { score: gained, grade, level_id: levelId, coop: 0 });
             track("game_end", {
               level_id: levelId,
               difficulty: app.difficulty,
@@ -12769,7 +12710,7 @@
               leaks: st0.leaked,
               score: gained,
               grade,
-              coop: app.coop ? 1 : 0
+              coop: 0
             });
             if (ev.won) recordLevelClear(levelId);
             const rankAfter = commanderRank();
@@ -12945,7 +12886,6 @@
     applySkin,
     authUser,
     openFeedback,
-    toggleCoop,
     setMode,
     getOnlineInfo,
     // 主动拉起分享（判空包装 wx.shareAppMessage）
@@ -12985,171 +12925,11 @@
       tapConsumed = true;
     }
   };
-  var coopBar = /* @__PURE__ */ new Map();
-  var coopDrag = /* @__PURE__ */ new Map();
-  var coopMap = /* @__PURE__ */ new Map();
-  var coopMoved = /* @__PURE__ */ new Map();
-  var coopTouchAt = /* @__PURE__ */ new Map();
-  function coopClearTouches() {
-    coopBar.clear();
-    coopDrag.clear();
-    coopMap.clear();
-    coopMoved.clear();
-    coopTouchAt.clear();
-  }
-  function makeBarTouch(engine, p) {
-    const t = towerSlotAt(p);
-    const unusable = !t ? null : !towerUnlocked(t) ? `\u901A\u5173\u7B2C ${TOWER_UNLOCK[t]} \u7AE0\u540E\u89E3\u9501\u300C${TOWERS[t].name}\u300D` : engine.state.gold < TOWERS[t].levels[0].cost ? "\u91D1\u5E01\u4E0D\u8DB3\uFF0C\u5148\u6512\u4E00\u6512" : null;
-    return { mode: "pending", type: unusable ? null : t, unusable, startX: p.x, startY: p.y, lastX: p.x };
-  }
-  function placeAtOnce(engine, p) {
-    const st = engine.state;
-    const cx = Math.floor(toMapX(p.x) / CELL);
-    const cy = Math.floor(toMapY(p.y) / CELL);
-    if (cx >= 0 && cx < COLS && cy >= 0 && cy < ROWS && engine.map.isBuildable(cx, cy) && !st.towers.some((tw) => tw.col === cx && tw.row === cy)) {
-      if (engine.dispatch({ type: "BUILD", col: cx, row: cy, tower: app.placing })) {
-        sfx.play("build");
-        buzz("light");
-        track("tower_build", { tower_type: app.placing, level_id: app.levelId, wave: engine.state.wave });
-      }
-    }
-    app.placing = null;
-  }
-  function coopTouchStart(e) {
-    const engine = app.engine;
-    if (!engine) return;
-    for (const t of e.changedTouches ?? e.touches) {
-      const id = touchId(t);
-      const p = touchPoint(t);
-      coopTouchAt.set(id, Date.now());
-      coopMoved.set(id, 0);
-      SKIN_MODULES[skin.id]?.handleTouch?.(env, "start", p);
-      if (!pressedBtn) {
-        for (let i = hooks.length - 1; i >= 0; i--) {
-          const b = hooks[i];
-          if (!b.disabled && hit(p, b)) {
-            pressedBtn = b;
-            break;
-          }
-        }
-      }
-      if (showSettings || showProfile || engine.state.phase === "tech") continue;
-      if (hooks.some((b) => !b.disabled && hit(p, b))) continue;
-      if (p.y >= VH - BAR_H) {
-        if (!app.placing && app.selectedId == null) coopBar.set(id, makeBarTouch(engine, p));
-        continue;
-      }
-      if (app.placing) {
-        placeAtOnce(engine, p);
-        continue;
-      }
-      coopMap.set(id, { startY: p.y, pan0: mapPan });
-    }
-  }
-  function coopTouchMove(e) {
-    for (const t of e.changedTouches ?? e.touches) {
-      const id = touchId(t);
-      const p = touchPoint(t);
-      if (SKIN_MODULES[skin.id]?.handleTouch?.(env, "move", p)) continue;
-      const bt = coopBar.get(id);
-      if (bt) {
-        const dx = p.x - bt.startX;
-        const dy = p.y - bt.startY;
-        if (bt.mode === "pending") {
-          if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.2 && stripMaxScroll > 0) bt.mode = "scroll";
-          else if (dx * dx + dy * dy > 144 && bt.type) bt.mode = "drag";
-        }
-        if (bt.mode === "scroll") {
-          barScroll = Math.max(0, Math.min(stripMaxScroll, barScroll - (p.x - bt.lastX)));
-          bt.lastX = p.x;
-          coopMoved.set(id, (coopMoved.get(id) ?? 0) + Math.abs(dx));
-        } else if (bt.mode === "drag") {
-          coopDrag.set(id, p);
-          coopMoved.set(id, (coopMoved.get(id) ?? 0) + Math.abs(dx) + Math.abs(dy));
-        }
-        continue;
-      }
-      const mt = coopMap.get(id);
-      if (mt && mapPanMin < 0) {
-        const dy = p.y - mt.startY;
-        mapPan = Math.max(mapPanMin, Math.min(0, mt.pan0 + dy));
-        coopMoved.set(id, (coopMoved.get(id) ?? 0) + Math.abs(dy));
-      }
-    }
-  }
-  function coopTouchEnd(e) {
-    for (const t of e.changedTouches ?? e.touches) {
-      const id = touchId(t);
-      const p = touchPoint(t);
-      const at = coopTouchAt.get(id) ?? 0;
-      const moved = coopMoved.get(id) ?? 0;
-      coopTouchAt.delete(id);
-      coopMoved.delete(id);
-      if (SKIN_MODULES[skin.id]?.handleTouch?.(env, "end", p)) continue;
-      const bt = coopBar.get(id);
-      if (bt) {
-        coopBar.delete(id);
-        coopDrag.delete(id);
-        if (bt.mode === "scroll") continue;
-        if (bt.mode === "drag") {
-          if (bt.type && app.engine) {
-            const st = app.engine.state;
-            const cx = Math.floor(toMapX(p.x) / CELL);
-            const cy = Math.floor(toMapY(p.y) / CELL);
-            if (cx >= 0 && cx < COLS && cy >= 0 && cy < ROWS && app.engine.map.isBuildable(cx, cy) && !st.towers.some((tw) => tw.col === cx && tw.row === cy)) {
-              if (app.engine.dispatch({ type: "BUILD", col: cx, row: cy, tower: bt.type })) {
-                sfx.play("build");
-                buzz("light");
-                track("tower_build", { tower_type: bt.type, level_id: app.levelId, wave: st.wave });
-              }
-            }
-          }
-          continue;
-        }
-        if (bt.type) {
-          app.placing = bt.type;
-          app.selectedId = null;
-        } else if (bt.unusable) {
-          showToast(bt.unusable);
-          buzz("light");
-        }
-        continue;
-      }
-      const mt = coopMap.get(id);
-      if (mt) {
-        coopMap.delete(id);
-        if (moved > 8) continue;
-        if (app.engine && !app.placing) {
-          const cx = Math.floor(toMapX(p.x) / CELL);
-          const cy = Math.floor(toMapY(p.y) / CELL);
-          const tw = app.engine.state.towers.find((tw2) => tw2.col === cx && tw2.row === cy);
-          app.selectedId = tw ? tw.id : null;
-          if (tw) sfx.play("select");
-        }
-        continue;
-      }
-      if (Date.now() - at < 600) {
-        for (let i = hooks.length - 1; i >= 0; i--) {
-          const b = hooks[i];
-          if (!b.disabled && hit(p, b)) {
-            sfx.play("click");
-            b.cb();
-            break;
-          }
-        }
-      }
-    }
-    pressedBtn = null;
-  }
   var touchTime = 0;
   wx.onTouchStart((e) => {
     const p0 = e.touches[0];
     if (!p0) return;
     sfx.init();
-    if (app.coop && app.screen === "battle" && app.engine) {
-      coopTouchStart(e);
-      return;
-    }
     const p = touchPoint(p0);
     if (SKIN_MODULES[skin.id]?.handleTouch?.(env, "start", p)) return;
     touchTime = Date.now();
@@ -13200,10 +12980,6 @@
   wx.onTouchMove((e) => {
     const p0 = e.touches[0];
     if (!p0) return;
-    if (app.coop && app.screen === "battle" && app.engine) {
-      coopTouchMove(e);
-      return;
-    }
     const p = touchPoint(p0);
     if (SKIN_MODULES[skin.id]?.handleTouch?.(env, "move", p)) return;
     if (app.screen === "home" || app.screen === "codex") {
@@ -13243,10 +13019,6 @@
   });
   wx.onTouchEnd((e) => {
     pressedBtn = null;
-    if (app.coop && app.screen === "battle" && app.engine) {
-      coopTouchEnd(e);
-      return;
-    }
     const p0 = (e.changedTouches ?? e.touches)[0];
     if (!p0) return;
     const p = touchPoint(p0);

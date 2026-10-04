@@ -27,8 +27,6 @@ import type { PlayMode, SkinEnv } from './skins/types';
 
 interface TouchLike { clientX: number; clientY: number; identifier?: number }
 interface TouchEventLike { touches: TouchLike[]; changedTouches?: TouchLike[] }
-/** 触点稳定键：微信触摸对象带 identifier（多触点路由用）；浏览器 stub 没有则退化为 0 */
-const touchId = (t: TouchLike) => t.identifier ?? 0;
 
 interface WxImage {
   src: string; width: number; height: number;
@@ -1254,25 +1252,17 @@ const app = {
   result: null as { won: boolean } | null,
   techShownAt: 0,
   techPickedAt: 0,
-  // 双人同屏协作开关（§4.1 A 档；按会话保持，不落盘）。与 mode 同步：coop === (mode==='coop')
-  coop: false,
-  // 玩法模式三档（§4.3 C 档）：单人 / 双人同屏 / 在线联机
+  // 玩法模式（§4.3 C 档）：单人 / 在线联机
   mode: 'single' as PlayMode,
   // 分享卡片带入的待加入房间码（邀请横幅数据源）
   pendingRoom: null as string | null,
 };
 
-/** 切换玩法模式三档（home 模式控件调用；同步 app.coop 布尔镜像） */
+/** 切换玩法模式（home 模式控件调用；埋点 mode 值域：0 单人 / 2 在线联机） */
 function setMode(m: PlayMode) {
   if (app.mode === m) return;
   app.mode = m;
-  app.coop = m === 'coop';
-  track('coop_toggle', { mode: m === 'single' ? 0 : m === 'coop' ? 1 : 2 });
-}
-
-/** 切换 单人 / 双人同屏（兼容旧调用；新 UI 走 setMode） */
-function toggleCoop() {
-  setMode(app.mode === 'coop' ? 'single' : 'coop');
+  track('coop_toggle', { mode: m === 'online' ? 2 : 0 });
 }
 
 // 分享卡片邀请直达：启动参数 query.room（6 位房间码），splash/home 顶部弹邀请横幅
@@ -1868,7 +1858,7 @@ function drawHome(time: number) {
 
   drawHeader('高塔防线 · 战役选择', { back: () => goto('splash') });
 
-  // 难度分段控件（高亮块滑动动画 + 轻震动）+ 右侧 单人/双人同屏 切换（§4.1）
+  // 难度分段控件（高亮块滑动动画 + 轻震动）+ 右侧 单人/联机 切换
   const segW = VW - MARGIN * 2;
   const segY = TOP_SAFE + 4;
   const diffW = Math.round(segW * 0.6);
@@ -1876,7 +1866,7 @@ function drawHome(time: number) {
     app.difficulty = DIFF_LIST[i];
     track('difficulty_select', { difficulty: app.difficulty });
   });
-  segControl(MARGIN + diffW + 10, segY, segW - diffW - 10, ['单人', '同屏', '联机'], app.mode === 'coop' ? 1 : app.mode === 'online' ? 2 : 0, 'coop', (i) => setMode(i === 1 ? 'coop' : i === 2 ? 'online' : 'single'));
+  segControl(MARGIN + diffW + 10, segY, segW - diffW - 10, ['单人', '联机'], app.mode === 'online' ? 1 : 0, 'mode', (i) => setMode(i === 1 ? 'online' : 'single'));
 
   // 关卡卡片列表（可滚动）
   ctx.save();
@@ -2054,21 +2044,6 @@ function drawBriefing(time: number) {
   ctx.stroke();
   ctx.restore();
   fillText(diffTxt, VW / 2, afterY + 0.5, { size: 11, color: C.gold, align: 'center' });
-  // 双人同屏：注明分工（§4.1：P1 建造 · P2 指挥）
-  if (app.coop) {
-    const coopTxt = '双人同屏 · P1 建造 · P2 指挥';
-    ctx.save();
-    ctx.font = 'bold 11px sans-serif';
-    const cw = ctx.measureText(coopTxt).width + 24;
-    rr(VW / 2 - cw / 2, afterY + 13, cw, 22, 11);
-    ctx.fillStyle = 'rgba(61,240,140,0.12)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(61,240,140,0.4)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.restore();
-    fillText(coopTxt, VW / 2, afterY + 24.5, { size: 11, color: C.green, align: 'center' });
-  }
 
   btn({ x: VW / 2 - 100, y: afterY + 42, w: 200, h: 54, label: '▶ 出 击', primary: true, cb: startBattle });
   btn({ x: VW / 2 - 100, y: afterY + 118, w: 200, h: 46, label: '返回选关', color: C.sub, cb: () => { stopNarration(); goto('home'); } });
@@ -2102,14 +2077,13 @@ function initBattleView() {
   bloom = new BloomLayer(W, H);
   pathPixels = app.engine!.map.paths.map((p) => p.pixels);
   battleStartAt = Date.now();
-  coopClearTouches();
 }
 
 function startBattle() {
   stopNarration();
   app.engine = createEngine(app.difficulty, app.levelId);
   initBattleView();
-  track('game_start', { level_id: app.levelId, difficulty: app.difficulty, coop: app.coop ? 1 : 0 });
+  track('game_start', { level_id: app.levelId, difficulty: app.difficulty, coop: 0 });
   goto('battle');
 }
 
@@ -2184,7 +2158,6 @@ function settleOnline(won: boolean) {
   if (gained > scoreProfile.bestSingle) scoreProfile.bestSingle = gained;
   scoreProfile.updatedAt = Date.now();
   saveScore();
-  coopClearTouches(); // 离开战斗屏前清掉多触点手势状态
   syncScoreToCloud(); // 已登录则同步服务端（静默失败）
   track('score_gain', { score: gained, grade, level_id: 0, coop: 2 });
   track('game_end', {
@@ -2581,7 +2554,7 @@ function drawBattle() {
     const cCol = isBossWave ? C.pink : '#FF9F43';
     fillText(`${isBossWave ? '⚠ BOSS 波 · ' : ''}${summary}`, VW / 2, by2 + 34, { size: 9, color: isBossWave ? C.pink : '#FF9F43', align: 'center', weight: 'normal' });
     fillText(
-      app.coop ? 'P1 建造防线 · P2 把握升级与科技时机' : isBossWave ? '建议留好金币与穿甲火力' : '据此提前调整布防',
+      isBossWave ? '建议留好金币与穿甲火力' : '据此提前调整布防',
       VW / 2, by2 + 47, { size: 9, color: C.sub, align: 'center', weight: 'normal' },
     );
     btn({ x: VW / 2 - 62, y: by2 + 66, w: 124, h: 36, label: '▶ 立即开战', color: C.gold, primary: true, cb: () => engineCmd({ type: 'SKIP_PREP' }) });
@@ -2592,19 +2565,10 @@ function drawBattle() {
   if (bm?.drawBottomBar) bm.drawBottomBar(env, engine);
   else drawBottomBar(st);
 
-  // 拖拽建塔幽灵预览（协作模式支持两名玩家各拖一座，互不中断）
+  // 拖拽建塔幽灵预览
   if (barTouch?.mode === 'drag' && dragPos && barTouch.type) {
     if (bm?.drawDragGhost) bm.drawDragGhost(env, engine, barTouch.type, dragPos);
     else drawDragGhost(st, barTouch.type, dragPos);
-  }
-  if (app.coop) {
-    for (const [tid, bt] of coopBar) {
-      if (bt.mode !== 'drag' || !bt.type) continue;
-      const dp = coopDrag.get(tid);
-      if (!dp) continue;
-      if (bm?.drawDragGhost) bm.drawDragGhost(env, engine, bt.type, dp);
-      else drawDragGhost(st, bt.type, dp);
-    }
   }
 
   if (st.paused) {
@@ -2907,7 +2871,7 @@ function drawResult(time: number) {
     ctx.restore();
   }
 
-  drawHeader(app.coop || oi ? '协同作战结算' : '战斗结算', { back: () => goto('home') });
+  drawHeader(oi ? '协同作战结算' : '战斗结算', { back: () => goto('home') });
   const y0 = TOP_SAFE + 16;
   // 标题回弹入场
   const bt = Math.min(1, t / 0.45);
@@ -3505,9 +3469,8 @@ function frame() {
         if (gained > (scoreProfile.perLevelBest[levelId] ?? 0)) scoreProfile.perLevelBest[levelId] = gained;
         scoreProfile.updatedAt = Date.now();
         saveScore();
-        coopClearTouches(); // 离开战斗屏前清掉多触点手势状态
         syncScoreToCloud(); // 已登录则同步服务端（静默失败）
-        track('score_gain', { score: gained, grade, level_id: levelId, coop: app.coop ? 1 : 0 });
+        track('score_gain', { score: gained, grade, level_id: levelId, coop: 0 });
         track('game_end', {
           level_id: levelId,
           difficulty: app.difficulty,
@@ -3518,7 +3481,7 @@ function frame() {
           leaks: st0.leaked,
           score: gained,
           grade,
-          coop: app.coop ? 1 : 0,
+          coop: 0,
         });
         if (ev.won) recordLevelClear(levelId);
         const rankAfter = commanderRank();
@@ -3635,7 +3598,7 @@ const env: SkinEnv = {
   // 进度与解锁
   loadProgress, unlockedChapter, towerUnlocked,
   // 动作
-  goto, gotoBriefing, stopNarration, startBattle, engineCmd, applySkin, authUser, openFeedback, toggleCoop,
+  goto, gotoBriefing, stopNarration, startBattle, engineCmd, applySkin, authUser, openFeedback,
   setMode, getOnlineInfo,
   // 主动拉起分享（判空包装 wx.shareAppMessage）
   shareAppMessage: (o) => { try { wx.shareAppMessage?.(o); } catch { /* ignore */ } },
@@ -3660,190 +3623,6 @@ const env: SkinEnv = {
   consumeTap: () => { tapConsumed = true; },
 };
 
-// ---------------- 协作模式多触点路由（§4.1：P1 工程官建造 / P2 战术官指挥） ----------------
-// 仅 app.coop 且战斗屏时启用；按触点 identifier 键控，每个触点独立手势状态机。
-// 分工天然由落区决定：底部塔栏与地图建造归 P1；HUD 钮 / 科技卡 / 升级出售 / 轻点选塔归 P2
-// （后者走 touchend 的 hooks 命中派发，与单人完全一致）。引擎单线程 dispatch 天然保证原子性。
-
-/** P1 塔栏手势（每触点一份 pending/scroll/drag 状态机） */
-const coopBar = new Map<number, BarTouch>();
-/** P1 拖拽中的手指位置（drag ghost 绘制用，每触点一份） */
-const coopDrag = new Map<number, TouchPoint>();
-/** 地图平移/轻点选塔手势（每触点一份） */
-const coopMap = new Map<number, { startY: number; pan0: number }>();
-/** 各触点累计位移（抑制误触点击）与按下时间（快速轻点判定） */
-const coopMoved = new Map<number, number>();
-const coopTouchAt = new Map<number, number>();
-
-function coopClearTouches() {
-  coopBar.clear();
-  coopDrag.clear();
-  coopMap.clear();
-  coopMoved.clear();
-  coopTouchAt.clear();
-}
-
-/** 塔栏起点手势：可用性判定与单人路径同一套文案 */
-function makeBarTouch(engine: GameEngine, p: TouchPoint): BarTouch {
-  const t = towerSlotAt(p);
-  const unusable = !t ? null
-    : !towerUnlocked(t) ? `通关第 ${TOWER_UNLOCK[t]} 章后解锁「${TOWERS[t].name}」`
-    : engine.state.gold < TOWERS[t].levels[0].cost ? '金币不足，先攒一攒' : null;
-  return { mode: 'pending', type: unusable ? null : t, unusable, startX: p.x, startY: p.y, lastX: p.x };
-}
-
-/** 点选放置模式：地图落格建塔（逻辑与单人路径一致；无论成败都退出放置模式） */
-function placeAtOnce(engine: GameEngine, p: TouchPoint) {
-  const st = engine.state;
-  const cx = Math.floor(toMapX(p.x) / CELL);
-  const cy = Math.floor(toMapY(p.y) / CELL);
-  if (
-    cx >= 0 && cx < COLS && cy >= 0 && cy < ROWS &&
-    engine.map.isBuildable(cx, cy) &&
-    !st.towers.some((tw) => tw.col === cx && tw.row === cy)
-  ) {
-    if (engine.dispatch({ type: 'BUILD', col: cx, row: cy, tower: app.placing! })) {
-      sfx.play('build'); buzz('light');
-      track('tower_build', { tower_type: app.placing!, level_id: app.levelId, wave: engine.state.wave });
-    }
-  }
-  app.placing = null;
-}
-
-function coopTouchStart(e: TouchEventLike) {
-  const engine = app.engine;
-  if (!engine) return;
-  for (const t of e.changedTouches ?? e.touches) {
-    const id = touchId(t);
-    const p = touchPoint(t);
-    coopTouchAt.set(id, Date.now());
-    coopMoved.set(id, 0);
-    // 皮肤按压反馈等副作用保留；battle 下各皮肤 handleTouch 均不消费事件
-    SKIN_MODULES[skin.id]?.handleTouch?.(env, 'start', p);
-    // 按钮按压反馈（视觉）：命中即记录，多触点时只保留第一个
-    if (!pressedBtn) {
-      for (let i = hooks.length - 1; i >= 0; i--) {
-        const b = hooks[i];
-        if (!b.disabled && hit(p, b)) { pressedBtn = b; break; }
-      }
-    }
-    // 弹层打开 / 科技三选一阶段：底层手势全部关闭，只留 touchend 的 hooks 派发（P2）
-    if (showSettings || showProfile || engine.state.phase === 'tech') continue;
-    // 命中 HUD/面板按钮 → 归 P2，不进入地图手势
-    if (hooks.some((b) => !b.disabled && hit(p, b))) continue;
-    // P1：底部塔栏（无选中塔且无点选放置时）
-    if (p.y >= VH - BAR_H) {
-      if (!app.placing && app.selectedId == null) coopBar.set(id, makeBarTouch(engine, p));
-      continue;
-    }
-    // P1：点选放置模式下直接建造
-    if (app.placing) { placeAtOnce(engine, p); continue; }
-    // 地图区：平移 / 轻点选塔（选塔归 P2，手势判定相同）
-    coopMap.set(id, { startY: p.y, pan0: mapPan });
-  }
-}
-
-function coopTouchMove(e: TouchEventLike) {
-  for (const t of e.changedTouches ?? e.touches) {
-    const id = touchId(t);
-    const p = touchPoint(t);
-    if (SKIN_MODULES[skin.id]?.handleTouch?.(env, 'move', p)) continue;
-    const bt = coopBar.get(id);
-    if (bt) {
-      const dx = p.x - bt.startX;
-      const dy = p.y - bt.startY;
-      if (bt.mode === 'pending') {
-        // 横向为主 → 滚动塔栏；纵向/斜向 → 拖拽建塔（阈值与单人路径一致）
-        if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.2 && stripMaxScroll > 0) bt.mode = 'scroll';
-        else if (dx * dx + dy * dy > 144 && bt.type) bt.mode = 'drag';
-      }
-      if (bt.mode === 'scroll') {
-        barScroll = Math.max(0, Math.min(stripMaxScroll, barScroll - (p.x - bt.lastX)));
-        bt.lastX = p.x;
-        coopMoved.set(id, (coopMoved.get(id) ?? 0) + Math.abs(dx));
-      } else if (bt.mode === 'drag') {
-        coopDrag.set(id, p);
-        coopMoved.set(id, (coopMoved.get(id) ?? 0) + Math.abs(dx) + Math.abs(dy));
-      }
-      continue;
-    }
-    const mt = coopMap.get(id);
-    if (mt && mapPanMin < 0) {
-      const dy = p.y - mt.startY;
-      mapPan = Math.max(mapPanMin, Math.min(0, mt.pan0 + dy));
-      coopMoved.set(id, (coopMoved.get(id) ?? 0) + Math.abs(dy));
-    }
-  }
-}
-
-function coopTouchEnd(e: TouchEventLike) {
-  for (const t of e.changedTouches ?? e.touches) {
-    const id = touchId(t);
-    const p = touchPoint(t);
-    const at = coopTouchAt.get(id) ?? 0;
-    const moved = coopMoved.get(id) ?? 0;
-    coopTouchAt.delete(id);
-    coopMoved.delete(id);
-    if (SKIN_MODULES[skin.id]?.handleTouch?.(env, 'end', p)) continue;
-    // P1 塔栏手势收尾（与单人路径同一套分支）
-    const bt = coopBar.get(id);
-    if (bt) {
-      coopBar.delete(id);
-      coopDrag.delete(id);
-      if (bt.mode === 'scroll') continue;
-      if (bt.mode === 'drag') {
-        // 松手落格建造
-        if (bt.type && app.engine) {
-          const st = app.engine.state;
-          const cx = Math.floor(toMapX(p.x) / CELL);
-          const cy = Math.floor(toMapY(p.y) / CELL);
-          if (
-            cx >= 0 && cx < COLS && cy >= 0 && cy < ROWS &&
-            app.engine.map.isBuildable(cx, cy) &&
-            !st.towers.some((tw) => tw.col === cx && tw.row === cy)
-          ) {
-            if (app.engine.dispatch({ type: 'BUILD', col: cx, row: cy, tower: bt.type })) {
-              sfx.play('build'); buzz('light');
-              track('tower_build', { tower_type: bt.type, level_id: app.levelId, wave: st.wave });
-            }
-          }
-        }
-        continue;
-      }
-      // pending 轻点：可用则进入点选放置模式，否则提示原因
-      if (bt.type) { app.placing = bt.type; app.selectedId = null; }
-      else if (bt.unusable) { showToast(bt.unusable); buzz('light'); }
-      continue;
-    }
-    // 地图手势收尾：拖动超阈值不视为点击；轻点选塔（P2）
-    const mt = coopMap.get(id);
-    if (mt) {
-      coopMap.delete(id);
-      if (moved > 8) continue;
-      if (app.engine && !app.placing) {
-        const cx = Math.floor(toMapX(p.x) / CELL);
-        const cy = Math.floor(toMapY(p.y) / CELL);
-        const tw = app.engine.state.towers.find((tw2) => tw2.col === cx && tw2.row === cy);
-        app.selectedId = tw ? tw.id : null;
-        if (tw) sfx.play('select');
-      }
-      continue;
-    }
-    // P2：快速轻点 → hooks 派发（HUD 钮 / 科技卡 / 升级出售 / 弹层按钮等）
-    if (Date.now() - at < 600) {
-      for (let i = hooks.length - 1; i >= 0; i--) {
-        const b = hooks[i];
-        if (!b.disabled && hit(p, b)) {
-          sfx.play('click');
-          b.cb();
-          break;
-        }
-      }
-    }
-  }
-  pressedBtn = null;
-}
-
 // ---------------- 触控 ----------------
 
 let touchTime = 0;
@@ -3852,8 +3631,6 @@ wx.onTouchStart((e) => {
   const p0 = e.touches[0];
   if (!p0) return;
   sfx.init(); // 首次用户手势时初始化 WebAudio
-  // 协作模式战斗中：多触点路由（P1 建造 / P2 指挥），逻辑见上方 coopTouchStart
-  if (app.coop && app.screen === 'battle' && app.engine) { coopTouchStart(e); return; }
   const p = touchPoint(p0);
   // 皮肤模块可插拔：返回 true 表示消费该事件，跳过默认处理
   if (SKIN_MODULES[skin.id]?.handleTouch?.(env, 'start', p)) return;
@@ -3918,8 +3695,6 @@ wx.onTouchStart((e) => {
 wx.onTouchMove((e) => {
   const p0 = e.touches[0];
   if (!p0) return;
-  // 协作模式战斗中：多触点路由
-  if (app.coop && app.screen === 'battle' && app.engine) { coopTouchMove(e); return; }
   const p = touchPoint(p0);
   // 皮肤模块可插拔：返回 true 表示消费该事件，跳过默认处理
   if (SKIN_MODULES[skin.id]?.handleTouch?.(env, 'move', p)) return;
@@ -3966,8 +3741,6 @@ wx.onTouchMove((e) => {
 
 wx.onTouchEnd((e) => {
   pressedBtn = null;
-  // 协作模式战斗中：多触点路由
-  if (app.coop && app.screen === 'battle' && app.engine) { coopTouchEnd(e); return; }
   const p0 = (e.changedTouches ?? e.touches)[0];
   if (!p0) return;
   const p = touchPoint(p0);

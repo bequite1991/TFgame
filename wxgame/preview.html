@@ -137,18 +137,17 @@ setInterval(() => {
   if (!DRIVE) return;
   const a = window.__SRD;
   if (!a) return;
-  // ?coop=1：直接置位会话内双人同屏模式（冒烟多触点路由与文案，不走 UI 切换；保持 mode/coop 同步不变量）
-  if (Q.get('coop') && !a.coop) { a.mode = 'coop'; a.coop = true; slog('coop=on'); }
   if (a.screen === 'splash') {
     // 菜单未出（只剩全屏跳过热区）→ 点中央跳过；菜单出了 → 点「开始战役」（下半屏最大命中区）
     const start = hooks().find((h) => /开始战役/.test(h.label))
       || hooks().filter((h) => h.y > VH * 0.45).sort((x, y) => y.w * y.h - x.w * x.h)[0];
     if (start && start.w < VW * 0.98) tapHook(start);
     else tap(VW / 2, VH * 0.55);
-  } else if (a.screen === 'home' && SCREEN === 'battle') {
+  } else if (a.screen === 'home' && (SCREEN === 'battle' || SCREEN === 'briefing')) {
     const h = hooks().find((b) => /出击|重玩/.test(b.label));
     if (h) tapHook(h);
   } else if (a.screen === 'briefing') {
+    if (SCREEN === 'briefing') return; // 目标屏即简报：停在这里截图
     if (SKIN === 'matrix' && Date.now() - briefingActAt < 1500) return; // matrix 长按充能期间防重入
     briefingActAt = Date.now();
     const h = findCta();
