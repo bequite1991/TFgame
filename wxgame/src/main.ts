@@ -140,9 +140,17 @@ const API_BASE: string = (() => {
 })();
 
 // 资源 CDN 化（主包瘦身：assets/ 不打入包体，全部从线上加载，包内只留 game.js）
-/** 资源 URL：远程基址 = API_BASE + '/game-assets/'；API_BASE 置空（纯本地开发）时退回包内相对路径 */
+// 资源托管在七牛云 honeystar 桶（oss.chujian.site，CDN 分发不占游戏服务器带宽）；
+// API_BASE 置空（纯本地开发）时退回包内相对路径；srd.assetBase 存储键可覆盖远程基址联调
+const ASSET_BASE = 'https://oss.chujian.site/srd-game';
 function assetUrl(path: string): string {
-  return API_BASE ? `${API_BASE}/game-assets/${path.replace(/^assets\//, '')}` : path;
+  if (!API_BASE) return path;
+  let base = ASSET_BASE;
+  try {
+    const saved = store.get('srd.assetBase');
+    if (typeof saved === 'string' && saved.trim()) base = saved.trim().replace(/\/$/, '');
+  } catch { /* ignore */ }
+  return `${base}/${path.replace(/^assets\//, '')}`;
 }
 
 // ---------------- 分享能力（菜单常驻 + 被动分享回调，判空保护） ----------------
