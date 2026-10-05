@@ -33,7 +33,7 @@
   "packOptions": {
     "ignore": [
       { "type": "folder", "value": "assets" },
-      { "type": "folder", "value": "audio-src" },
+      { "type": "folder", "value": "../audio-src" },
       { "type": "folder", "value": "shots" },
       { "type": "folder", "value": "src" },
       { "type": "folder", "value": "tools" },
