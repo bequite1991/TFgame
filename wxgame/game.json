@@ -3,9 +3,5 @@
   "showStatusBar": false,
   "networkTimeout": {
     "request": 10000
-  },
-  "subpackages": [
-    { "name": "bgm", "root": "assets/bgm" },
-    { "name": "audio", "root": "assets/audio" }
-  ]
+  }
 }

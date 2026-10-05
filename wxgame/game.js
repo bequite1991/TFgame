@@ -6105,7 +6105,7 @@
         env2.track("share_click", { channel: "result", result: won ? "win" : "lose", wave: st.wave });
         env2.shareAppMessage({
           title: won ? `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u5B88\u4F4F\u4E86\u7B2C ${env2.app.levelId} \u5173 \xB7 \u5168 ${st.totalWaves} \u6CE2\uFF0C\u6F0F\u602A ${st.leaked}\uFF01` : `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u7B2C ${env2.app.levelId} \u5173\u6491\u5230\u4E86\u7B2C ${st.wave} \u6CE2\uFF0C\u6C42\u652F\u63F4\uFF01`,
-          imageUrl: "assets/share-cover.jpg"
+          imageUrl: env2.assetUrl("assets/share-cover.jpg")
         });
       }
     }, time);
@@ -7557,7 +7557,7 @@
         env2.track("share_click", { channel: "result", result: won ? "win" : "lose", wave: st.wave });
         env2.shareAppMessage({
           title: won ? `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u5B88\u4F4F\u4E86\u7B2C ${env2.app.levelId} \u5173 \xB7 \u5168 ${st.totalWaves} \u6CE2\uFF0C\u6F0F\u602A ${st.leaked}\uFF01` : `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u7B2C ${env2.app.levelId} \u5173\u6491\u5230\u4E86\u7B2C ${st.wave} \u6CE2\uFF0C\u6C42\u652F\u63F4\uFF01`,
-          imageUrl: "assets/share-cover.jpg"
+          imageUrl: env2.assetUrl("assets/share-cover.jpg")
         });
       }
     });
@@ -9070,7 +9070,7 @@
         env2.track("share_click", { channel: "result", result: won ? "win" : "lose", wave: st.wave });
         env2.shareAppMessage({
           title: won ? `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u5B88\u4F4F\u4E86\u7B2C ${env2.app.levelId} \u5173 \xB7 \u5168 ${st.totalWaves} \u6CE2\uFF0C\u6F0F\u602A ${st.leaked}\uFF01` : `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u7B2C ${env2.app.levelId} \u5173\u6491\u5230\u4E86\u7B2C ${st.wave} \u6CE2\uFF0C\u6C42\u652F\u63F4\uFF01`,
-          imageUrl: "assets/share-cover.jpg"
+          imageUrl: env2.assetUrl("assets/share-cover.jpg")
         });
       }
     });
@@ -9537,41 +9537,6 @@
     }
   } catch {
   }
-  try {
-    wx.showShareMenu?.({ withShareTicket: true, menus: ["shareAppMessage", "shareTimeline"] });
-  } catch {
-  }
-  function shareTitle() {
-    const n = Math.max(0, ...loadProgress().cleared);
-    return n > 0 ? `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u5B88\u5230\u4E86\u7B2C ${n} \u5173\uFF0C\u4F60\u80FD\u6491\u5230\u7B2C\u51E0\u6CE2\uFF1F` : "\u866B\u7FA4\u538B\u5883\uFF0C\u661F\u73AF\u544A\u6025\uFF01\u6765\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u6307\u6325\u4F60\u7684\u7B2C\u4E00\u5EA7\u70AE\u5854";
-  }
-  try {
-    wx.onShareAppMessage?.(() => {
-      track("share_click", { channel: "menu" });
-      return { title: shareTitle(), imageUrl: "assets/share-cover.jpg" };
-    });
-    wx.onShareTimeline?.(() => ({
-      title: `\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u2014\u2014 \u5341\u4E09\u7AE0\u661F\u73AF\u6218\u5F79\u5854\u9632\uFF1A${shareTitle()}`,
-      imageUrl: "assets/share-cover.jpg"
-    }));
-  } catch {
-  }
-  var fontLoaded = false;
-  try {
-    wx.loadFontFace({
-      familyName: "Orbitron",
-      source: "assets/orbitron-700.woff2",
-      global: true,
-      success: () => {
-        fontLoaded = true;
-      },
-      fail: () => {
-        fontLoaded = false;
-      }
-    });
-  } catch {
-  }
-  var RES_FONT = () => fontLoaded ? "Orbitron, sans-serif" : "sans-serif";
   var store = {
     get(key) {
       try {
@@ -9587,6 +9552,52 @@
       }
     }
   };
+  var API_BASE = (() => {
+    try {
+      const saved = store.get("srd.apiBase");
+      if (typeof saved === "string" && saved.trim()) return saved.trim();
+    } catch {
+    }
+    return "https://game.chujian.site";
+  })();
+  function assetUrl(path) {
+    return API_BASE ? `${API_BASE}/game-assets/${path.replace(/^assets\//, "")}` : path;
+  }
+  try {
+    wx.showShareMenu?.({ withShareTicket: true, menus: ["shareAppMessage", "shareTimeline"] });
+  } catch {
+  }
+  function shareTitle() {
+    const n = Math.max(0, ...loadProgress().cleared);
+    return n > 0 ? `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u5B88\u5230\u4E86\u7B2C ${n} \u5173\uFF0C\u4F60\u80FD\u6491\u5230\u7B2C\u51E0\u6CE2\uFF1F` : "\u866B\u7FA4\u538B\u5883\uFF0C\u661F\u73AF\u544A\u6025\uFF01\u6765\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u6307\u6325\u4F60\u7684\u7B2C\u4E00\u5EA7\u70AE\u5854";
+  }
+  try {
+    wx.onShareAppMessage?.(() => {
+      track("share_click", { channel: "menu" });
+      return { title: shareTitle(), imageUrl: assetUrl("assets/share-cover.jpg") };
+    });
+    wx.onShareTimeline?.(() => ({
+      title: `\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u2014\u2014 \u5341\u4E09\u7AE0\u661F\u73AF\u6218\u5F79\u5854\u9632\uFF1A${shareTitle()}`,
+      imageUrl: assetUrl("assets/share-cover.jpg")
+    }));
+  } catch {
+  }
+  var fontLoaded = false;
+  try {
+    wx.loadFontFace({
+      familyName: "Orbitron",
+      source: assetUrl("assets/orbitron-700.woff2"),
+      global: true,
+      success: () => {
+        fontLoaded = true;
+      },
+      fail: () => {
+        fontLoaded = false;
+      }
+    });
+  } catch {
+  }
+  var RES_FONT = () => fontLoaded ? "Orbitron, sans-serif" : "sans-serif";
   function loadProgress() {
     const raw = store.get("srd.progress");
     return { cleared: Array.isArray(raw?.cleared) ? raw.cleared : [] };
@@ -9610,16 +9621,8 @@
     readQualityHigh: readWxQualityHigh,
     hardwareConcurrency: () => null,
     // 微信无核数 API：不硬关 Bloom，交由画质开关控制（默认低画质=关）
-    nebulaUrl: () => "assets/nebula-texture.jpg"
+    nebulaUrl: () => assetUrl("assets/nebula-texture.jpg")
   });
-  var API_BASE = (() => {
-    try {
-      const saved = store.get("srd.apiBase");
-      if (typeof saved === "string" && saved.trim()) return saved.trim();
-    } catch {
-    }
-    return "https://game.chujian.site";
-  })();
   var session = (() => {
     try {
       const raw = store.get("srd.user");
@@ -9783,7 +9786,7 @@
                   configureAnalytics({
                     endpoint: API_BASE,
                     getOpenid: () => session?.openid ?? "",
-                    getBuildId: () => true ? "b1005-0023" : "dev"
+                    getBuildId: () => true ? "b1005-0831" : "dev"
                   });
                   track("login_ok", { level: 1 });
                   mergeScoreWithCloud();
@@ -10430,13 +10433,13 @@
     if (cached) return cached;
     const img = wx.createImage();
     const a = { img, ok: false };
-    const file = `assets/lv${String(chapter).padStart(2, "0")}.jpg`;
+    const file = assetUrl(`assets/lv${String(chapter).padStart(2, "0")}.jpg`);
     let retried = false;
     img.onload = () => {
       a.ok = true;
     };
     img.onerror = (e) => {
-      if (!retried) {
+      if (!retried && !/^https?:\/\//.test(file)) {
         retried = true;
         img.src = `./${file}`;
       } else {
@@ -10686,41 +10689,6 @@
     }
     return null;
   }
-  var pkgState = {};
-  var pkgCbs = {};
-  function ensurePkg(name, cb) {
-    const s = pkgState[name];
-    if (s === "ok") {
-      cb?.(true);
-      return;
-    }
-    if (s === "fail") {
-      cb?.(false);
-      return;
-    }
-    if (cb) (pkgCbs[name] ?? (pkgCbs[name] = [])).push(cb);
-    if (s === "loading") return;
-    pkgState[name] = "loading";
-    try {
-      wx.loadSubpackage({
-        name,
-        success: () => {
-          pkgState[name] = "ok";
-          (pkgCbs[name] ?? []).splice(0).forEach((f) => f(true));
-        },
-        fail: (e) => {
-          pkgState[name] = "fail";
-          console.error("[SRD] \u5206\u5305\u52A0\u8F7D\u5931\u8D25:", name, e ?? "");
-          (pkgCbs[name] ?? []).splice(0).forEach((f) => f(false));
-        }
-      });
-    } catch {
-      pkgState[name] = "fail";
-      cb?.(false);
-    }
-  }
-  ensurePkg("bgm");
-  ensurePkg("audio");
   var bgmAc = null;
   var musicTarget = "";
   var legacyMuted = store.get("srd.muted") === "1";
@@ -10739,26 +10707,23 @@
   }
   function playMusic(name) {
     stopMusic();
-    ensurePkg("bgm", (ok) => {
-      if (!ok || musicTarget !== name || bgmAc) return;
-      try {
-        const ac2 = wx.createInnerAudioContext();
-        ac2.loop = true;
-        ac2.autoplay = true;
-        ac2.obeyMuteSwitch = false;
-        ac2.volume = name === "battle" ? 0.5 : 0.45;
-        ac2.onError((e) => console.error("[SRD] BGM \u64AD\u653E\u5931\u8D25:", ac2.src, e ?? ""));
-        ac2.onCanplay(() => {
-          try {
-            ac2.play();
-          } catch {
-          }
-        });
-        ac2.src = `assets/bgm/bgm-${name}.mp3`;
-        bgmAc = { ac: ac2, name };
-      } catch {
-      }
-    });
+    try {
+      const ac2 = wx.createInnerAudioContext();
+      ac2.loop = true;
+      ac2.autoplay = true;
+      ac2.obeyMuteSwitch = false;
+      ac2.volume = name === "battle" ? 0.5 : 0.45;
+      ac2.onError((e) => console.error("[SRD] BGM \u64AD\u653E\u5931\u8D25:", ac2.src, e ?? ""));
+      ac2.onCanplay(() => {
+        try {
+          ac2.play();
+        } catch {
+        }
+      });
+      ac2.src = assetUrl(`assets/bgm/bgm-${name}.mp3`);
+      bgmAc = { ac: ac2, name };
+    } catch {
+    }
   }
   function syncMusic() {
     const want = musicMuted ? "" : app.screen === "battle" ? "battle" : "home";
@@ -10816,25 +10781,22 @@
   }
   function startNarration(levelId) {
     stopNarration();
-    if (narrationMuted) return;
-    ensurePkg("audio", (ok) => {
-      if (!ok || narration || narrationMuted) return;
-      try {
-        const ac2 = wx.createInnerAudioContext();
-        ac2.autoplay = true;
-        ac2.obeyMuteSwitch = false;
-        ac2.onError((e) => console.error("[SRD] \u65C1\u767D\u64AD\u653E\u5931\u8D25:", ac2.src, e ?? ""));
-        ac2.onCanplay(() => {
-          try {
-            ac2.play();
-          } catch {
-          }
-        });
-        ac2.src = `assets/audio/lv${String(levelId).padStart(2, "0")}.mp3`;
-        narration = { ac: ac2, levelId };
-      } catch {
-      }
-    });
+    if (narrationMuted || narration) return;
+    try {
+      const ac2 = wx.createInnerAudioContext();
+      ac2.autoplay = true;
+      ac2.obeyMuteSwitch = false;
+      ac2.onError((e) => console.error("[SRD] \u65C1\u767D\u64AD\u653E\u5931\u8D25:", ac2.src, e ?? ""));
+      ac2.onCanplay(() => {
+        try {
+          ac2.play();
+        } catch {
+        }
+      });
+      ac2.src = assetUrl(`assets/audio/lv${String(levelId).padStart(2, "0")}.mp3`);
+      narration = { ac: ac2, levelId };
+    } catch {
+    }
   }
   function toggleNarrationMuted() {
     narrationMuted = !narrationMuted;
@@ -10861,7 +10823,7 @@
   welcomeBgImg.onerror = () => {
     welcomeBg.ok = false;
   };
-  welcomeBgImg.src = "assets/welcome-bg.jpg";
+  welcomeBgImg.src = assetUrl("assets/welcome-bg.jpg");
   var splashSwarm = Array.from({ length: 42 }, (_, i) => ({
     ox: hash01(i * 3 + 11),
     oy: hash01(i * 7 + 23),
@@ -11073,7 +11035,7 @@
     const dim = 0.4 + 0.3 * Math.sin(t * 1.1);
     fillText("\u6DF1\u7A7A\u76D1\u542C\u7AD9 \xB7 \u7B2C 41 \u8F68\u9053\u5468\u671F", VW / 2, VH - 46, { size: 9, color: `rgba(124,141,176,${dim})`, align: "center", weight: "normal" });
     fillText("SIGNAL FADING", VW / 2, VH - 30, { size: 8, color: `rgba(255,61,129,${dim * 0.8})`, align: "center", weight: "600" });
-    fillText(true ? "b1005-0023" : "dev", VW - 10, VH - 10, { size: 8, color: "rgba(124,141,176,0.4)", align: "right", weight: "normal" });
+    fillText(true ? "b1005-0831" : "dev", VW - 10, VH - 10, { size: 8, color: "rgba(124,141,176,0.4)", align: "right", weight: "normal" });
     const menuA = Math.min(1, Math.max(0, (t - 1) / 0.5));
     if (menuA <= 0) {
       if (t > 0.2) hitBox({ x: 0, y: 0, w: VW, h: VH, label: "", cb: () => {
@@ -11362,7 +11324,7 @@
     } });
     if (showSettings) drawSettingsOverlay();
   }
-  var nebulaBg = new NebulaBg("assets/nebula-texture.jpg");
+  var nebulaBg = new NebulaBg(assetUrl("assets/nebula-texture.jpg"));
   var fx = null;
   var bloom = null;
   var pathPixels = [];
@@ -11600,7 +11562,7 @@
     try {
       wx.shareAppMessage?.({
         title: `\u6765\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u548C\u6211\u534F\u540C\u9632\u5B88\u300C\u53CC\u5B50\u661F\u95E8\u300D\uFF01\u623F\u95F4\u7801 ${roomId}`,
-        imageUrl: "assets/share-cover.jpg",
+        imageUrl: assetUrl("assets/share-cover.jpg"),
         query: `room=${roomId}`
       });
     } catch {
@@ -12210,7 +12172,7 @@
         try {
           wx.shareAppMessage?.({
             title: won ? `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u5B88\u4F4F\u4E86\u7B2C ${app.levelId} \u5173 \xB7 \u5168 ${st.totalWaves} \u6CE2\uFF0C\u6F0F\u602A ${st.leaked}\uFF01` : `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u7B2C ${app.levelId} \u5173\u6491\u5230\u4E86\u7B2C ${st.wave} \u6CE2\uFF0C\u6C42\u652F\u63F4\uFF01`,
-            imageUrl: "assets/share-cover.jpg"
+            imageUrl: assetUrl("assets/share-cover.jpg")
           });
         } catch {
         }
@@ -12888,13 +12850,14 @@
     openFeedback,
     setMode,
     getOnlineInfo,
-    // 主动拉起分享（判空包装 wx.shareAppMessage）
+    // 主动拉起分享（判空包装 wx.shareAppMessage；assets/ 路径统一转 CDN URL）
     shareAppMessage: (o) => {
       try {
-        wx.shareAppMessage?.(o);
+        wx.shareAppMessage?.({ ...o, imageUrl: o.imageUrl ? assetUrl(o.imageUrl) : o.imageUrl });
       } catch {
       }
     },
+    assetUrl,
     commanderRank,
     displayNick,
     getProfile: () => profile,

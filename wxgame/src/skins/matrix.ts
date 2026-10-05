@@ -1070,7 +1070,7 @@ function drawResult(env: SkinEnv, time: number) {
         title: won
           ? `我在《高塔防线》守住了第 ${env.app.levelId} 关 · 全 ${st.totalWaves} 波，漏怪 ${st.leaked}！`
           : `我在《高塔防线》第 ${env.app.levelId} 关撑到了第 ${st.wave} 波，求支援！`,
-        imageUrl: 'assets/share-cover.jpg',
+        imageUrl: env.assetUrl('assets/share-cover.jpg'),
       });
     },
   });

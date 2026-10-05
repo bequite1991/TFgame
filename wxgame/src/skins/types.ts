@@ -216,6 +216,8 @@ export interface SkinEnv {
   getOnlineInfo(): { peerNick: string; player: number } | null;
   /** 主动拉起微信分享（判空包装 wx.shareAppMessage；不支持的环境静默跳过） */
   shareAppMessage(o: { title: string; imageUrl?: string }): void;
+  /** 资源 URL 换算：'assets/...' 包内路径 → CDN 远程地址（纯本地开发时原样返回） */
+  assetUrl(path: string): string;
   commanderRank(): string;
   displayNick(): string;
   getProfile(): Profile;

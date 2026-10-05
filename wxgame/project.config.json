@@ -32,8 +32,19 @@
   "condition": {},
   "packOptions": {
     "ignore": [
+      { "type": "folder", "value": "assets" },
       { "type": "folder", "value": "audio-src" },
-      { "type": "folder", "value": "tools" }
+      { "type": "folder", "value": "shots" },
+      { "type": "folder", "value": "src" },
+      { "type": "folder", "value": "tools" },
+      { "type": "folder", "value": "node_modules" },
+      { "type": "file", "value": "preview.html" },
+      { "type": "file", "value": "build.mjs" },
+      { "type": "file", "value": "package.json" },
+      { "type": "file", "value": "package-lock.json" },
+      { "type": "file", "value": "code.fortify.config.json" },
+      { "type": "file", "value": ".DS_Store" },
+      { "type": "file", "value": "tsconfig.json" }
     ],
     "include": []
   },

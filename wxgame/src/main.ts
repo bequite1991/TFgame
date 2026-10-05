@@ -53,7 +53,6 @@ declare const wx: {
     onError(cb: (e?: unknown) => void): void;
     onCanplay(cb: () => void): void;
   };
-  loadSubpackage(o: { name: string; success?: () => void; fail?: (e?: unknown) => void }): void;
   vibrateShort?(o: { type?: 'heavy' | 'medium' | 'light'; success?: () => void; fail?: (e?: { errMsg?: string }) => void }): void;
   getUserInfo?(o: {
     success?: (r: { userInfo: { nickName: string; avatarUrl: string } }) => void;
@@ -122,6 +121,30 @@ try {
   }
 } catch { /* ignore */ }
 
+// ---------------- 存储 + 服务端基址 + 资源 CDN ----------------
+
+// 进度持久化（与 H5 版共用键名）
+const store = {
+  get(key: string): unknown { try { return wx.getStorageSync(key); } catch { return null; } },
+  set(key: string, value: unknown) { try { wx.setStorageSync(key, value); } catch { /* ignore */ } },
+};
+
+// 服务端 API 基址：默认指向线上管理端；置空字符串则纯本地模式（不登录、不同步云端）。
+// 开发联调：开发者工具 Console 执行 wx.setStorageSync('srd.apiBase', 'http://<开发机IP>:<端口>') 可覆盖，重启生效
+const API_BASE: string = (() => {
+  try {
+    const saved = store.get('srd.apiBase');
+    if (typeof saved === 'string' && saved.trim()) return saved.trim();
+  } catch { /* ignore */ }
+  return 'https://game.chujian.site';
+})();
+
+// 资源 CDN 化（主包瘦身：assets/ 不打入包体，全部从线上加载，包内只留 game.js）
+/** 资源 URL：远程基址 = API_BASE + '/game-assets/'；API_BASE 置空（纯本地开发）时退回包内相对路径 */
+function assetUrl(path: string): string {
+  return API_BASE ? `${API_BASE}/game-assets/${path.replace(/^assets\//, '')}` : path;
+}
+
 // ---------------- 分享能力（菜单常驻 + 被动分享回调，判空保护） ----------------
 try {
   wx.showShareMenu?.({ withShareTicket: true, menus: ['shareAppMessage', 'shareTimeline'] });
@@ -136,11 +159,11 @@ function shareTitle(): string {
 try {
   wx.onShareAppMessage?.(() => {
     track('share_click', { channel: 'menu' });
-    return { title: shareTitle(), imageUrl: 'assets/share-cover.jpg' };
+    return { title: shareTitle(), imageUrl: assetUrl('assets/share-cover.jpg') };
   });
   wx.onShareTimeline?.(() => ({
     title: `《高塔防线》—— 十三章星环战役塔防：${shareTitle()}`,
-    imageUrl: 'assets/share-cover.jpg',
+    imageUrl: assetUrl('assets/share-cover.jpg'),
   }));
 } catch { /* ignore */ }
 
@@ -151,7 +174,7 @@ try {
     loadFontFace(o: { familyName: string; source: string; global?: boolean; success?: () => void; fail?: () => void }): void;
   }).loadFontFace({
     familyName: 'Orbitron',
-    source: 'assets/orbitron-700.woff2',
+    source: assetUrl('assets/orbitron-700.woff2'),
     global: true,
     success: () => { fontLoaded = true; },
     fail: () => { fontLoaded = false; },
@@ -159,11 +182,6 @@ try {
 } catch { /* ignore */ }
 const RES_FONT = () => (fontLoaded ? 'Orbitron, sans-serif' : 'sans-serif');
 
-// 进度持久化（与 H5 版共用键名）
-const store = {
-  get(key: string): unknown { try { return wx.getStorageSync(key); } catch { return null; } },
-  set(key: string, value: unknown) { try { wx.setStorageSync(key, value); } catch { /* ignore */ } },
-};
 interface ProgressData { cleared: number[] }
 function loadProgress(): ProgressData {
   const raw = store.get('srd.progress') as Partial<ProgressData> | undefined;
@@ -192,20 +210,10 @@ setFxPlatform({
   createImage: () => wx.createImage(),
   readQualityHigh: readWxQualityHigh,
   hardwareConcurrency: () => null, // 微信无核数 API：不硬关 Bloom，交由画质开关控制（默认低画质=关）
-  nebulaUrl: () => 'assets/nebula-texture.jpg',
+  nebulaUrl: () => assetUrl('assets/nebula-texture.jpg'),
 });
 
 // ---------------- 用户体系 + 积分体系（MVP，design/multiplayer.md §2/§3） ----------------
-
-// 服务端 API 基址：默认指向线上管理端；置空字符串则纯本地模式（不登录、不同步云端）。
-// 开发联调：开发者工具 Console 执行 wx.setStorageSync('srd.apiBase', 'http://<开发机IP>:<端口>') 可覆盖，重启生效
-const API_BASE: string = (() => {
-  try {
-    const saved = store.get('srd.apiBase');
-    if (typeof saved === 'string' && saved.trim()) return saved.trim();
-  } catch { /* ignore */ }
-  return 'https://game.chujian.site';
-})();
 
 /** 登录态（srd.user）：静默登录成功后落盘 */
 interface UserSession { openid: string; token: string; loginAt: number }
@@ -1045,7 +1053,7 @@ function drawSettingsOverlay() {
   btn({ x: px + 24, y: py + 66 + rows.length * rowH + skinH + 12, w: pw - 48, h: 40, label: '关闭', cb: () => { showSettings = false; } });
 }
 
-// ---------------- 章节宣传图（MiniMax 生成，本地资产） ----------------
+// ---------------- 章节宣传图（CDN 远程加载；失败时 drawCardArt 回退程序化绘制） ----------------
 
 interface ArtImage { img: WxImage; ok: boolean }
 const ART: Record<number, ArtImage> = {};
@@ -1054,12 +1062,13 @@ function artwork(chapter: number): ArtImage {
   if (cached) return cached;
   const img = wx.createImage();
   const a: ArtImage = { img, ok: false };
-  const file = `assets/lv${String(chapter).padStart(2, '0')}.jpg`;
+  const file = assetUrl(`assets/lv${String(chapter).padStart(2, '0')}.jpg`);
   let retried = false;
   img.onload = () => { a.ok = true; };
   img.onerror = (e?: unknown) => {
-    if (!retried) {
-      // 部分开发者工具版本对裸相对路径解析失败，补 './' 重试一次
+    // 本地开发（assetUrl 退回相对路径）时，部分开发者工具版本对裸相对路径解析失败，补 './' 重试一次；
+    // 远程 URL 无此问题，失败直接记日志（绘制层有程序化兜底）
+    if (!retried && !/^https?:\/\//.test(file)) {
       retried = true;
       img.src = `./${file}`;
     } else {
@@ -1342,37 +1351,7 @@ function towerSlotAt(p: TouchPoint): TowerType | null {
   return null;
 }
 
-// ---------------- 音频分包加载 ----------------
-
-const pkgState: Record<string, 'loading' | 'ok' | 'fail'> = {};
-const pkgCbs: Record<string, ((ok: boolean) => void)[]> = {};
-function ensurePkg(name: string, cb?: (ok: boolean) => void) {
-  const s = pkgState[name];
-  if (s === 'ok') { cb?.(true); return; }
-  if (s === 'fail') { cb?.(false); return; }
-  if (cb) (pkgCbs[name] ??= []).push(cb);
-  if (s === 'loading') return;
-  pkgState[name] = 'loading';
-  try {
-    wx.loadSubpackage({
-      name,
-      success: () => { pkgState[name] = 'ok'; (pkgCbs[name] ?? []).splice(0).forEach((f) => f(true)); },
-      fail: (e?: unknown) => {
-        pkgState[name] = 'fail';
-        console.error('[SRD] 分包加载失败:', name, e ?? '');
-        (pkgCbs[name] ?? []).splice(0).forEach((f) => f(false));
-      },
-    });
-  } catch {
-    pkgState[name] = 'fail';
-    cb?.(false);
-  }
-}
-// 启动即后台预载两个音频分包
-ensurePkg('bgm');
-ensurePkg('audio');
-
-// ---------------- 背景音乐（音频文件，循环播放） ----------------
+// ---------------- 背景音乐（CDN 远程音频，循环播放） ----------------
 
 interface InnerAudio {
   src: string; volume: number; autoplay: boolean; obeyMuteSwitch: boolean; loop: boolean;
@@ -1399,20 +1378,17 @@ function stopMusic() {
 
 function playMusic(name: 'home' | 'battle') {
   stopMusic();
-  ensurePkg('bgm', (ok) => {
-    if (!ok || musicTarget !== name || bgmAc) return;
-    try {
-      const ac = wx.createInnerAudioContext();
-      ac.loop = true;
-      ac.autoplay = true;
-      ac.obeyMuteSwitch = false;
-      ac.volume = name === 'battle' ? 0.5 : 0.45;
-      ac.onError((e?: unknown) => console.error('[SRD] BGM 播放失败:', ac.src, e ?? ''));
-      ac.onCanplay(() => { try { ac.play(); } catch { /* ignore */ } });
-      ac.src = `assets/bgm/bgm-${name}.mp3`;
-      bgmAc = { ac, name };
-    } catch { /* ignore */ }
-  });
+  try {
+    const ac = wx.createInnerAudioContext();
+    ac.loop = true;
+    ac.autoplay = true;
+    ac.obeyMuteSwitch = false;
+    ac.volume = name === 'battle' ? 0.5 : 0.45;
+    ac.onError((e?: unknown) => console.error('[SRD] BGM 播放失败:', ac.src, e ?? ''));
+    ac.onCanplay(() => { try { ac.play(); } catch { /* ignore */ } });
+    ac.src = assetUrl(`assets/bgm/bgm-${name}.mp3`);
+    bgmAc = { ac, name };
+  } catch { /* ignore */ }
 }
 
 /** 每帧调用：按当前界面切换音乐（战斗 battle，其余界面含欢迎页 home） */
@@ -1460,7 +1436,7 @@ function buzz(type: 'heavy' | 'medium' | 'light') {
   } catch { vibrateLastError = 'exception'; }
 }
 
-// ---------------- 简报旁白（MiniMax TTS 生成的本地音频，缺失时静默降级） ----------------
+// ---------------- 简报旁白（CDN 远程音频，缺失时静默降级） ----------------
 
 let narration: { ac: InnerAudio; levelId: number } | null = null;
 let narrationMuted = store.get('srd.narrationMuted') === '1';
@@ -1473,20 +1449,17 @@ function stopNarration() {
 
 function startNarration(levelId: number) {
   stopNarration();
-  if (narrationMuted) return;
-  ensurePkg('audio', (ok) => {
-    if (!ok || narration || narrationMuted) return;
-    try {
-      const ac = wx.createInnerAudioContext();
-      // 顺序敏感：先设 autoplay / 事件，最后设 src（设 src 即开始加载）
-      ac.autoplay = true;
-      ac.obeyMuteSwitch = false; // 不随手机静音键静默（游戏内有独立开关）
-      ac.onError((e?: unknown) => console.error('[SRD] 旁白播放失败:', ac.src, e ?? ''));
-      ac.onCanplay(() => { try { ac.play(); } catch { /* ignore */ } });
-      ac.src = `assets/audio/lv${String(levelId).padStart(2, '0')}.mp3`;
-      narration = { ac, levelId };
-    } catch { /* ignore */ }
-  });
+  if (narrationMuted || narration) return;
+  try {
+    const ac = wx.createInnerAudioContext();
+    // 顺序敏感：先设 autoplay / 事件，最后设 src（设 src 即开始加载）
+    ac.autoplay = true;
+    ac.obeyMuteSwitch = false; // 不随手机静音键静默（游戏内有独立开关）
+    ac.onError((e?: unknown) => console.error('[SRD] 旁白播放失败:', ac.src, e ?? ''));
+    ac.onCanplay(() => { try { ac.play(); } catch { /* ignore */ } });
+    ac.src = assetUrl(`assets/audio/lv${String(levelId).padStart(2, '0')}.mp3`);
+    narration = { ac, levelId };
+  } catch { /* ignore */ }
 }
 
 function toggleNarrationMuted() {
@@ -1514,7 +1487,7 @@ const welcomeBgImg = wx.createImage();
 const welcomeBg = { ok: false };
 welcomeBgImg.onload = () => { welcomeBg.ok = true; };
 welcomeBgImg.onerror = () => { welcomeBg.ok = false; };
-welcomeBgImg.src = 'assets/welcome-bg.jpg';
+welcomeBgImg.src = assetUrl('assets/welcome-bg.jpg');
 /** 虫群孢子：从右上星云渗向蚀星，轨迹全部确定性伪随机 */
 const splashSwarm = Array.from({ length: 42 }, (_, i) => ({
   ox: hash01(i * 3 + 11), oy: hash01(i * 7 + 23),
@@ -2054,7 +2027,7 @@ function drawBriefing(time: number) {
 // ---------------- 战斗视觉特效（引擎层 game/fx.ts） ----------------
 
 // 星云底图：异步加载，未就绪时 drawMapBackground 自动回退程序化深色底
-const nebulaBg = new NebulaBg('assets/nebula-texture.jpg');
+const nebulaBg = new NebulaBg(assetUrl('assets/nebula-texture.jpg'));
 // 每场战斗重建（随 engine 生命周期），击杀检测与 H5 一致：diff 敌人列表
 let fx: FxLayer | null = null;
 let bloom: BloomLayer | null = null;
@@ -2338,7 +2311,7 @@ function shareInvite(roomId: string) {
   try {
     wx.shareAppMessage?.({
       title: `来《高塔防线》和我协同防守「双子星门」！房间码 ${roomId}`,
-      imageUrl: 'assets/share-cover.jpg',
+      imageUrl: assetUrl('assets/share-cover.jpg'),
       query: `room=${roomId}`,
     });
   } catch { /* ignore */ }
@@ -2968,7 +2941,7 @@ function drawResult(time: number) {
           title: won
             ? `我在《高塔防线》守住了第 ${app.levelId} 关 · 全 ${st.totalWaves} 波，漏怪 ${st.leaked}！`
             : `我在《高塔防线》第 ${app.levelId} 关撑到了第 ${st.wave} 波，求支援！`,
-          imageUrl: 'assets/share-cover.jpg',
+          imageUrl: assetUrl('assets/share-cover.jpg'),
         });
       } catch { /* ignore */ }
     },
@@ -3600,8 +3573,9 @@ const env: SkinEnv = {
   // 动作
   goto, gotoBriefing, stopNarration, startBattle, engineCmd, applySkin, authUser, openFeedback,
   setMode, getOnlineInfo,
-  // 主动拉起分享（判空包装 wx.shareAppMessage）
-  shareAppMessage: (o) => { try { wx.shareAppMessage?.(o); } catch { /* ignore */ } },
+  // 主动拉起分享（判空包装 wx.shareAppMessage；assets/ 路径统一转 CDN URL）
+  shareAppMessage: (o) => { try { wx.shareAppMessage?.({ ...o, imageUrl: o.imageUrl ? assetUrl(o.imageUrl) : o.imageUrl }); } catch { /* ignore */ } },
+  assetUrl,
   commanderRank, displayNick,
   getProfile: () => profile,
   getScore: () => scoreProfile,
