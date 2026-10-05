@@ -10,7 +10,7 @@ import numpy as np
 SR = 32000
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, '..')
-RAW = os.path.join(ROOT, 'audio-src')
+RAW = os.path.join(ROOT, '..', 'audio-src')
 OUT = os.path.join(ROOT, 'assets', 'bgm')
 
 mf = lambda m: 440.0 * 2 ** ((m - 69) / 12)  # midi → 频率

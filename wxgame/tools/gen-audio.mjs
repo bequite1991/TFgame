@@ -35,7 +35,7 @@ await esbuild.build({
 const { LEVELS } = await import(pathToFileURL(tmp).href);
 rmSync(tmp, { force: true });
 
-const outDir = join(root, 'audio-src');
+const outDir = join(root, '..', 'audio-src');
 mkdirSync(outDir, { recursive: true });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

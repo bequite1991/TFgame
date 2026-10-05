@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
-const srcDir = join(root, 'audio-src');
+const srcDir = join(root, '..', 'audio-src');
 const outDir = join(root, 'assets', 'audio');
 const BGM = join(srcDir, 'bgm.mp3');
 // BGM 相对旁白约 -34dB：听感上是有存在感的氛围底垫、不盖人声
