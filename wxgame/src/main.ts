@@ -2,11 +2,12 @@
 // UI 层以 Canvas 自绘实现：开场动画 / 选关(带宣传图) / 简报 / 战斗 / 科技三选一 / 结算
 import {
   CELL, COLS, ROWS, W, H, TOWERS, ENEMIES, DIFFICULTIES, SELL_RATE, TECHS, TOWER_LIST, ENEMY_LIST,
+  MECHA, threatStars,
 } from './game/config';
 import { LEVELS } from './game/levels';
 import { createEngine } from './game/engine';
 import {
-  drawTower, drawEnemy, drawMapBackground, drawPath, drawBase,
+  drawTower, drawEnemy, drawMapBackground, drawPath, drawBase, drawMecha,
 } from './game/render';
 import {
   BloomLayer, FxLayer, NebulaBg, setFxPlatform,
@@ -303,17 +304,16 @@ type Grade = 'S' | 'A' | 'B' | 'D';
 function battleGrade(st: GameState, won: boolean): Grade {
   return !won ? 'D' : st.leaked === 0 ? 'S' : st.leaked <= 2 ? 'A' : 'B';
 }
-const DIFF_MUL: Record<Difficulty, number> = { easy: 0.8, normal: 1.0, hard: 1.4 };
 const GRADE_BONUS: Record<Grade, number> = { S: 1.25, A: 1.1, B: 1.0, D: 0.4 };
-/** 单局结算积分：击杀/波次/科技/剩余生命/章节权重 − 漏怪惩罚，乘难度系数与评级加成 */
-function calcScore(st: GameState, difficulty: Difficulty, levelId: number, won: boolean): number {
+/** 单局结算积分：击杀/波次/科技/剩余生命/章节权重 − 漏怪惩罚，乘评级加成（难度已统一，章节权重体现难度阶梯） */
+function calcScore(st: GameState, levelId: number, won: boolean): number {
   const base = st.kills * 10        // 击杀：每只 10 分
     + st.wave * 60                  // 进度：每到达一波 60 分
     + st.techs.length * 40          // 构筑深度：每个战术模块 40 分
     + st.lives * 15                 // 防守质量：每剩 1 点生命 15 分
     + levelId * 50                  // 章节权重
     - st.leaked * 30;               // 漏怪惩罚
-  return Math.max(0, Math.round(base * DIFF_MUL[difficulty] * GRADE_BONUS[battleGrade(st, won)]));
+  return Math.max(0, Math.round(base * GRADE_BONUS[battleGrade(st, won)]));
 }
 
 // ---------------- 云端同步（全部网络异常静默 catch，绝不影响游戏主流程） ----------------
@@ -1258,14 +1258,16 @@ type Screen = 'splash' | 'home' | 'briefing' | 'battle' | 'result' | 'codex' | '
 const app = {
   screen: 'splash' as Screen,
   splashAt: Date.now(),
-  difficulty: (loadProgress().cleared.length > 0 ? 'normal' : 'easy') as Difficulty,
+  difficulty: 'normal' as Difficulty, // 难度固定：普通 · 标准战役（挑战度由关卡难度阶梯承载）
   levelId: 1,
   engine: null as GameEngine | null,
   scroll: 0,
   dragY: null as number | null,
   dragAcc: 0,
-  placing: null as TowerType | null,
+  placing: null as TowerType | 'mecha' | null,
   selectedId: null as number | null,
+  selectedMecha: null as number | null,
+  movingMecha: null as number | null,
   result: null as { won: boolean } | null,
   techShownAt: 0,
   techPickedAt: 0,
@@ -1307,7 +1309,6 @@ const TOWER_UNLOCK: Record<TowerType, number> = {
 };
 const unlockedChapter = () => Math.max(0, ...loadProgress().cleared) + 1;
 const towerUnlocked = (t: TowerType) => TOWER_UNLOCK[t] <= unlockedChapter();
-const DIFF_LIST: Difficulty[] = ['easy', 'normal', 'hard'];
 const engineCmd = (cmd: Command): boolean => (app.engine ? app.engine.dispatch(cmd) : false);
 
 // ---------------- 图鉴状态与世界观文案 ----------------
@@ -1330,8 +1331,8 @@ const ENEMY_CATEGORY: Record<string, string> = {
 
 /** 底部塔栏横向滚动偏移 */
 let barScroll = 0;
-/** 底部塔栏触摸状态机：pending 待定 / scroll 滚动 / drag 拖拽建塔 */
-interface BarTouch { mode: 'pending' | 'scroll' | 'drag'; type: TowerType | null; unusable: string | null; startX: number; startY: number; lastX: number }
+/** 底部塔栏触摸状态机：pending 待定 / scroll 滚动 / drag 拖拽建塔；mechaId = 点按已部署机甲槽（松手选中） */
+interface BarTouch { mode: 'pending' | 'scroll' | 'drag'; type: BarSlot | null; unusable: string | null; startX: number; startY: number; lastX: number; mechaId?: number }
 let barTouch: BarTouch | null = null;
 /** 拖拽建塔时的手指位置（屏幕坐标） */
 let dragPos: TouchPoint | null = null;
@@ -1347,16 +1348,24 @@ let leakFlashAt = -9999;
 // 塔栏槽位几何
 const SLOT_W = 64;
 const SLOT_GAP = 8;
-const stripContentW = TOWER_ORDER.length * (SLOT_W + SLOT_GAP) - SLOT_GAP;
+/** 塔栏槽位：6 种炮塔 + 末位机甲槽 */
+type BarSlot = TowerType | 'mecha';
+const stripContentW = (TOWER_ORDER.length + 1) * (SLOT_W + SLOT_GAP) - SLOT_GAP;
 const stripMaxScroll = Math.max(0, stripContentW - (VW - MARGIN * 2));
-/** 命中检测：屏幕坐标是否落在某个塔卡片上，返回塔类型 */
-function towerSlotAt(p: TouchPoint): TowerType | null {
+/** 命中检测：屏幕坐标是否落在某个槽位上，返回塔型或 'mecha' */
+function barSlotAt(p: TouchPoint): BarSlot | null {
   if (p.y < VH - BAR_H) return null;
-  for (let i = 0; i < TOWER_ORDER.length; i++) {
+  for (let i = 0; i <= TOWER_ORDER.length; i++) {
     const bx = MARGIN + i * (SLOT_W + SLOT_GAP) - barScroll;
-    if (p.x >= bx && p.x <= bx + SLOT_W) return TOWER_ORDER[i];
+    if (p.x >= bx && p.x <= bx + SLOT_W) return i < TOWER_ORDER.length ? TOWER_ORDER[i] : 'mecha';
   }
   return null;
+}
+
+/** 当前玩家已部署的机甲（联机按本方 owner 取；单人恒为 owner 0） */
+function myMecha(st: GameState) {
+  const owner = online?.started ? online.player : 0;
+  return st.mechas.find((m) => m.owner === owner);
 }
 
 // ---------------- 背景音乐（CDN 远程音频，循环播放） ----------------
@@ -1839,15 +1848,10 @@ function drawHome(time: number) {
 
   drawHeader('高塔防线 · 战役选择', { back: () => goto('splash') });
 
-  // 难度分段控件（高亮块滑动动画 + 轻震动）+ 右侧 单人/联机 切换
+  // 单人/联机 切换（难度已统一为「普通 · 标准战役」，挑战度由关卡难度阶梯承载）
   const segW = VW - MARGIN * 2;
   const segY = TOP_SAFE + 4;
-  const diffW = Math.round(segW * 0.6);
-  segControl(MARGIN, segY, diffW, DIFF_LIST.map((d) => DIFFICULTIES[d].name), DIFF_LIST.indexOf(app.difficulty), 'diff', (i) => {
-    app.difficulty = DIFF_LIST[i];
-    track('difficulty_select', { difficulty: app.difficulty });
-  });
-  segControl(MARGIN + diffW + 10, segY, segW - diffW - 10, ['单人', '联机'], app.mode === 'online' ? 1 : 0, 'mode', (i) => setMode(i === 1 ? 'online' : 'single'));
+  segControl(MARGIN, segY, segW, ['单人', '联机'], app.mode === 'online' ? 1 : 0, 'mode', (i) => setMode(i === 1 ? 'online' : 'single'));
 
   // 关卡卡片列表（可滚动）
   ctx.save();
@@ -2012,8 +2016,8 @@ function drawBriefing(time: number) {
   for (const para of lv.briefing) ty = wrapBlock(para, MARGIN + 16, ty, textW, { size: textSize }) + lineH * 0.6;
 
   const afterY = boxY + boxH + 18;
-  // 难度提示
-  const diffTxt = `难度 ${DIFFICULTIES[app.difficulty].name} · ${DIFFICULTIES[app.difficulty].label}`;
+  // 战役强度提示（难度阶梯：章节越高威胁星级越高）
+  const diffTxt = `标准战役 · 威胁等级 ${'★'.repeat(threatStars(lv.id))}`;
   ctx.save();
   ctx.font = 'bold 11px sans-serif';
   const dw = ctx.measureText(diffTxt).width + 24;
@@ -2051,6 +2055,8 @@ let lastSettlement: { score: number; grade: Grade } | null = null;
 function initBattleView() {
   app.placing = null;
   app.selectedId = null;
+  app.selectedMecha = null;
+  app.movingMecha = null;
   app.result = null;
   lastSettlement = null;
   barScroll = 0;
@@ -2130,7 +2136,7 @@ function settleOnline(won: boolean) {
   onlineResultInfo = { peerNick: sess.peerNick, player: sess.player };
   const st0 = app.engine.state;
   const myKills = st0.killsBy?.[sess.player] ?? st0.kills;
-  const gained = Math.round(calcScore({ ...st0, kills: myKills }, app.difficulty, 0, won) * 1.2);
+  const gained = Math.round(calcScore({ ...st0, kills: myKills }, 0, won) * 1.2);
   const grade = battleGrade(st0, won);
   lastSettlement = { score: gained, grade };
   const rankBefore = commanderRank();
@@ -2185,8 +2191,8 @@ function makeNetHandlers(sess: OnlineSession): CoopCallbacks {
         sess.player = 1;
         sess.peerNick = info.hostNick ?? '';
         sess.peerReady = true;
-        if (info.difficulty === 'easy' || info.difficulty === 'normal' || info.difficulty === 'hard') {
-          app.difficulty = info.difficulty; // 客机难度以房间为准
+        if (info.difficulty === 'normal') {
+          app.difficulty = info.difficulty; // 客机难度以房间为准（当前仅「普通」一档）
         }
         track('room_join', { room_id: roomHash(info.roomId) });
         showToast(`已加入 ${sess.peerNick || '好友'} 的房间`);
@@ -2396,12 +2402,12 @@ function drawLobby() {
       disabled: !sess.peerReady || sess.connecting, cb: startOnlineBattle,
     });
     y += 68;
-    fillText(`难度 ${DIFFICULTIES[app.difficulty].name}（建房时选定）`, VW / 2, y + 8, { size: 11, color: C.dim, align: 'center', weight: 'normal' });
+    fillText('标准战役 · 双路压力相当（难度随关卡阶梯生效）', VW / 2, y + 8, { size: 11, color: C.dim, align: 'center', weight: 'normal' });
   } else {
     // 客机：已加入，等待主机开始
     panel(px, y, pw, 120, C.panelLine);
     fillText(`已加入 ${sess.peerNick || '好友'} 的房间`, VW / 2, y + 32, { size: 16, align: 'center' });
-    fillText(`房间码 ${sess.roomId} · 难度 ${DIFFICULTIES[app.difficulty].name}`, VW / 2, y + 60, { size: 11, color: C.sub, align: 'center', weight: 'normal' });
+    fillText(`房间码 ${sess.roomId} · 标准战役`, VW / 2, y + 60, { size: 11, color: C.sub, align: 'center', weight: 'normal' });
     // 等待动画：三点轮换
     const dots = '.'.repeat(1 + (Math.floor(Date.now() / 500) % 3));
     fillText(sess.connecting ? '连接服务器中…' : `等待主机开始战斗${dots}`, VW / 2, y + 90, { size: 12, color: C.gold, align: 'center', weight: 'normal' });
@@ -2542,13 +2548,15 @@ function drawBattle() {
   }
   }
 
-  // 底部塔栏 / 选中升级出售栏
-  if (bm?.drawBottomBar) bm.drawBottomBar(env, engine);
+  // 底部塔栏 / 选中升级出售栏（机甲的选中/转移/部署面板走内置栏，皮肤不接管）
+  const mechaUi = app.selectedMecha != null || app.movingMecha != null || app.placing === 'mecha';
+  if (mechaUi) drawBottomBar(st);
+  else if (bm?.drawBottomBar) bm.drawBottomBar(env, engine);
   else drawBottomBar(st);
 
-  // 拖拽建塔幽灵预览
+  // 拖拽建塔幽灵预览（机甲部署幽灵走内置实现）
   if (barTouch?.mode === 'drag' && dragPos && barTouch.type) {
-    if (bm?.drawDragGhost) bm.drawDragGhost(env, engine, barTouch.type, dragPos);
+    if (bm?.drawDragGhost && barTouch.type !== 'mecha') bm.drawDragGhost(env, engine, barTouch.type, dragPos);
     else drawDragGhost(st, barTouch.type, dragPos);
   }
 
@@ -2597,16 +2605,20 @@ function drawBattle() {
 
 // ---------------- 拖拽建塔 ----------------
 
-function drawDragGhost(st: NonNullable<GameEngine>['state'], type: TowerType, p: TouchPoint) {
+function drawDragGhost(st: NonNullable<GameEngine>['state'], type: BarSlot, p: TouchPoint) {
   const engine = app.engine!;
-  const def = TOWERS[type];
+  const isMecha = type === 'mecha';
+  const def = isMecha ? null : TOWERS[type as TowerType];
+  const cost = isMecha ? MECHA.levels[0].cost : def!.levels[0].cost;
+  const range0 = isMecha ? MECHA.levels[0].range : def!.levels[0].range;
   const gx = Math.floor(toMapX(p.x) / CELL);
   const gy = Math.floor(toMapY(p.y) / CELL);
   const inMap = gx >= 0 && gx < COLS && gy >= 0 && gy < ROWS;
   const canBuild = inMap
     && engine.map.isBuildable(gx, gy)
     && !st.towers.some((tw) => tw.col === gx && tw.row === gy)
-    && st.gold >= def.levels[0].cost;
+    && !st.mechas.some((m) => m.anchorCol === gx && m.anchorRow === gy)
+    && st.gold >= cost;
 
   if (inMap) {
     ctx.save();
@@ -2624,16 +2636,26 @@ function drawDragGhost(st: NonNullable<GameEngine>['state'], type: TowerType, p:
     ctx.fillRect(cx + 2, cy + 2, CELL - 4, CELL - 4);
     ctx.strokeRect(cx + 2, cy + 2, CELL - 4, CELL - 4);
     if (canBuild) {
-      // 射程环 + 塔预览
-      ctx.strokeStyle = `${def.color}55`;
+      // 射程环 + 塔/机甲预览
+      ctx.strokeStyle = isMecha ? `${MECHA.color}55` : `${def!.color}55`;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(cx + CELL / 2, cy + CELL / 2, def.levels[0].range * CELL, 0, Math.PI * 2);
+      ctx.arc(cx + CELL / 2, cy + CELL / 2, range0 * CELL, 0, Math.PI * 2);
       ctx.stroke();
+      if (isMecha) {
+        // 机甲另画锚点巡逻半径（虚线）
+        ctx.strokeStyle = `${MECHA.color}33`;
+        ctx.setLineDash([8, 6]);
+        ctx.beginPath();
+        ctx.arc(cx + CELL / 2, cy + CELL / 2, MECHA.leash * CELL, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
       ctx.save();
       ctx.globalAlpha = 0.85;
       ctx.translate(cx + CELL / 2, cy + CELL / 2);
-      drawTower(ctx, type, 0, CELL * 0.92, 0, 0, st.clock, { ticks: false });
+      if (isMecha) drawMecha(ctx, 0, CELL * 0.8, 0, 0, st.clock);
+      else drawTower(ctx, type as TowerType, 0, CELL * 0.92, 0, 0, st.clock, { ticks: false });
       ctx.restore();
     }
     ctx.restore();
@@ -2641,7 +2663,7 @@ function drawDragGhost(st: NonNullable<GameEngine>['state'], type: TowerType, p:
 
   // 底部提示文案
   fillText(
-    canBuild ? '松手建造' : inMap ? '此处不可建造' : '拖到地图空格上',
+    canBuild ? (isMecha ? '松手部署机甲' : '松手建造') : inMap ? '此处不可建造' : '拖到地图空格上',
     VW / 2, VH - BAR_H - 18, { size: 12, color: canBuild ? C.green : C.sub, align: 'center' },
   );
 }
@@ -2656,6 +2678,46 @@ function drawBottomBar(st: NonNullable<GameEngine>['state']) {
   ctx.stroke();
 
   if (st.phase === 'tech') return;
+
+  // 选中机甲：升级 / 转移阵地
+  const selM = app.selectedMecha != null ? st.mechas.find((m) => m.id === app.selectedMecha) : undefined;
+  if (selM) {
+    fillText(`${MECHA.name} Lv${selM.level + 1}`, MARGIN + 4, VH - BAR_H + 17, { size: 13, color: MECHA.color });
+    const upCost = selM.level < 2 ? MECHA.levels[selM.level + 1].cost : -1;
+    btn({
+      x: MARGIN, y: VH - BAR_H + 34, w: VW / 2 - MARGIN - 6, h: 46,
+      label: upCost >= 0 ? `升级 ◈ ${upCost}` : '已满级', disabled: upCost < 0 || st.gold < upCost,
+      color: C.green, primary: upCost >= 0 && st.gold >= upCost,
+      cb: () => {
+        if (engineCmd({ type: 'UPGRADE_MECHA', id: selM.id })) {
+          sfx.play('upgrade'); buzz('light');
+          track('mecha_upgrade', { level_id: app.levelId, wave: st.wave });
+        }
+      },
+    });
+    const cdRemain = Math.max(0, selM.moveCdUntil - st.clock);
+    btn({
+      x: VW / 2 + 6, y: VH - BAR_H + 34, w: VW / 2 - MARGIN - 6, h: 46,
+      label: cdRemain > 0 ? `转移冷却 ${Math.ceil(cdRemain)}s` : '转移阵地',
+      disabled: cdRemain > 0, color: MECHA.color,
+      cb: () => { app.movingMecha = selM.id; app.selectedMecha = null; },
+    });
+    return;
+  }
+
+  // 机甲转移阵地模式：提示 + 取消
+  if (app.movingMecha != null) {
+    fillText('点击地图上绿色格转移机甲（6s 冷却）', VW / 2, VH - BAR_H + 19, { size: 13, color: MECHA.color, align: 'center' });
+    btn({ x: VW / 2 - 76, y: VH - BAR_H + 38, w: 152, h: 42, label: '取消转移', cb: () => { app.movingMecha = null; } });
+    return;
+  }
+
+  // 机甲部署模式：提示 + 取消
+  if (app.placing === 'mecha') {
+    fillText(`点击地图上绿色格部署「${MECHA.name}」`, VW / 2, VH - BAR_H + 19, { size: 13, color: MECHA.color, align: 'center' });
+    btn({ x: VW / 2 - 76, y: VH - BAR_H + 38, w: 152, h: 42, label: '取消部署', cb: () => { app.placing = null; } });
+    return;
+  }
 
   const sel = app.selectedId != null ? st.towers.find((t) => t.id === app.selectedId) : undefined;
   if (sel) {
@@ -2737,6 +2799,8 @@ function drawBottomBar(st: NonNullable<GameEngine>['state']) {
       fillText(`第${TOWER_UNLOCK[type]}章`, bx + sw / 2, by + 54, { size: 10, color: C.sub, align: 'center' });
     }
   });
+  // 末位机甲槽（与皮肤共用同一渲染，命中几何见 barSlotAt）
+  drawMechaBarSlot(app.engine!);
   ctx.restore();
   // 两侧渐变暗示可滑动
   if (stripMaxScroll > 0) {
@@ -2754,6 +2818,43 @@ function drawBottomBar(st: NonNullable<GameEngine>['state']) {
       ctx.fillStyle = gr;
       ctx.fillRect(viewX + viewW - 18, VH - BAR_H + 4, 22, BAR_H - 8);
     }
+  }
+}
+
+/** 塔栏末位的机甲槽（默认皮肤与皮肤模块共用；调用方需已建立槽位 clip 区域） */
+function drawMechaBarSlot(engine: GameEngine) {
+  const st = engine.state;
+  const sw = SLOT_W;
+  const slotH = BAR_H - 24;
+  const viewX = MARGIN;
+  const viewW = VW - MARGIN * 2;
+  const bx = viewX + TOWER_ORDER.length * (sw + SLOT_GAP) - barScroll;
+  const by = VH - BAR_H + 12;
+  if (bx + sw < viewX - 4 || bx > viewX + viewW + 4) return;
+  const my = myMecha(st);
+  const cost = MECHA.levels[0].cost;
+  const disabled = !my && st.gold < cost;
+  ctx.save();
+  ctx.globalAlpha = disabled ? 0.55 : 1;
+  rr(bx, by, sw, slotH, 12);
+  const g = ctx.createLinearGradient(bx, by, bx, by + slotH);
+  g.addColorStop(0, 'rgba(30,42,72,0.96)');
+  g.addColorStop(1, 'rgba(16,24,48,0.96)');
+  ctx.fillStyle = g;
+  ctx.fill();
+  const active = my != null && app.selectedMecha === my.id;
+  ctx.strokeStyle = active ? '#FFFFFF' : disabled ? 'rgba(124,141,176,0.4)' : `${MECHA.color}AA`;
+  ctx.lineWidth = active ? 2 : 1.4;
+  ctx.stroke();
+  // 机甲图标（与地图上同款矢量造型）
+  ctx.translate(bx + sw / 2, by + 28);
+  drawMecha(ctx, my?.level ?? 0, 34, Math.sin(st.clock * 1.1) * 0.08, 0, st.clock);
+  ctx.restore();
+  if (my) {
+    fillText('已出击', bx + sw / 2, by + 12, { size: 8, color: C.sub, align: 'center', weight: 'normal' });
+    fillText(`Lv${my.level + 1}`, bx + sw / 2, by + 54, { size: 11, color: MECHA.color, align: 'center' });
+  } else {
+    fillText(`◈${cost}`, bx + sw / 2, by + 54, { size: 11, color: disabled ? '#C77A34' : C.gold, align: 'center' });
   }
 }
 
@@ -2868,7 +2969,7 @@ function drawResult(time: number) {
   );
 
   // 本局积分（优先取 gameOver 入账的结算值；联机局为个人击杀 ×1.2，重算公式会失真）
-  const gained = lastSettlement ? lastSettlement.score : calcScore(st, app.difficulty, app.levelId, won);
+  const gained = lastSettlement ? lastSettlement.score : calcScore(st, app.levelId, won);
   // 在线局：击杀数按个人击杀分账显示
   const myKills = oi ? (st.killsBy?.[oi.player] ?? st.kills) : st.kills;
   // 战绩面板（数字滚动递增）；末行「积分 +N」金色（随同一 count-up 节奏滚动）
@@ -3037,11 +3138,12 @@ function drawBattleScene() {
   fx?.drawScorches(ctx);
   for (const ex of engine.map.exits) drawBase(ctx, time, st.lives / st.maxLives, ex.centerX, ex.centerY);
 
-  if (app.placing) {
+  if (app.placing || app.movingMecha != null) {
     for (let c = 0; c < COLS; c++) {
       for (let r = 0; r < ROWS; r++) {
         if (!engine.map.isBuildable(c, r)) continue;
         if (st.towers.some((tw) => tw.col === c && tw.row === r)) continue;
+        if (st.mechas.some((m) => m.anchorCol === c && m.anchorRow === r && m.id !== app.movingMecha)) continue;
         ctx.fillStyle = 'rgba(61,240,140,0.10)';
         ctx.strokeStyle = 'rgba(61,240,140,0.35)';
         ctx.fillRect(c * CELL + 4, r * CELL + 4, CELL - 8, CELL - 8);
@@ -3096,6 +3198,43 @@ function drawBattleScene() {
         ctx.fillStyle = '#FFC94D';
         ctx.beginPath(); ctx.arc(c.x + 10 + i * 8, c.y - CELL * 0.38, 2.4, 0, Math.PI * 2); ctx.fill();
       }
+    }
+  }
+
+  // 机甲（锚点巡逻的移动作战单位；选中时显示巡逻半径与机炮射程）
+  for (const m of st.mechas) {
+    const mlv = MECHA.levels[m.level];
+    const ax = (m.anchorCol + 0.5) * CELL;
+    const ay = (m.anchorRow + 0.5) * CELL;
+    if (app.selectedMecha === m.id) {
+      ctx.save();
+      ctx.strokeStyle = `${MECHA.color}44`;
+      ctx.setLineDash([8, 6]);
+      ctx.beginPath(); ctx.arc(ax, ay, MECHA.leash * CELL, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = `${MECHA.color}66`;
+      ctx.beginPath(); ctx.arc(m.x, m.y, mlv.range * CELL, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      // 锚点标记
+      ctx.save();
+      ctx.strokeStyle = `${MECHA.color}88`;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(ax - 8, ay - 8, 16, 16);
+      ctx.restore();
+    }
+    ctx.save();
+    ctx.translate(m.x, m.y);
+    drawMecha(ctx, m.level, CELL * 0.8, Math.atan2(m.aimY - m.y, m.aimX - m.x) + Math.PI / 2, m.walkT, time);
+    ctx.restore();
+    if (m.level > 0) {
+      for (let i = 0; i <= m.level; i++) {
+        ctx.fillStyle = '#FFC94D';
+        ctx.beginPath(); ctx.arc(m.x + 8 + i * 8, m.y - CELL * 0.42, 2.4, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    // 联机协作：标注归属（P1 主机 / P2 客机）
+    if (st.coop) {
+      fillText(`P${m.owner + 1}`, m.x, m.y - CELL * 0.52, { size: 9, color: m.owner === 0 ? C.gold : C.green, align: 'center', weight: '600' });
     }
   }
 
@@ -3440,7 +3579,7 @@ function frame() {
         const st0 = app.engine.state;
         const levelId = app.engine.level.id;
         // 积分入账（公式见 design/multiplayer.md §3.1）：累计/消费积分同增，刷榜单局与各关最高
-        const gained = calcScore(st0, app.difficulty, levelId, ev.won);
+        const gained = calcScore(st0, levelId, ev.won);
         const grade = battleGrade(st0, ev.won);
         lastSettlement = { score: gained, grade };
         const rankBefore = commanderRank();
@@ -3559,6 +3698,7 @@ const env: SkinEnv = {
   // 绘制助手
   fillText, rr, panel, wrapBlock, wrapCount, shade, btn, hitBox, chip, segControl, drawSwitch,
   drawAvatar, drawCardArt, drawSpaceBg, drawStars, RES_FONT, rng, hash01, drawTower, drawEnemy,
+  drawMecha, drawMechaBarSlot,
   // 状态访问
   app, codex,
   getScreenAt: () => screenAt,
@@ -3573,8 +3713,9 @@ const env: SkinEnv = {
   set barScroll(v: number) { barScroll = v; },
   getEngine: () => app.engine,
   // 数据
-  LEVELS, DIFF_LIST, DIFFICULTIES, TOWER_LIST, ENEMY_LIST, TOWERS, ENEMIES, TECHS,
+  LEVELS, DIFFICULTIES, TOWER_LIST, ENEMY_LIST, TOWERS, ENEMIES, TECHS,
   TOWER_ORDER, TOWER_UNLOCK, SELL_RATE, STORY_PARAS, CODEX_TABS, ENEMY_CATEGORY,
+  MECHA,
   SLOT_W, SLOT_GAP, stripMaxScroll, SKINS, CELL, COLS, ROWS,
   // 进度与解锁
   loadProgress, unlockedChapter, towerUnlocked,
@@ -3640,17 +3781,44 @@ wx.onTouchStart((e) => {
 
     // 底部塔栏：记录起点，等移动方向判定是滚动还是拖拽建塔
     if (p.y >= VH - BAR_H) {
-      if (!app.placing && app.selectedId == null) {
-        const t = towerSlotAt(p);
-        const unusable = !t ? null
-          : !towerUnlocked(t) ? `通关第 ${TOWER_UNLOCK[t]} 章后解锁「${TOWERS[t].name}」`
-          : engine.state.gold < TOWERS[t].levels[0].cost ? '金币不足，先攒一攒' : null;
-        barTouch = { mode: 'pending', type: unusable ? null : t, unusable, startX: p.x, startY: p.y, lastX: p.x };
+      if (!app.placing && app.selectedId == null && app.selectedMecha == null && app.movingMecha == null) {
+        const slot = barSlotAt(p);
+        if (slot === 'mecha') {
+          // 机甲槽：已部署时点按选中；未部署时可点选/拖拽部署
+          const my = myMecha(engine.state);
+          if (my) {
+            barTouch = { mode: 'pending', type: null, unusable: null, startX: p.x, startY: p.y, lastX: p.x, mechaId: my.id };
+          } else {
+            const noGold = engine.state.gold < MECHA.levels[0].cost ? '金币不足，先攒一攒' : null;
+            barTouch = { mode: 'pending', type: noGold ? null : 'mecha', unusable: noGold, startX: p.x, startY: p.y, lastX: p.x };
+          }
+        } else {
+          const unusable = !slot ? null
+            : !towerUnlocked(slot) ? `通关第 ${TOWER_UNLOCK[slot]} 章后解锁「${TOWERS[slot].name}」`
+            : engine.state.gold < TOWERS[slot].levels[0].cost ? '金币不足，先攒一攒' : null;
+          barTouch = { mode: 'pending', type: unusable ? null : slot, unusable, startX: p.x, startY: p.y, lastX: p.x };
+        }
       }
       return;
     }
 
-    // 地图区：点选放置模式下直接建造
+    // 地图区：机甲转移模式下选择目标格
+    if (app.movingMecha != null) {
+      const cx = Math.floor(toMapX(p.x) / CELL);
+      const cy = Math.floor(toMapY(p.y) / CELL);
+      const id = app.movingMecha;
+      app.movingMecha = null;
+      if (cx >= 0 && cx < COLS && cy >= 0 && cy < ROWS) {
+        if (engine.dispatch({ type: 'MOVE_MECHA', id, col: cx, row: cy })) {
+          sfx.play('build'); buzz('light');
+        } else {
+          showToast('无法转移到该位置'); buzz('light');
+        }
+      }
+      return;
+    }
+
+    // 地图区：点选放置模式下直接建造/部署机甲
     if (app.placing) {
       const st = engine.state;
       const cx = Math.floor(toMapX(p.x) / CELL);
@@ -3658,9 +3826,15 @@ wx.onTouchStart((e) => {
       if (
         cx >= 0 && cx < COLS && cy >= 0 && cy < ROWS &&
         engine.map.isBuildable(cx, cy) &&
-        !st.towers.some((tw) => tw.col === cx && tw.row === cy)
+        !st.towers.some((tw) => tw.col === cx && tw.row === cy) &&
+        !st.mechas.some((m) => m.anchorCol === cx && m.anchorRow === cy)
       ) {
-        if (engine.dispatch({ type: 'BUILD', col: cx, row: cy, tower: app.placing })) {
+        if (app.placing === 'mecha') {
+          if (engine.dispatch({ type: 'DEPLOY_MECHA', col: cx, row: cy })) {
+            sfx.play('build'); buzz('light');
+            track('mecha_deploy', { level_id: app.levelId, wave: engine.state.wave });
+          }
+        } else if (engine.dispatch({ type: 'BUILD', col: cx, row: cy, tower: app.placing })) {
           sfx.play('build'); buzz('light');
           track('tower_build', { tower_type: app.placing, level_id: app.levelId, wave: engine.state.wave });
         }
@@ -3745,7 +3919,7 @@ wx.onTouchEnd((e) => {
       dragPos = null;
       if (bt.mode === 'scroll') return;
       if (bt.mode === 'drag') {
-        // 松手落格建造
+        // 松手落格建造/部署机甲
         if (bt.type && app.engine) {
           const st = app.engine.state;
           const cx = Math.floor(toMapX(p.x) / CELL);
@@ -3753,9 +3927,15 @@ wx.onTouchEnd((e) => {
           if (
             cx >= 0 && cx < COLS && cy >= 0 && cy < ROWS &&
             app.engine.map.isBuildable(cx, cy) &&
-            !st.towers.some((tw) => tw.col === cx && tw.row === cy)
+            !st.towers.some((tw) => tw.col === cx && tw.row === cy) &&
+            !st.mechas.some((m) => m.anchorCol === cx && m.anchorRow === cy)
           ) {
-            if (app.engine.dispatch({ type: 'BUILD', col: cx, row: cy, tower: bt.type })) {
+            if (bt.type === 'mecha') {
+              if (app.engine.dispatch({ type: 'DEPLOY_MECHA', col: cx, row: cy })) {
+                sfx.play('build'); buzz('light');
+                track('mecha_deploy', { level_id: app.levelId, wave: st.wave });
+              }
+            } else if (app.engine.dispatch({ type: 'BUILD', col: cx, row: cy, tower: bt.type })) {
               sfx.play('build'); buzz('light');
               track('tower_build', { tower_type: bt.type, level_id: app.levelId, wave: st.wave });
             }
@@ -3763,9 +3943,21 @@ wx.onTouchEnd((e) => {
         }
         return;
       }
-      // pending 轻点：可用则进入点选放置模式，否则提示原因
-      if (bt.type) { app.placing = bt.type; app.selectedId = null; }
-      else if (bt.unusable) { showToast(bt.unusable); buzz('light'); }
+      // pending 轻点：机甲槽已部署→选中机甲；可用则进入点选放置模式，否则提示原因
+      if (bt.mechaId != null) {
+        app.selectedMecha = bt.mechaId;
+        app.selectedId = null;
+        sfx.play('select');
+      } else if (bt.type === 'mecha') {
+        app.placing = 'mecha';
+        app.selectedId = null;
+      } else if (bt.type) {
+        app.placing = bt.type;
+        app.selectedId = null;
+      } else if (bt.unusable) {
+        showToast(bt.unusable);
+        buzz('light');
+      }
       return;
     }
     // 地图平移超过了阈值则不视为点击
@@ -3773,13 +3965,26 @@ wx.onTouchEnd((e) => {
       const moved = battleMoved > 8;
       mapTouch = null;
       if (moved) return;
-      // 轻点地图：选中/取消选中炮塔（选中后底部栏出现升级/出售）
-      if (app.engine && !app.placing) {
+      // 轻点地图：选中/取消选中炮塔或机甲（选中后底部栏出现升级/出售/转移）
+      if (app.engine && !app.placing && app.movingMecha == null) {
+        const st = app.engine.state;
         const cx = Math.floor(toMapX(p.x) / CELL);
         const cy = Math.floor(toMapY(p.y) / CELL);
-        const tw = app.engine.state.towers.find((t) => t.col === cx && t.row === cy);
-        app.selectedId = tw ? tw.id : null;
-        if (tw) sfx.play('select');
+        const tw = st.towers.find((t) => t.col === cx && t.row === cy);
+        if (tw) {
+          app.selectedId = tw.id;
+          app.selectedMecha = null;
+          sfx.play('select');
+          return;
+        }
+        // 机甲：命中锚点格或当前机身位置
+        const mx = toMapX(p.x);
+        const my2 = toMapY(p.y);
+        const mc = st.mechas.find((m) =>
+          (m.anchorCol === cx && m.anchorRow === cy) || Math.hypot(m.x - mx, m.y - my2) < CELL * 0.7);
+        app.selectedMecha = mc ? mc.id : null;
+        app.selectedId = null;
+        if (mc) sfx.play('select');
         return;
       }
     }

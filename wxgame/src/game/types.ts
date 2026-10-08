@@ -4,7 +4,8 @@ import type { LevelDef } from './levels';
 
 export type TowerType = 'laser' | 'missile' | 'frost' | 'railgun' | 'tesla' | 'plasma';
 export type EnemyType = 'crawler' | 'speeder' | 'tanker' | 'splitter' | 'lurker' | 'boss';
-export type Difficulty = 'easy' | 'normal' | 'hard';
+// 难度已收敛为单一「普通 · 标准战役」：挑战度改由关卡难度阶梯（config.LADDER）承载
+export type Difficulty = 'normal';
 export type Phase = 'prep' | 'combat' | 'tech' | 'won' | 'lost';
 export type TechId =
   | 'dmg' | 'rate' | 'range' | 'gold' | 'crit'
@@ -49,6 +50,27 @@ export interface EnemyState {
   enraged: boolean;
   bornAt: number;
   lastHitAt: number; // 最近一次受伤时刻（引擎时钟，驱动受击闪光）
+}
+
+/** 机甲：可部署的移动作战单位（锚点巡逻 + 机炮/导弹双武器），联机双方各一台 */
+export interface MechaState {
+  id: number;
+  level: number; // 0 | 1 | 2 对应 Lv1/2/3
+  x: number; // 当前位置（像素，世界坐标）
+  y: number;
+  anchorCol: number; // 部署锚点格（巡逻中心；占地判定以锚点为准）
+  anchorRow: number;
+  cooldown: number; // 机炮距下次开火剩余秒
+  missileT: number; // 导弹距下次发射剩余秒
+  moveCdUntil: number; // 转移阵地冷却截止（引擎时钟）
+  aimX: number; // 当前瞄准方向（像素，世界坐标）
+  aimY: number;
+  lastFireAt: number; // 最近一次开火时刻（驱动开火帧动画）
+  walkT: number; // 行走动画相位（移动时推进）
+  kills: number;
+  invested: number; // 累计投入金币（部署+升级）
+  /** 归属玩家：单人恒为 0；联机协作 0=主机 / 1=客机 */
+  owner: number;
 }
 
 export interface ProjectileState {
@@ -157,7 +179,7 @@ export interface GameState {
   coop: boolean;
   /** 联机协作：双方独立金币池 [主机, 客机]；单人恒为 null */
   golds: [number, number] | null;
-  /** 联机协作：双方各自击杀数 [主机, 客机]（仅塔击杀计数）；单人恒为 null */
+  /** 联机协作：双方各自击杀数 [主机, 客机]（塔与机甲击杀均计入）；单人恒为 null */
   killsBy: [number, number] | null;
   wave: number; // 当前/即将开始波次
   totalWaves: number; // 本关总波数
@@ -166,6 +188,7 @@ export interface GameState {
   speed: 1 | 2;
   enemies: EnemyState[];
   towers: TowerState[];
+  mechas: MechaState[];
   projectiles: ProjectileState[];
   beams: BeamState[];
   particles: ParticleState[];
@@ -190,13 +213,17 @@ export interface GameState {
   events: GameEvent[];
 }
 
-/** 联机快照类型：玩法状态全量，剔除纯装饰特效数组以省带宽（zones 保留——灼烧区是玩法数据） */
-export type NetGameState = Omit<GameState, 'particles' | 'beams' | 'rings' | 'floaters'>;
+/** 联机快照类型：玩法状态全量，剔除纯装饰特效数组与客机不读的 spawnQueue/events 以省带宽
+ * （zones 保留——灼烧区是玩法数据；事件由快照消息外层附带，见 GameEngine.serializeNet 注） */
+export type NetGameState = Omit<GameState, 'particles' | 'beams' | 'rings' | 'floaters' | 'spawnQueue' | 'events'>;
 
 export type Command =
   | { type: 'BUILD'; col: number; row: number; tower: TowerType }
   | { type: 'UPGRADE'; id: number }
   | { type: 'SELL'; id: number }
+  | { type: 'DEPLOY_MECHA'; col: number; row: number }
+  | { type: 'MOVE_MECHA'; id: number; col: number; row: number }
+  | { type: 'UPGRADE_MECHA'; id: number }
   | { type: 'TOGGLE_PAUSE' }
   | { type: 'SET_SPEED'; speed: 1 | 2 }
   | { type: 'SKIP_PREP' }
@@ -211,8 +238,8 @@ export interface GameEngine {
   dispatch(cmd: Command): boolean;
   /** 以指定玩家身份执行命令（联机协作鉴权：0=主机 / 1=客机）；dispatch(cmd) 等价于 dispatchAs(0, cmd) */
   dispatchAs(player: number, cmd: Command): boolean;
-  /** 联机快照：剔除纯装饰数组（particles/beams/rings/floaters）后的玩法状态。
-   *  快照里的 events 在 drainEvents 之后恒为空属正常——事件由联机层在快照消息外层附带 */
+  /** 联机快照：剔除纯装饰数组（particles/beams/rings/floaters）与客机不读的 spawnQueue/events 后的玩法状态。
+   *  游戏事件不在快照内，由联机层在快照消息外层附带（main.ts snapEvents） */
   serializeNet(): NetGameState;
   subscribe(fn: () => void): () => void;
   drainEvents(): GameEvent[];

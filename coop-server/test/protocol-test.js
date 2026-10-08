@@ -79,7 +79,7 @@ async function main() {
     /* ---- 1. 建房 / 加房 ---- */
     console.log('1. create / join');
     const host = await connect();
-    host.send({ t: 'create', nick: '主机A', levelId: 3, difficulty: 'hard' });
+    host.send({ t: 'create', nick: '主机A', levelId: 3, difficulty: 'normal' });
     const roomMsg = await host.next((m) => m.t === 'room');
     check('create 返回 roomId + role=host', /^[A-Z2-9]{6}$/.test(roomMsg.roomId) && roomMsg.role === 'host');
     const roomId = roomMsg.roomId;
@@ -88,7 +88,7 @@ async function main() {
     guest.send({ t: 'join', roomId, nick: '客机B' });
     const joinMsg = await guest.next((m) => m.t === 'room');
     check('join 返回 role=guest + levelId/difficulty/hostNick',
-      joinMsg.role === 'guest' && joinMsg.levelId === 3 && joinMsg.difficulty === 'hard' && joinMsg.hostNick === '主机A');
+      joinMsg.role === 'guest' && joinMsg.levelId === 3 && joinMsg.difficulty === 'normal' && joinMsg.hostNick === '主机A');
     const peerMsg = await host.next((m) => m.t === 'peer');
     check('主机收到 peer joined', peerMsg.status === 'joined' && peerMsg.nick === '客机B');
 
@@ -100,9 +100,10 @@ async function main() {
     host.send({ t: 'cmd', player: 0, cmd: { type: 'START' } });
     const cmdAtGuest = await guest.next((m) => m.t === 'cmd');
     check('host cmd → guest', cmdAtGuest.player === 0 && cmdAtGuest.cmd.type === 'START');
-    host.send({ t: 'snap', state: { wave: 5, lives: 18 } });
+    host.send({ t: 'snap', state: { wave: 5, lives: 18 }, events: [{ type: 'waveStart', wave: 5 }] });
     const snapAtGuest = await guest.next((m) => m.t === 'snap');
     check('host snap → guest', snapAtGuest.state.wave === 5);
+    check('snap 外层 events 一并转发', Array.isArray(snapAtGuest.events) && snapAtGuest.events[0]?.type === 'waveStart');
     guest.send({ t: 'snap', state: {} });
     const snapErr = await guest.next((m) => m.t === 'error');
     check('guest 发 snap 被拒 bad_msg', snapErr.code === 'bad_msg');
@@ -151,7 +152,7 @@ async function main() {
     /* ---- 7. end 仲裁 ---- */
     console.log('7. end 仲裁');
     const h2 = await connect();
-    h2.send({ t: 'create', nick: 'H', levelId: 1, difficulty: 'easy' });
+    h2.send({ t: 'create', nick: 'H', levelId: 1, difficulty: 'normal' });
     const r2 = await h2.next((m) => m.t === 'room');
     const g2 = await connect();
     g2.send({ t: 'join', roomId: r2.roomId, nick: 'G' });

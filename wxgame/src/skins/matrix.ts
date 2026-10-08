@@ -8,6 +8,7 @@
 // 不接管 drawToast（走默认绘制）与 drawDragGhost（走默认；网格几何经 env.CELL/COLS/ROWS 可取）。
 import type { SkinEnv, SkinModule, TouchPoint } from './types';
 import type { GameEngine, TowerType } from '../game/types';
+import { threatStars } from '../game/config';
 
 // ---------------- 模块级状态 ----------------
 
@@ -361,55 +362,16 @@ function drawHome(env: SkinEnv, time: number) {
   matrixBg(env, time);
   drawMxHeader(env, '战役选择', () => env.goto('splash'));
 
-  // —— 难度霓虹 tab（钉在顶部）+ 右侧 单人/联机 切换 ——
+  // —— 单人/联机霓虹 tab（难度已统一为标准战役，挑战度由关卡阶梯承载） ——
   const tabY = TOP_SAFE + 8;
   const tabH = 36;
   const fullW = VW - MARGIN * 2;
-  const diffW = Math.round(fullW * 0.62);
-  const tabW = (diffW - 16) / 3;
-  env.DIFF_LIST.forEach((d, i) => {
-    const x = MARGIN + i * (tabW + 8);
-    const on = env.app.difficulty === d;
-    ctx.save();
-    env.rr(x, tabY, tabW, tabH, 10);
-    ctx.fillStyle = on ? env.ac(0.16) : 'rgba(20,12,36,0.85)';
-    ctx.fill();
-    ctx.strokeStyle = on ? env.ac(0.8) : 'rgba(110,92,142,0.4)';
-    ctx.lineWidth = on ? 1.5 : 1;
-    ctx.stroke();
-    if (on) {
-      // 激活下划线：紫→粉渐变 + 小发光
-      const ug = ctx.createLinearGradient(x, 0, x + tabW, 0);
-      ug.addColorStop(0, env.ac(0.9));
-      ug.addColorStop(1, 'rgba(255,61,129,0.9)');
-      ctx.fillStyle = ug;
-      ctx.shadowColor = env.C.cyan;
-      ctx.shadowBlur = 6;
-      ctx.fillRect(x + 10, tabY + tabH - 3, tabW - 20, 2);
-    }
-    ctx.restore();
-    env.fillText(env.DIFFICULTIES[d].name, x + tabW / 2, tabY + tabH / 2, {
-      size: 13, color: on ? env.C.text : env.C.dim, align: 'center',
-    });
-    env.hitBox({
-      x, y: tabY, w: tabW, h: tabH, label: `diff-${d}`,
-      cb: () => {
-        if (env.app.difficulty === d) return;
-        env.app.difficulty = d;
-        env.track('difficulty_select', { difficulty: d });
-        env.buzz('light');
-      },
-    });
-  });
-
-  // —— 单人/联机霓虹 tab（激活下划线：联机金渐变以区分难度档） ——
-  const modeX = MARGIN + diffW + 10;
-  const modeTabW = (fullW - diffW - 10 - 8) / 2;
+  const modeTabW = (fullW - 8) / 2;
   const MODE_TABS: [label: string, mode: 'single' | 'online'][] = [
     ['单人', 'single'], ['联机', 'online'],
   ];
   MODE_TABS.forEach(([label, mode], i) => {
-    const x = modeX + i * (modeTabW + 8);
+    const x = MARGIN + i * (modeTabW + 8);
     const on = env.app.mode === mode;
     ctx.save();
     env.rr(x, tabY, modeTabW, tabH, 10);
@@ -548,7 +510,7 @@ function drawHome(env: SkinEnv, time: number) {
 
 /** 简报打印行缓存（段落按宽度重排一次，后续每帧只做切片） */
 function briefLines(env: SkinEnv, lv: SkinEnv['LEVELS'][number], textW: number, size: number): [string, string][] {
-  const key = `${lv.id}|${textW}|${env.skin.id}|${env.app.difficulty}`;
+  const key = `${lv.id}|${textW}|${env.skin.id}`;
   if (briefCache && briefCache.key === key) return briefCache.lines;
   const per = Math.max(6, Math.floor(textW / size));
   const body = 'rgba(164,143,200,0.95)';
@@ -563,7 +525,7 @@ function briefLines(env: SkinEnv, lv: SkinEnv['LEVELS'][number], textW: number, 
   }
   const bossTxt = lv.waves.filter((w) => w.isBoss).map((w) => `W${w.wave}`).join(' ');
   lines.push([`> 波次 ${lv.waves.length} · BOSS ${bossTxt || '—'}`, '#FF9F43']);
-  lines.push([`> 难度 ${env.DIFFICULTIES[env.app.difficulty].name} · ${env.DIFFICULTIES[env.app.difficulty].label}`, env.C.gold]);
+  lines.push([`> 标准战役 · 威胁等级 ${'★'.repeat(threatStars(lv.id))}`, env.C.gold]);
   briefCache = { key, lines };
   return lines;
 }
@@ -807,8 +769,8 @@ function drawBottomBar(env: SkinEnv, engine: GameEngine) {
     return;
   }
 
-  // 点选放置模式：提示 + 取消（按新栏高垂直配平）
-  if (env.app.placing) {
+  // 点选放置模式：提示 + 取消（机甲部署面板由主文件内置栏接管，此处只处理炮塔）
+  if (env.app.placing && env.app.placing !== 'mecha') {
     const def = env.TOWERS[env.app.placing];
     env.fillText(`点击地图上绿色格建造「${def.name}」`, VW / 2, VH - BAR_H + 18, { size: 12, color: def.color, align: 'center' });
     env.btn({ x: VW / 2 - 76, y: VH - BAR_H + 36, w: 152, h: 40, label: '取消放置', cb: () => { env.app.placing = null; } });
@@ -868,6 +830,8 @@ function drawBottomBar(env: SkinEnv, engine: GameEngine) {
       env.fillText(`第${env.TOWER_UNLOCK[type]}章`, bx + sw / 2, by + 54, { size: 10, color: env.C.sub, align: 'center' });
     }
   });
+  // 机甲槽位（共享内置绘制，追加在塔槽之后）
+  env.drawMechaBarSlot(engine);
   ctx.restore();
   // 两侧渐变暗示可滑动
   if (env.stripMaxScroll > 0) {

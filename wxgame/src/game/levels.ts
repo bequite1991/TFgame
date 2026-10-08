@@ -140,6 +140,35 @@ export const LEVELS: LevelDef[] = [
         bonus: 500, isBoss: true,
         comm: '最终警告：巨兽母体亲自压阵。为了殖民地，开火！',
       },
+      {
+        wave: 16,
+        groups: [
+          { type: 'crawler', count: 20, interval: 0.4 },
+          { type: 'speeder', count: 14, interval: 0.4 },
+          { type: 'tanker', count: 5, interval: 0.6 },
+        ],
+        bonus: 260, isBoss: false,
+        comm: '母体倒下了，但虫群彻底狂暴——残部倾巢而出！指挥官，稳住阵线！',
+      },
+      {
+        wave: 17,
+        groups: [
+          { type: 'splitter', count: 12, interval: 0.4 },
+          { type: 'lurker', count: 12, interval: 0.4 },
+          { type: 'tanker', count: 6, interval: 0.5 },
+        ],
+        bonus: 300, isBoss: false,
+      },
+      {
+        wave: 18,
+        groups: [
+          { type: 'boss', count: 1, interval: 0.8, hpOverride: 18000, rewardOverride: 1500 },
+          { type: 'crawler', count: 12, interval: 0.6 },
+          { type: 'lurker', count: 8, interval: 0.5 },
+        ],
+        bonus: 700, isBoss: true,
+        comm: '警告：母体残骸重组为第二形态「湮灭暴君」！这才是外沿真正的最后一战——开火！',
+      },
     ],
   },
   {
@@ -256,6 +285,26 @@ export const LEVELS: LevelDef[] = [
         ],
         bonus: 550, isBoss: true,
         comm: '回廊之主现身南路。这是回廊最后一战——倾尽所有火力！',
+      },
+      {
+        wave: 13,
+        groups: [
+          { type: 'crawler', count: 16, interval: 0.4 },
+          { type: 'speeder', count: 12, interval: 0.4 },
+          { type: 'splitter', count: 8, interval: 0.5 },
+        ],
+        bonus: 320, isBoss: false,
+        comm: '回廊之主倒下后，虫群残部沿双脊疯狂反扑——守住合流点！',
+      },
+      {
+        wave: 14,
+        groups: [
+          { type: 'boss', count: 1, interval: 0.9, hpOverride: 15000, rewardOverride: 1100, path: 1 },
+          { type: 'lurker', count: 8, interval: 0.5, path: 0 },
+          { type: 'tanker', count: 5, interval: 0.6, path: 0 },
+        ],
+        bonus: 750, isBoss: true,
+        comm: '「回廊之主」第二形态从南路岩缝中爬出！倾尽所有火力，终结它！',
       },
     ],
   },
@@ -394,6 +443,26 @@ export const LEVELS: LevelDef[] = [
         bonus: 650, isBoss: true,
         comm: '湮灭母体从东侧栈道亲临战场。全体注意——这是 2242 年的最后一战，开火！',
       },
+      {
+        wave: 16,
+        groups: [
+          { type: 'tanker', count: 8, interval: 0.4 },
+          { type: 'splitter', count: 10, interval: 0.4 },
+          { type: 'speeder', count: 12, interval: 0.35 },
+        ],
+        bonus: 320, isBoss: false,
+        comm: '母体受创，虫群孤注一掷——东西栈道同时涌来最后的主力！',
+      },
+      {
+        wave: 17,
+        groups: [
+          { type: 'boss', count: 1, interval: 0.9, hpOverride: 14000, rewardOverride: 1100, path: 0 },
+          { type: 'lurker', count: 8, interval: 0.4, path: 1 },
+          { type: 'speeder', count: 10, interval: 0.4, path: 1 },
+        ],
+        bonus: 800, isBoss: true,
+        comm: '湮灭母体燃烧生命力进入狂暴形态，直扑西侧能量门！全体集火！',
+      },
     ],
   },
 ];
@@ -515,6 +584,26 @@ LEVELS.push(
         bonus: 520, isBoss: true,
         comm: '墓碑巨兽压阵而来——为了下一道防线，全火力开动！',
       },
+      {
+        wave: 13,
+        groups: [
+          { type: 'crawler', count: 18, interval: 0.35 },
+          { type: 'speeder', count: 14, interval: 0.35 },
+          { type: 'tanker', count: 6, interval: 0.5 },
+        ],
+        bonus: 300, isBoss: false,
+        comm: '墓碑巨兽阵亡激怒了虫群——坟场残兵倾巢而出！',
+      },
+      {
+        wave: 14,
+        groups: [
+          { type: 'boss', count: 1, interval: 0.8, hpOverride: 20000, rewardOverride: 1400 },
+          { type: 'splitter', count: 10, interval: 0.5 },
+          { type: 'lurker', count: 8, interval: 0.45 },
+        ],
+        bonus: 700, isBoss: true,
+        comm: '虫巢空投的「督战巨兽」落地！清剿坟场，就看这一波！',
+      },
     ],
   },
   {
@@ -631,6 +720,26 @@ LEVELS.push(
         ],
         bonus: 560, isBoss: true,
         comm: '「回声之主」从北脊现身。集火！别让它过去！',
+      },
+      {
+        wave: 13,
+        groups: [
+          { type: 'lurker', count: 12, interval: 0.4 },
+          { type: 'splitter', count: 10, interval: 0.4 },
+          { type: 'speeder', count: 14, interval: 0.35 },
+        ],
+        bonus: 300, isBoss: false,
+        comm: '回声廊道全面渗水——双脊残兵同时压上！',
+      },
+      {
+        wave: 14,
+        groups: [
+          { type: 'boss', count: 1, interval: 0.8, hpOverride: 22000, rewardOverride: 1500, path: 0 },
+          { type: 'speeder', count: 10, interval: 0.45, path: 1 },
+          { type: 'tanker', count: 5, interval: 0.6, path: 1 },
+        ],
+        bonus: 720, isBoss: true,
+        comm: '「回声之主」裹着冰甲卷土重来！海岭决战，集火北脊！',
       },
     ],
   },
@@ -750,6 +859,26 @@ LEVELS.push(
         bonus: 600, isBoss: true,
         comm: '枢纽绞肉机最后的吼声——巨兽走了最短的北直道！集火！集火！',
       },
+      {
+        wave: 13,
+        groups: [
+          { type: 'crawler', count: 20, interval: 0.3 },
+          { type: 'speeder', count: 16, interval: 0.3 },
+          { type: 'splitter', count: 10, interval: 0.4 },
+        ],
+        bonus: 320, isBoss: false,
+        comm: '裂缝吐出最后一批虫潮——三条滑道全部满负荷！',
+      },
+      {
+        wave: 14,
+        groups: [
+          { type: 'boss', count: 1, interval: 0.8, hpOverride: 24000, rewardOverride: 1600, path: 2 },
+          { type: 'tanker', count: 6, interval: 0.5, path: 0 },
+          { type: 'lurker', count: 8, interval: 0.45, path: 1 },
+        ],
+        bonus: 780, isBoss: true,
+        comm: '「清场者」本尊爬上北直道！枢纽存亡，在此一波！',
+      },
     ],
   },
   {
@@ -862,6 +991,26 @@ LEVELS.push(
         ],
         bonus: 620, isBoss: true,
         comm: '裂缝主兽「噬岩者」钻出了喷口！全线集火，别让它翻过岩架！',
+      },
+      {
+        wave: 13,
+        groups: [
+          { type: 'tanker', count: 8, interval: 0.45 },
+          { type: 'splitter', count: 12, interval: 0.4 },
+          { type: 'lurker', count: 10, interval: 0.4 },
+        ],
+        bonus: 300, isBoss: false,
+        comm: '裂缝崩塌前的最后一次喷发——虫群倾巢而出！',
+      },
+      {
+        wave: 14,
+        groups: [
+          { type: 'boss', count: 1, interval: 0.8, hpOverride: 27000, rewardOverride: 1700, path: 1 },
+          { type: 'crawler', count: 16, interval: 0.45, path: 0 },
+          { type: 'speeder', count: 12, interval: 0.4, path: 1 },
+        ],
+        bonus: 800, isBoss: true,
+        comm: '「噬岩者」吞食同族尸体后膨化成完全体！炸塌裂缝前，先干掉它！',
       },
     ],
   },
@@ -990,6 +1139,26 @@ LEVELS.push(
         bonus: 320, isBoss: false,
         comm: '撤退前最后一波兽潮！指挥官，把冰晶阵地变成它们的坟场！',
       },
+      {
+        wave: 14,
+        groups: [
+          { type: 'speeder', count: 18, interval: 0.3, path: 1 },
+          { type: 'lurker', count: 12, interval: 0.35, path: 0 },
+          { type: 'tanker', count: 6, interval: 0.5 },
+        ],
+        bonus: 340, isBoss: false,
+        comm: '冰盖彻底碎裂——封不住的虫群从两条裂缝一起涌出！',
+      },
+      {
+        wave: 15,
+        groups: [
+          { type: 'boss', count: 1, interval: 0.8, hpOverride: 30000, rewardOverride: 1800, path: 0 },
+          { type: 'splitter', count: 10, interval: 0.45, path: 1 },
+          { type: 'lurker', count: 8, interval: 0.4, path: 0 },
+        ],
+        bonus: 820, isBoss: true,
+        comm: '「融冰兽」吞下密度炸弹后变异暴走！哨站最后一战，打光所有弹药！',
+      },
     ],
   },
   {
@@ -1112,6 +1281,25 @@ LEVELS.push(
         ],
         bonus: 700, isBoss: true,
         comm: '双巨兽同时过桥！光矛阵列由你掩护——这是最后的桥头堡战役！',
+      },
+      {
+        wave: 14,
+        groups: [
+          { type: 'splitter', count: 14, interval: 0.35 },
+          { type: 'lurker', count: 12, interval: 0.35 },
+          { type: 'tanker', count: 8, interval: 0.45 },
+        ],
+        bonus: 360, isBoss: false,
+        comm: '虫巢开始不计代价地反扑——桥头堡绝不能丢！',
+      },
+      {
+        wave: 15,
+        groups: [
+          { type: 'boss', count: 1, interval: 0.8, hpOverride: 34000, rewardOverride: 2000, path: 0 },
+          { type: 'boss', count: 1, interval: 1.2, hpOverride: 17000, rewardOverride: 1000, path: 1 },
+        ],
+        bonus: 900, isBoss: true,
+        comm: '「虫巢先锋官」亲率护卫兽冲桥！光矛阵列只差最后一次充能——掩护到底！',
       },
     ],
   },
@@ -1248,6 +1436,26 @@ LEVELS.push(
         bonus: 750, isBoss: true,
         comm: '免疫中枢的母体「膜王」压境！登陆场的存亡，就看这一波！',
       },
+      {
+        wave: 15,
+        groups: [
+          { type: 'crawler', count: 24, interval: 0.25 },
+          { type: 'speeder', count: 18, interval: 0.25 },
+          { type: 'splitter', count: 12, interval: 0.35 },
+        ],
+        bonus: 380, isBoss: false,
+        comm: '外膜全面痉挛——再生组织把所有储备兵力一次性喷了出来！',
+      },
+      {
+        wave: 16,
+        groups: [
+          { type: 'boss', count: 1, interval: 0.8, hpOverride: 42000, rewardOverride: 2400 },
+          { type: 'lurker', count: 12, interval: 0.35 },
+          { type: 'tanker', count: 6, interval: 0.5 },
+        ],
+        bonus: 950, isBoss: true,
+        comm: '「膜王」吸收再生组织后进化为「万膜之王」！烧穿它，别让它愈合！',
+      },
     ],
   },
   {
@@ -1382,6 +1590,26 @@ LEVELS.push(
         ],
         bonus: 380, isBoss: false,
         comm: '虫巢的免疫军团全线出击。守住泵站前的最后一段走廊！',
+      },
+      {
+        wave: 15,
+        groups: [
+          { type: 'tanker', count: 12, interval: 0.35 },
+          { type: 'splitter', count: 14, interval: 0.3 },
+          { type: 'speeder', count: 16, interval: 0.25 },
+        ],
+        bonus: 400, isBoss: false,
+        comm: '血管壁全部破裂——虫巢把免疫预备队也押了上来！',
+      },
+      {
+        wave: 16,
+        groups: [
+          { type: 'boss', count: 1, interval: 0.8, hpOverride: 45000, rewardOverride: 2600, path: 1 },
+          { type: 'lurker', count: 12, interval: 0.3, path: 0 },
+          { type: 'tanker', count: 6, interval: 0.5, path: 0 },
+        ],
+        bonus: 980, isBoss: true,
+        comm: '「血心守卫」分裂重组为「血心魔像」！长廊尽头，决一死战！',
       },
     ],
   },
@@ -1519,6 +1747,25 @@ LEVELS.push(
         bonus: 800, isBoss: true,
         comm: '泵站崩塌前最后一战——「心室总管」亲自堵门！挡住它，我们回家！',
       },
+      {
+        wave: 15,
+        groups: [
+          { type: 'splitter', count: 16, interval: 0.3 },
+          { type: 'lurker', count: 14, interval: 0.25 },
+          { type: 'crawler', count: 20, interval: 0.25 },
+        ],
+        bonus: 440, isBoss: false,
+        comm: '泵站开始崩塌，心室卫队陷入疯狂——撤离窗口只剩最后两分钟！',
+      },
+      {
+        wave: 16,
+        groups: [
+          { type: 'boss', count: 1, interval: 0.8, hpOverride: 48000, rewardOverride: 2800, path: 1 },
+          { type: 'boss', count: 1, interval: 1.3, hpOverride: 24000, rewardOverride: 1400, path: 0 },
+        ],
+        bonus: 1050, isBoss: true,
+        comm: '「心室总管」与残存卫队长合体堵门！引爆冲击波已到身后——杀出去！',
+      },
     ],
   },
   {
@@ -1553,32 +1800,32 @@ LEVELS.push(
       {
         wave: 3,
         groups: [
-          { type: 'splitter', count: 8, interval: 0.5 },
-          { type: 'lurker', count: 6, interval: 0.5, path: 2 },
+          { type: 'splitter', count: 6, interval: 0.5 },
+          { type: 'lurker', count: 4, interval: 0.5, path: 2 },
         ],
         bonus: 80, isBoss: false,
       },
       {
         wave: 4,
         groups: [
-          { type: 'tanker', count: 5, interval: 0.75, path: 0 },
-          { type: 'speeder', count: 10, interval: 0.45, path: 2 },
-          { type: 'lurker', count: 6, interval: 0.55, path: 1 },
+          { type: 'tanker', count: 4, interval: 0.75, path: 0 },
+          { type: 'speeder', count: 8, interval: 0.45, path: 2 },
+          { type: 'lurker', count: 4, interval: 0.55, path: 1 },
         ],
         bonus: 100, isBoss: false,
       },
       {
         wave: 5,
         groups: [
-          { type: 'lurker', count: 11, interval: 0.4 },
-          { type: 'splitter', count: 11, interval: 0.4, path: 1 },
+          { type: 'lurker', count: 8, interval: 0.4 },
+          { type: 'splitter', count: 8, interval: 0.4, path: 1 },
         ],
         bonus: 130, isBoss: false,
       },
       {
         wave: 6,
         groups: [
-          { type: 'boss', count: 1, interval: 1.0, hpOverride: 20000, rewardOverride: 1400, path: 2 },
+          { type: 'boss', count: 1, interval: 1.0, hpOverride: 9000, rewardOverride: 1400, path: 2 },
           { type: 'crawler', count: 14, interval: 0.5, path: 0 },
         ],
         bonus: 380, isBoss: true,
@@ -1611,7 +1858,7 @@ LEVELS.push(
       {
         wave: 10,
         groups: [
-          { type: 'boss', count: 1, interval: 1.0, hpOverride: 22000, rewardOverride: 1500, path: 0 },
+          { type: 'boss', count: 1, interval: 1.0, hpOverride: 12000, rewardOverride: 1500, path: 0 },
           { type: 'lurker', count: 11, interval: 0.35, path: 1 },
           { type: 'splitter', count: 9, interval: 0.4, path: 2 },
         ],
@@ -1638,7 +1885,7 @@ LEVELS.push(
       {
         wave: 13,
         groups: [
-          { type: 'boss', count: 2, interval: 1.4, hpOverride: 15000, rewardOverride: 1100 },
+          { type: 'boss', count: 2, interval: 1.4, hpOverride: 10000, rewardOverride: 1100 },
           { type: 'speeder', count: 14, interval: 0.35 },
         ],
         bonus: 760, isBoss: true,
@@ -1658,13 +1905,34 @@ LEVELS.push(
       {
         wave: 15,
         groups: [
-          { type: 'boss', count: 1, interval: 0.6, hpOverride: 55000, rewardOverride: 5000, path: 2 },
+          { type: 'boss', count: 1, interval: 0.6, hpOverride: 32000, rewardOverride: 5000, path: 2 },
           { type: 'lurker', count: 12, interval: 0.3, path: 0 },
           { type: 'tanker', count: 8, interval: 0.45, path: 1 },
           { type: 'speeder', count: 14, interval: 0.3, path: 2 },
         ],
         bonus: 1500, isBoss: true,
         comm: '湮灭之心本体压上中通路——帕特农主炮已充能完毕！指挥官，为了让黎明准时到来——开火！',
+      },
+      {
+        wave: 16,
+        groups: [
+          { type: 'tanker', count: 14, interval: 0.3 },
+          { type: 'splitter', count: 14, interval: 0.25 },
+          { type: 'lurker', count: 14, interval: 0.25 },
+          { type: 'speeder', count: 18, interval: 0.25 },
+        ],
+        bonus: 520, isBoss: false,
+        comm: '湮灭之心疯狂搏动——它把虫群最后的种子全部吐了出来！',
+      },
+      {
+        wave: 17,
+        groups: [
+          { type: 'boss', count: 1, interval: 0.6, hpOverride: 48000, rewardOverride: 5000, path: 2 },
+          { type: 'boss', count: 1, interval: 1.2, hpOverride: 14000, rewardOverride: 1500, path: 0 },
+          { type: 'boss', count: 1, interval: 1.2, hpOverride: 14000, rewardOverride: 1500, path: 1 },
+        ],
+        bonus: 1800, isBoss: true,
+        comm: '湮灭之心分裂出双生护卫，三路总攻！帕特农主炮超载充能——2242 年的最后一发，开火！！',
       },
     ],
   },

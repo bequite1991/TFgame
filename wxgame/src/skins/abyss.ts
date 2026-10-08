@@ -12,7 +12,7 @@
 // 与默认完全一致——主文件触摸逻辑（totalScrollMax/towerSlotAt/barTouch 拖拽建塔）依赖它们。
 // 图鉴页滚动由 handleTouch 接管（主文件内置 codexMaxScroll 未暴露给模块，自行跟踪上限）。
 
-import { CELL, COLS, ROWS } from '../game/config';
+import { CELL, COLS, ROWS, threatStars } from '../game/config';
 import type { GameEngine, TowerType } from '../game/types';
 import type { Button, SkinEnv, SkinModule, TouchPoint } from './types';
 
@@ -358,14 +358,9 @@ function drawHome(env: SkinEnv, time: number) {
   holoAtmosphere(env, time);
   holoHeader(env, time, '高塔防线 · 战役选择', () => env.goto('splash'));
 
-  // 难度分段（全息舱样式，行为与默认一致）+ 右侧 单人/在线联机 切换
+  // 单人/在线联机 切换（全息舱样式；难度已统一为标准战役，挑战度由关卡阶梯承载）
   const segW = VW - MARGIN * 2;
-  const diffW = Math.round(segW * 0.6);
-  holoSeg(env, MARGIN, env.TOP_SAFE + 4, diffW, env.DIFF_LIST.map((d) => env.DIFFICULTIES[d].name), env.DIFF_LIST.indexOf(env.app.difficulty), 'diff', (i) => {
-    env.app.difficulty = env.DIFF_LIST[i];
-    env.track('difficulty_select', { difficulty: env.app.difficulty });
-  }, time);
-  holoSeg(env, MARGIN + diffW + 10, env.TOP_SAFE + 4, segW - diffW - 10, ['单人', '联机'], env.app.mode === 'online' ? 1 : 0, 'mode', (i) => { env.setMode(i === 1 ? 'online' : 'single'); env.buzz('light'); }, time);
+  holoSeg(env, MARGIN, env.TOP_SAFE + 4, segW, ['单人', '联机'], env.app.mode === 'online' ? 1 : 0, 'mode', (i) => { env.setMode(i === 1 ? 'online' : 'single'); env.buzz('light'); }, time);
 
   // 关卡卡列表（几何与默认一致，滚动由主文件触摸驱动）
   const homeTop = env.homeTop;
@@ -555,8 +550,8 @@ function drawBriefing(env: SkinEnv, time: number) {
   ctx.globalAlpha = p2;
   ctx.translate(0, (1 - p2) * 14);
   const afterY = boxY + boxH + 18;
-  // 难度提示（呼吸胶囊）
-  const diffTxt = `难度 ${env.DIFFICULTIES[env.app.difficulty].name} · ${env.DIFFICULTIES[env.app.difficulty].label}`;
+  // 战役强度提示（呼吸胶囊；威胁星级随章节递增）
+  const diffTxt = `标准战役 · 威胁等级 ${'★'.repeat(threatStars(lv.id))}`;
   ctx.save();
   ctx.font = 'bold 11px sans-serif';
   const dw = ctx.measureText(diffTxt).width + 24;
@@ -742,8 +737,8 @@ function drawBottomBar(env: SkinEnv, engine: GameEngine) {
     return;
   }
 
-  // 点选放置模式提示
-  if (env.app.placing) {
+  // 点选放置模式提示（机甲部署面板由主文件内置栏接管，此处只处理炮塔）
+  if (env.app.placing && env.app.placing !== 'mecha') {
     const def = env.TOWERS[env.app.placing];
     env.fillText(`点击地图上绿色格建造「${def.name}」`, VW / 2, VH - BAR_H + 20, { size: 12, color: def.color, align: 'center' });
     holoBtn(env, { x: VW / 2 - 76, y: VH - BAR_H + 32, w: 152, h: 44, label: '取消放置', cb: () => { env.app.placing = null; } }, time);
@@ -818,6 +813,8 @@ function drawBottomBar(env: SkinEnv, engine: GameEngine) {
       env.fillText(`第${env.TOWER_UNLOCK[type]}章`, bx + sw / 2, by + 54, { size: 10, color: env.C.sub, align: 'center' });
     }
   });
+  // 末位机甲槽（共享渲染，几何与主文件 barSlotAt 一致）
+  env.drawMechaBarSlot(engine);
   ctx.restore();
   // 两侧渐变暗示可滑动
   if (env.stripMaxScroll > 0) {

@@ -3,7 +3,7 @@
 // Orbitron 等宽数字（env.RES_FONT()）、面板四角铆钉、深棕黑底 + 琥珀高亮。
 // 签名交互：两段确认 —— 重要主按钮（出击/进入下一章/立即开战）第一次点按进入「待命」态，
 // 1.6s 内第二次点按才真正执行（模块级状态记录待命时间戳），确认瞬间 env.buzz('heavy')。
-import { CELL, COLS, ROWS } from '../game/config';
+import { CELL, COLS, ROWS, threatStars } from '../game/config';
 import type { GameEngine, TowerType } from '../game/types';
 import type { SkinEnv, SkinModule, TouchPoint } from './types';
 
@@ -222,56 +222,15 @@ function drawHome(env: SkinEnv, time: number) {
   emberBg(env, time);
   emberHeader(env, '战役档案', 'OPERATION ARCHIVE', () => env.goto('splash'));
 
-  // 难度选择：三个工业切角 tab（替代胶囊分段控件）+ 右侧 单人/联机 切换
+  // 单人/联机：工业切角 tab（SOLO / ONLINE）；难度已统一为标准战役，挑战度由关卡阶梯承载
   const tabY = env.TOP_SAFE + 6;
   const fullW = VW - MARGIN * 2;
-  const diffW = Math.round(fullW * 0.62);
-  const tabW = (diffW - 16) / 3;
-  env.DIFF_LIST.forEach((d, i) => {
-    const x = MARGIN + i * (tabW + 8);
-    const on = env.app.difficulty === d;
-    ctx.save();
-    env.rr(x, tabY, tabW, 40, 9);
-    if (on) {
-      const g = ctx.createLinearGradient(x, tabY, x, tabY + 40);
-      g.addColorStop(0, env.C.gold);
-      g.addColorStop(1, env.shade(env.C.gold));
-      ctx.fillStyle = g;
-      ctx.fill();
-    } else {
-      ctx.fillStyle = env.skin.panelSolid;
-      ctx.fill();
-      ctx.strokeStyle = env.ac(0.3);
-      ctx.lineWidth = 1.2;
-      ctx.stroke();
-    }
-    ctx.restore();
-    env.fillText(env.DIFFICULTIES[d].name, x + tabW / 2, tabY + 15, {
-      size: 13, color: on ? '#1A1209' : env.C.text, align: 'center',
-    });
-    env.fillText(d.toUpperCase(), x + tabW / 2, tabY + 30, {
-      size: 8, color: on ? 'rgba(26,18,9,0.65)' : env.C.dim, align: 'center', weight: '600', font: env.RES_FONT(),
-    });
-    env.hitBox({
-      x, y: tabY, w: tabW, h: 40, label: '',
-      cb: () => {
-        if (env.app.difficulty !== d) {
-          env.app.difficulty = d;
-          env.track('difficulty_select', { difficulty: d });
-          env.buzz('light');
-        }
-      },
-    });
-  });
-
-  // 单人/联机：同款工业切角小 tab（SOLO / ONLINE）
-  const modeX = MARGIN + diffW + 10;
-  const modeTabW = (fullW - diffW - 10 - 8) / 2;
+  const modeTabW = (fullW - 8) / 2;
   const MODE_TABS: [label: string, en: string, mode: 'single' | 'online'][] = [
     ['单人', 'SOLO', 'single'], ['联机', 'ONLINE', 'online'],
   ];
   MODE_TABS.forEach(([label, en, mode], i) => {
-    const x = modeX + i * (modeTabW + 8);
+    const x = MARGIN + i * (modeTabW + 8);
     const on = env.app.mode === mode;
     ctx.save();
     env.rr(x, tabY, modeTabW, 40, 9);
@@ -481,9 +440,9 @@ function drawBriefing(env: SkinEnv, time: number) {
   // 命令正文
   let ty = docY + 44 + bannerH + 22;
   for (const para of lv.briefing) ty = env.wrapBlock(para, bx + 16, ty, textW, { size: textSize, color: 'rgba(255,243,226,0.85)' }) + lineH * 0.6;
-  // 难度行
+  // 战役强度行（威胁星级随章节递增）
   env.fillText(
-    `执行难度：${env.DIFFICULTIES[env.app.difficulty].name} · ${env.DIFFICULTIES[env.app.difficulty].label}`,
+    `标准战役 · 威胁等级 ${'★'.repeat(threatStars(lv.id))}`,
     bx + 16, docY + docH - 26, { size: 10, color: env.C.gold, weight: 'normal' },
   );
   // 印章：右下斜盖
@@ -664,8 +623,8 @@ function drawBottomBar(env: SkinEnv, engine: GameEngine) {
     return;
   }
 
-  // 点选放置模式提示栏
-  if (env.app.placing) {
+  // 点选放置模式提示栏（机甲部署面板由主文件内置栏接管，此处只处理炮塔）
+  if (env.app.placing && env.app.placing !== 'mecha') {
     const def = env.TOWERS[env.app.placing];
     ctx.fillStyle = def.color;
     ctx.fillRect(MARGIN, VH - BAR_H + 10, 5, 16);
@@ -718,6 +677,8 @@ function drawBottomBar(env: SkinEnv, engine: GameEngine) {
       env.fillText(`第${env.TOWER_UNLOCK[type]}章`, bx + sw / 2, by + 52, { size: 10, color: env.C.sub, align: 'center' });
     }
   });
+  // 末位机甲槽（共享渲染，几何与主文件 barSlotAt 一致）
+  env.drawMechaBarSlot(engine);
   ctx.restore();
   // 两侧渐变暗示可滑动
   if (env.stripMaxScroll > 0) {

@@ -26,7 +26,7 @@ const MAX_MSG_PER_SEC = 30;
 const MAX_NICK_LEN = 32;
 
 const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 排除易混淆 0O1I
-const VALID_DIFFICULTIES = new Set(['easy', 'normal', 'hard']);
+const VALID_DIFFICULTIES = new Set(['normal']); // 难度已收敛为单一「普通」，挑战度由客户端关卡阶梯承载
 
 /** @type {Map<string, Room>} */
 const rooms = new Map();
@@ -277,7 +277,8 @@ function handleMessage(ws, raw) {
       }
       if (msg.t === 'snap') {
         if (st.role !== 'host') return err(ws, 'bad_msg'); // 只有主机发快照
-        sendTo(room, 'guest', { t: 'snap', state: msg.state });
+        // events（waveStart/leak/bossDown/sfx 等）一并转发，客机靠它播音效与波次提示
+        sendTo(room, 'guest', { t: 'snap', state: msg.state, events: Array.isArray(msg.events) ? msg.events : [] });
         return;
       }
       // end：仅主机可仲裁，广播双方后解散

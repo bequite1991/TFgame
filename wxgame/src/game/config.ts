@@ -325,6 +325,43 @@ export const ENEMY_LIST: EnemyDef[] = [
   ENEMIES.crawler, ENEMIES.speeder, ENEMIES.tanker, ENEMIES.splitter, ENEMIES.lurker, ENEMIES.boss,
 ];
 
+// ---------------- 机甲（移动作战单位，每名玩家一台） ----------------
+
+export interface MechaLevel {
+  damage: number; // 机炮单发伤害
+  rate: number; // 机炮射速（发/秒）
+  range: number; // 机炮索敌半径（格）
+  missileDamage: number; // 肩部导弹伤害
+  missileSplash: number; // 导弹溅射半径（格）
+  missileEvery: number; // 导弹发射间隔（秒）
+  cost: number; // 部署（Lv1）或升级费用
+}
+
+export interface MechaDef {
+  name: string;
+  nameEn: string;
+  color: string;
+  moveSpeed: number; // 移动速度（格/秒）
+  leash: number; // 巡逻半径（格，距部署锚点）
+  moveCooldown: number; // 转移阵地冷却（秒）
+  levels: [MechaLevel, MechaLevel, MechaLevel];
+}
+
+/** 破晓者机甲：部署于空格后自动在锚点巡逻迎敌；独立作战单位，不吃防御塔科技加成 */
+export const MECHA: MechaDef = {
+  name: '破晓者机甲',
+  nameEn: 'DAWNBREAKER',
+  color: '#9FD8FF',
+  moveSpeed: 2.2,
+  leash: 4.5,
+  moveCooldown: 6,
+  levels: [
+    { damage: 16, rate: 1.6, range: 2.8, missileDamage: 50, missileSplash: 1.0, missileEvery: 5, cost: 250 },
+    { damage: 28, rate: 1.8, range: 3.0, missileDamage: 80, missileSplash: 1.1, missileEvery: 4.5, cost: 260 },
+    { damage: 48, rate: 2.0, range: 3.2, missileDamage: 130, missileSplash: 1.2, missileEvery: 4, cost: 420 },
+  ],
+};
+
 // ---------------- 波次 ----------------
 
 export interface WaveGroup {
@@ -359,12 +396,75 @@ export interface DifficultyDef {
 }
 
 export const DIFFICULTIES: Record<Difficulty, DifficultyDef> = {
-  easy: { id: 'easy', name: '简单', gold: 500, lives: 25, hpMul: 0.85, speedMul: 1, label: '新兵训练' },
-  normal: { id: 'normal', name: '普通', gold: 350, lives: 16, hpMul: 1.12, speedMul: 1.03, label: '标准战役' },
-  hard: { id: 'hard', name: '困难', gold: 280, lives: 12, hpMul: 1.3, speedMul: 1.08, label: '老兵试炼' },
+  normal: { id: 'normal', name: '普通', gold: 260, lives: 16, hpMul: 1.32, speedMul: 1.08, label: '标准战役' },
 };
 
 export const PREP_TIME = 3;
+
+// ---------------- 经济收紧 ----------------
+
+/**
+ * 经济全局系数：击杀奖励与波次奖励统一打折，让金币始终处于"恰好能升级、勉强能挡住"的紧平衡。
+ * 科技三选一的发放间隔也在此控制——每 3 波一次，避免每波打断节奏与战力叠乘失控。
+ */
+export const ECONOMY = {
+  rewardMul: 0.55, // 击杀金币 ×0.55
+  bonusMul: 0.5, // 波次奖励 ×0.5
+  techEvery: 3, // 每 3 波清空后发放一次科技三选一
+};
+
+// ---------------- 关卡难度阶梯 ----------------
+
+/**
+ * 难度阶梯：章节（levelId）与关内波次（wave）越高，怪物数量 / 血量 / 速度越高。
+ * 数量倍率作用于波次编组（BOSS 只数不放大），血量/速度在引擎生成敌人时生效。
+ * 联机关（levelId=0）只保留关内波次成长，不吃章节倍率。
+ * 章节倍率随关内波次渐进爬升（前 9 波从 0 爬到满值）：高章节的开幕波仍可正常布防，
+ * 章节间的难度差主要体现在本章后半程与收官高压波。
+ */
+export const LADDER = {
+  countBase: 1.5, // 全局数量基数 ×1.5（每波怪量整体加厚）
+  countPerLevel: 0.05, // 每章怪物数量 +5%（满值）
+  countPerWave: 0.05, // 关内每波数量 +5%（越往后怪越多）
+  countCap: 2.5, // 数量总倍率上限（同屏性能保护）
+  intervalMul: 1.2, // 出怪间隔 ×1.2（波次拖长，压力更持续而非一波秒光）
+  hpPerLevel: 0.05, // 每章怪物血量 +5%（满值）
+  hpPerWave: 0.1, // 每波血量 +10%（怪物等级随波次递增）
+  speedPerLevel: 0.015, // 每章速度 +1.5%
+  speedPerWave: 0.005, // 每波速度 +0.5%
+  speedCap: 1.3, // 速度总倍率上限（不含难度系数）
+  startGoldPerLevel: 60, // 每章起始金币 +60（高章节怪物更硬，开局火力同步抬升）
+  chapterRampWaves: 9, // 章节倍率爬升波数：第 1 波为 0、第 10 波起达到满值
+};
+
+/** 章节倍率的关内爬升系数：0（第 1 波）→ 1（第 chapterRampWaves+1 波起） */
+function chapterRamp(levelId: number, wave: number): number {
+  if (levelId < 1) return 0;
+  return Math.min(1, (wave - 1) / LADDER.chapterRampWaves);
+}
+
+/** 波次编组数量倍率（BOSS 组不适用） */
+export function ladderCountMul(levelId: number, wave: number): number {
+  const lvl = 1 + LADDER.countPerLevel * (levelId - 1) * chapterRamp(levelId, wave);
+  return Math.min(LADDER.countCap, LADDER.countBase * lvl * (1 + LADDER.countPerWave * (wave - 1)));
+}
+
+/** 血量倍率（与难度系数 diff.hpMul 相乘；hpOverride 的 BOSS 走原数值不受阶梯影响） */
+export function ladderHpMul(levelId: number, wave: number): number {
+  const lvl = 1 + LADDER.hpPerLevel * (levelId - 1) * chapterRamp(levelId, wave);
+  return lvl * (1 + LADDER.hpPerWave * (wave - 1));
+}
+
+/** 速度倍率（含上限，与难度系数 diff.speedMul 相乘） */
+export function ladderSpeedMul(levelId: number, wave: number): number {
+  const lvl = 1 + LADDER.speedPerLevel * (levelId - 1) * chapterRamp(levelId, wave);
+  return Math.min(LADDER.speedCap, lvl * (1 + LADDER.speedPerWave * (wave - 1)));
+}
+
+/** 战役威胁等级（1-5 星，选关/简报展示用）：每 3 章升 1 星 */
+export function threatStars(levelId: number): number {
+  return Math.min(5, 1 + Math.floor(Math.max(0, levelId - 1) / 3));
+}
 
 // ---------------- 局内科技（roguelike 三选一） ----------------
 

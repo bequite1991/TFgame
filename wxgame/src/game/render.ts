@@ -954,3 +954,166 @@ export function drawBase(ctx: CanvasRenderingContext2D, time: number, livesRatio
   ctx.fill();
   ctx.shadowBlur = 0;
 }
+
+
+/**
+ * 在 (0,0) 绘制「破晓者」机甲（已 translate），size 为机身参考边长。
+ * 约定与 drawTower 一致：炮口朝向 -Y 时 aimAngle=0，调用方传「目标方向角 + PI/2」。
+ * walk 为行走相位（移动时推进，驱动迈步与机身起伏）；time 驱动呼吸灯。
+ */
+export function drawMecha(
+  ctx: CanvasRenderingContext2D, level: number, size: number,
+  aimAngle: number, walk: number, time: number,
+) {
+  const r = size / 2;
+  const accent = '#9FD8FF';
+  const glow = 0.6 + 0.4 * Math.sin(time * 3);
+  const bob = Math.abs(Math.sin(walk * 8)) * r * 0.06; // 行走时机身微起伏
+  const step = Math.sin(walk * 8); // 双腿交替
+
+  // 落地阴影
+  ctx.save();
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = '#000000';
+  ctx.beginPath();
+  ctx.ellipse(0, r * 0.72, r * 0.62, r * 0.26, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Lv3 能量环（金色虚线流动，与满级塔同款语义）
+  if (level >= 2) {
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.95, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,201,77,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([9, 7]);
+    ctx.lineDashOffset = -time * 16;
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  ctx.translate(0, -bob);
+
+  // 双腿（液压关节，迈步交替）
+  for (const s of [-1, 1]) {
+    const lift = Math.max(0, step * s) * r * 0.14;
+    ctx.save();
+    ctx.translate(s * r * 0.3, r * 0.34 - lift);
+    ctx.fillStyle = '#22304F';
+    ctx.strokeStyle = 'rgba(159,216,255,0.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.13, -r * 0.3);
+    ctx.lineTo(r * 0.13, -r * 0.3);
+    ctx.lineTo(r * 0.17, r * 0.3);
+    ctx.lineTo(-r * 0.17, r * 0.3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // 足部液压亮点
+    ctx.fillStyle = accent;
+    ctx.globalAlpha = 0.5 + 0.4 * glow;
+    ctx.beginPath();
+    ctx.arc(0, r * 0.3, r * 0.05, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 躯干（金属梯度 + 切角装甲轮廓）
+  const torsoG = ctx.createLinearGradient(0, -r * 0.55, 0, r * 0.35);
+  torsoG.addColorStop(0, '#31456E');
+  torsoG.addColorStop(0.6, '#1A2748');
+  torsoG.addColorStop(1, '#0D1528');
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.42, -r * 0.28);
+  ctx.lineTo(-r * 0.3, -r * 0.52);
+  ctx.lineTo(r * 0.3, -r * 0.52);
+  ctx.lineTo(r * 0.42, -r * 0.28);
+  ctx.lineTo(r * 0.36, r * 0.32);
+  ctx.lineTo(-r * 0.36, r * 0.32);
+  ctx.closePath();
+  ctx.fillStyle = torsoG;
+  ctx.fill();
+  ctx.strokeStyle = accent;
+  ctx.globalAlpha = 0.9;
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Lv2+ 肩部外挂装甲板
+  if (level >= 1) {
+    ctx.fillStyle = '#2A3C62';
+    ctx.strokeStyle = 'rgba(159,216,255,0.65)';
+    ctx.lineWidth = 1;
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(s * r * 0.42, -r * 0.5);
+      ctx.lineTo(s * r * 0.62, -r * 0.34);
+      ctx.lineTo(s * r * 0.56, -r * 0.14);
+      ctx.lineTo(s * r * 0.42, -r * 0.22);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  // 胸口核心（青色能量炉，呼吸发光）
+  ctx.save();
+  ctx.fillStyle = '#BDF3FF';
+  ctx.shadowColor = accent;
+  ctx.shadowBlur = 8 + 6 * glow;
+  ctx.beginPath();
+  ctx.arc(0, -r * 0.12, r * 0.11, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // 头部 + 双目扫描镜
+  ctx.fillStyle = '#1A2748';
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.18, -r * 0.52);
+  ctx.lineTo(-r * 0.14, -r * 0.72);
+  ctx.lineTo(r * 0.14, -r * 0.72);
+  ctx.lineTo(r * 0.18, -r * 0.52);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.save();
+  ctx.fillStyle = '#7CF2FF';
+  ctx.shadowColor = '#22E0FF';
+  ctx.shadowBlur = 6;
+  ctx.globalAlpha = 0.7 + 0.3 * glow;
+  ctx.fillRect(-r * 0.12, -r * 0.64, r * 0.24, r * 0.06);
+  ctx.restore();
+
+  // 肩部导弹舱（左上，Lv 越高弹舱越密）
+  ctx.fillStyle = '#22304F';
+  ctx.strokeStyle = 'rgba(255,159,67,0.8)';
+  ctx.lineWidth = 1;
+  ctx.fillRect(-r * 0.58, -r * 0.66, r * 0.2, r * (0.2 + level * 0.05));
+  ctx.strokeRect(-r * 0.58, -r * 0.66, r * 0.2, r * (0.2 + level * 0.05));
+  ctx.fillStyle = '#FF9F43';
+  for (let i = 0; i <= level; i++) {
+    ctx.beginPath();
+    ctx.arc(-r * 0.48, -r * 0.62 + i * r * 0.08, r * 0.025, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 右臂机炮（随瞄准旋转，炮口朝 -Y 为 aimAngle=0）
+  ctx.save();
+  ctx.translate(r * 0.34, -r * 0.2);
+  ctx.rotate(aimAngle);
+  ctx.fillStyle = '#2A3C62';
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.rect(-r * 0.07, -r * 0.52, r * 0.14, r * 0.5);
+  ctx.fill();
+  ctx.stroke();
+  // 炮口制退器
+  ctx.fillStyle = accent;
+  ctx.globalAlpha = 0.85;
+  ctx.fillRect(-r * 0.09, -r * 0.58, r * 0.18, r * 0.08);
+  ctx.restore();
+}

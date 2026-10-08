@@ -1,11 +1,12 @@
 // 游戏引擎 —— 固定步长逻辑，无 DOM/React 依赖，可整体移植
 import {
-  buildLevelMap, CELL, DIFFICULTIES, ENEMIES, PREP_TIME, SELL_RATE, TOWERS,
+  buildLevelMap, CELL, DIFFICULTIES, ECONOMY, ENEMIES, LADDER, MECHA, PREP_TIME, SELL_RATE, TOWERS,
+  ladderCountMul, ladderHpMul, ladderSpeedMul,
 } from './config';
 import { getLevel } from './levels';
 import { TECH_LIST } from './config';
 import type {
-  Command, Difficulty, EnemyState, GameEngine, GameEvent, GameState, NetGameState, SpawnItem, TechId, TowerState,
+  Command, Difficulty, EnemyState, GameEngine, GameEvent, GameState, MechaState, NetGameState, SpawnItem, TechId, TowerState,
 } from './types';
 
 let uid = 1;
@@ -25,10 +26,12 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
     typeof navigator !== 'undefined' && (navigator.hardwareConcurrency ?? 8) <= 4;
   const particleScale = lowSpec ? 0.5 : 1;
   const coop = !!opts?.coop;
+  // 起始金币随章节抬升：高章节怪物经阶梯加硬，开局需能立刻铺开更多火力
+  const chapterGold = level.id >= 1 ? Math.round((level.id - 1) * LADDER.startGoldPerLevel) : 0;
   const startGolds: [number, number] | null = coop
     ? [
-        opts?.startGold?.[0] ?? DIFFICULTIES.normal.gold,
-        opts?.startGold?.[1] ?? DIFFICULTIES.normal.gold,
+        (opts?.startGold?.[0] ?? DIFFICULTIES.normal.gold) + chapterGold,
+        (opts?.startGold?.[1] ?? DIFFICULTIES.normal.gold) + chapterGold,
       ]
     : null;
 
@@ -36,7 +39,7 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
     phase: 'prep',
     clock: 0,
     timeSec: 0,
-    gold: startGolds ? startGolds[0] : diff.gold,
+    gold: startGolds ? startGolds[0] : diff.gold + chapterGold,
     lives: diff.lives,
     maxLives: diff.lives,
     coop,
@@ -49,6 +52,7 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
     speed: 1,
     enemies: [],
     towers: [],
+    mechas: [],
     projectiles: [],
     beams: [],
     particles: [],
@@ -153,8 +157,10 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
   }
 
   function scaledHp(type: EnemyState['type'], wave: number, override?: number): number {
-    if (override !== undefined) return Math.round(override * diff.hpMul);
-    return Math.round(ENEMIES[type].hp * (1 + 0.12 * (wave - 1)) * diff.hpMul);
+    // hpOverride 是手工编排的绝对血量（BOSS 波），不再叠加难度系数，避免双重放大
+    if (override !== undefined) return override;
+    // 怪物等级递增：血量 = 基础 × 难度阶梯（章节 × 波次）× 难度系数
+    return Math.round(ENEMIES[type].hp * ladderHpMul(level.id, wave) * diff.hpMul);
   }
 
   function spawnEnemy(item: SpawnItem, dist = 0) {
@@ -166,8 +172,10 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
       maxHp: 0,
       dist,
       path: item.path ?? 0,
-      speed: def.speed * diff.speedMul,
-      reward: item.rewardOverride ?? def.reward,
+      speed: def.speed * diff.speedMul * ladderSpeedMul(level.id, state.wave),
+      // 击杀奖励随难度阶梯（章节×波次血量倍率）同步放大：金币产出始终与怪物硬度成比例，
+      // 高章节经济能跟上火力需求；rewardOverride（BOSS 等）保持表记面值
+      reward: item.rewardOverride ?? Math.max(1, Math.round(def.reward * ladderHpMul(level.id, state.wave))),
       leak: def.leak,
       slowUntil: 0,
       slowPct: 0,
@@ -192,13 +200,17 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
     const def = level.waves[wave - 1];
     // 各组交错（round-robin），BOSS 优先第一个出场
     const pathCount = map.paths.length;
+    // 难度阶梯：普通怪数量随章节与波次递增（BOSS 只数不放大，血量见 hpOverride）
+    const cntMul = ladderCountMul(level.id, wave);
     let rr = 0; // 未指定路径的组在所有路径间轮转（确定性）
     const pools = def.groups.map((g) => {
       const base = rr;
-      if (g.path === undefined) rr += g.count;
-      return Array.from({ length: g.count }, (_, i): SpawnItem => ({
+      const count = g.type === 'boss' ? g.count : Math.max(g.count, Math.round(g.count * cntMul));
+      if (g.path === undefined) rr += count;
+      return Array.from({ length: count }, (_, i): SpawnItem => ({
         type: g.type,
-        interval: g.interval,
+        // 节奏系数：整体拉长出怪间隔，单波持续时间更久、压力更持续
+        interval: g.interval * LADDER.intervalMul,
         path: g.path ?? ((base + i) % pathCount),
         hpOverride: g.hpOverride,
         rewardOverride: g.rewardOverride,
@@ -222,7 +234,10 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
 
   // ---------- 伤害与击杀 ----------
 
-  function applyDamage(e: EnemyState, raw: number, source: 'laser' | 'missile' | 'frost' | 'railgun' | 'tesla' | 'plasma', tower?: TowerState) {
+  /** 击杀来源：塔或机甲（联机分账与击杀计数的依据） */
+  type Killer = { owner: number; kills: number };
+
+  function applyDamage(e: EnemyState, raw: number, source: 'laser' | 'missile' | 'frost' | 'railgun' | 'tesla' | 'plasma' | 'mecha', killer?: Killer) {
     if (e.hp <= 0) return;
     let dmg = raw * dmgMul() * critMul();
     const armored = e.type === 'tanker' || e.isBoss;
@@ -235,24 +250,24 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
       e.enraged = true;
       e.speed *= 1.4;
     }
-    if (e.hp <= 0) killEnemy(e, tower);
+    if (e.hp <= 0) killEnemy(e, killer);
   }
 
-  function killEnemy(e: EnemyState, tower?: TowerState) {
+  function killEnemy(e: EnemyState, killer?: Killer) {
     e.hp = 0;
     state.kills += 1;
-    const earned = Math.max(1, Math.round(e.reward * goldMul()));
+    const earned = Math.max(1, Math.round(e.reward * goldMul() * ECONOMY.rewardMul));
     if (state.golds) {
-      // 协作：击杀金币归击杀塔的主人；塔被卖后飞行弹体/灼烧区命中时 tower 为 undefined，归主机
-      const owner = tower?.owner ?? 0;
+      // 协作：击杀金币归击杀单位的主人；单位被卖后飞行弹体/灼烧区命中时 killer 为 undefined，归主机
+      const owner = killer?.owner ?? 0;
       state.golds[owner] += earned;
       state.gold = state.golds[0];
-      if (tower) state.killsBy![owner] += 1;
+      if (killer) state.killsBy![owner] += 1;
     } else {
       state.gold += earned;
     }
     state.goldEarned += earned;
-    if (tower) tower.kills += 1;
+    if (killer) killer.kills += 1;
     const p = map.posAt(e.path, e.dist);
     const color = e.isBoss ? '#FF3D81' : '#FFC94D';
     addExplosion(p.x, p.y, e.isBoss ? '#FF3D81' : '#B8FF3D', e.isBoss ? 26 : 12, e.isBoss ? 200 : 120);
@@ -271,7 +286,7 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
       // 分裂为 2 个爬行者，HP 为当前波爬行者 60%，继承父体路径
       for (let i = 0; i < 2; i++) {
         spawnEnemy(
-          { type: 'crawler', interval: 0, path: e.path, hpOverride: Math.round(scaledHp('crawler', state.wave) * 0.6 / diff.hpMul) },
+          { type: 'crawler', interval: 0, path: e.path, hpOverride: Math.round(scaledHp('crawler', state.wave) * 0.6) },
           Math.max(0, e.dist - i * 14),
         );
       }
@@ -517,6 +532,85 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
     else fireFrost(t, target);
   }
 
+  // ---------- 机甲 ----------
+
+  /** 机甲：锚点 leash 内自动迎敌（站位保持在机炮射程边沿），机炮点射 + 肩部导弹溅射 */
+  function updateMecha(m: MechaState, dt: number) {
+    const lv = MECHA.levels[m.level];
+    const ax = (m.anchorCol + 0.5) * CELL;
+    const ay = (m.anchorRow + 0.5) * CELL;
+    // 巡逻目标：锚点巡逻半径内最前沿的敌人
+    let anchorTarget: EnemyState | null = null;
+    for (const e of state.enemies) {
+      if (e.hp <= 0) continue;
+      const p = map.posAt(e.path, e.dist);
+      if (Math.hypot(p.x - ax, p.y - ay) > MECHA.leash * CELL) continue;
+      if (!anchorTarget || e.dist > anchorTarget.dist) anchorTarget = e;
+    }
+    // 期望站位：锚点 → 目标方向，停在机炮射程边沿；无敌时回锚点
+    let dx0 = ax;
+    let dy0 = ay;
+    if (anchorTarget) {
+      const p = map.posAt(anchorTarget.path, anchorTarget.dist);
+      const ddx = p.x - ax;
+      const ddy = p.y - ay;
+      const dA = Math.hypot(ddx, ddy) || 1;
+      const stand = Math.min(Math.max(0, dA - lv.range * CELL * 0.8), MECHA.leash * CELL);
+      dx0 = ax + (ddx / dA) * stand;
+      dy0 = ay + (ddy / dA) * stand;
+    }
+    const mx = dx0 - m.x;
+    const my = dy0 - m.y;
+    const md = Math.hypot(mx, my);
+    if (md > 2) {
+      const step = Math.min(md, MECHA.moveSpeed * CELL * dt);
+      m.x += (mx / md) * step;
+      m.y += (my / md) * step;
+      m.walkT += dt;
+      // 推进器尾焰
+      if (Math.random() <= particleScale * 0.6) {
+        state.particles.push({
+          id: uid++, x: m.x + (Math.random() - 0.5) * 8, y: m.y + 14,
+          vx: (Math.random() - 0.5) * 14, vy: 26 + Math.random() * 18,
+          ttl: 0.25, maxTtl: 0.25, color: '#9FD8FF', size: 1.5 + Math.random() * 1.5,
+        });
+      }
+    }
+    // 攻击：当前位置射程内最前沿敌人（隐身不可锁定）
+    m.cooldown -= dt;
+    m.missileT -= dt;
+    let target: EnemyState | null = null;
+    for (const e of state.enemies) {
+      if (e.hp <= 0 || isInvisible(e)) continue;
+      const p = map.posAt(e.path, e.dist);
+      if (Math.hypot(p.x - m.x, p.y - m.y) > lv.range * CELL) continue;
+      if (!target || e.dist > target.dist) target = e;
+    }
+    if (!target) return;
+    const p = map.posAt(target.path, target.dist);
+    m.aimX = p.x;
+    m.aimY = p.y;
+    if (m.cooldown <= 0) {
+      m.cooldown = 1 / lv.rate;
+      m.lastFireAt = state.clock;
+      addBeam(m.x, m.y - 8, p.x, p.y, '#9FD8FF', 2.5, 0.12);
+      applyDamage(target, lv.damage, 'mecha', m);
+    }
+    if (m.missileT <= 0) {
+      m.missileT = lv.missileEvery;
+      state.projectiles.push({
+        id: uid++, kind: 'missile',
+        fromX: m.x - 10, fromY: m.y - 16, x: m.x - 10, y: m.y - 16,
+        tx: p.x, ty: p.y, t: 0, dur: 0.4,
+        damage: lv.missileDamage,
+        splash: lv.missileSplash,
+        stun: 0,
+        towerId: m.id,
+      });
+      pushEvent({ type: 'sfx', name: 'missile' });
+    }
+  }
+
   // ---------- 波次流程 ----------
 
   function startWave() {
@@ -530,26 +624,33 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
 
   function clearWave() {
     const def = level.waves[state.wave - 1];
+    const bonus = Math.max(10, Math.round(def.bonus * ECONOMY.bonusMul));
     if (state.golds) {
       // 协作：波次奖励双方平分（奇数时主机多得 1，保证两池之和精确等于 bonus）
-      const half = Math.round(def.bonus / 2);
+      const half = Math.round(bonus / 2);
       state.golds[0] += half;
-      state.golds[1] += def.bonus - half;
+      state.golds[1] += bonus - half;
       state.gold = state.golds[0];
     } else {
-      state.gold += def.bonus;
+      state.gold += bonus;
     }
-    state.goldEarned += def.bonus;
-    addFloater(270, 120, `波次奖励 +${def.bonus}`, '#FFC94D');
-    pushEvent({ type: 'waveClear', wave: state.wave, bonus: def.bonus });
+    state.goldEarned += bonus;
+    addFloater(270, 120, `波次奖励 +${bonus}`, '#FFC94D');
+    pushEvent({ type: 'waveClear', wave: state.wave, bonus });
     if (state.wave >= state.totalWaves) {
       state.phase = 'won';
       state.techChoices = null;
       pushEvent({ type: 'gameOver', won: true });
     } else {
       state.wave += 1;
-      state.phase = 'tech'; // 波间科技三选一：选定后进入准备期
-      state.techChoices = rollTechChoices();
+      // 科技三选一每 3 波发放一次（下一波为 4/7/10/13… 时）；其余波次直接进入准备期，避免每波打断节奏与战力叠乘失控
+      if (state.wave % ECONOMY.techEvery === 1) {
+        state.phase = 'tech';
+        state.techChoices = rollTechChoices();
+      } else {
+        state.phase = 'prep';
+        state.prepT = PREP_TIME;
+      }
     }
   }
 
@@ -612,8 +713,9 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
         pushEvent({ type: 'gameOver', won: false });
       }
 
-      // 塔
+      // 塔与机甲
       for (const t of state.towers) updateTower(t, dt);
+      for (const m of state.mechas) updateMecha(m, dt);
       state.enemies = state.enemies.filter((e) => e.hp > 0);
 
       // 导弹 / 等离子弹
@@ -622,7 +724,9 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
         if (pr.t >= 1) {
           pr.x = pr.tx;
           pr.y = pr.ty;
-          const tower = state.towers.find((tw) => tw.id === pr.towerId);
+          // 弹丸归属：塔或机甲（机甲肩部导弹复用 missile 弹体）
+          const tower = state.towers.find((tw) => tw.id === pr.towerId)
+            ?? state.mechas.find((mc) => mc.id === pr.towerId);
           if (pr.kind === 'plasma') {
             addExplosion(pr.tx, pr.ty, '#FF6B3D', 14, 130);
             addRing(pr.tx, pr.ty, '#FF6B3D', 8, Math.max(30, pr.splash * CELL * 0.9), 0.5);
@@ -776,6 +880,7 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
       const cost = def.levels[0].cost;
       if (!map.isBuildable(cmd.col, cmd.row)) return false;
       if (state.towers.some((t) => t.col === cmd.col && t.row === cmd.row)) return false;
+      if (state.mechas.some((m) => m.anchorCol === cmd.col && m.anchorRow === cmd.row)) return false;
       if (goldOf(player) < cost) return false;
       setGold(player, goldOf(player) - cost);
       const c = { x: (cmd.col + 0.5) * CELL, y: (cmd.row + 0.5) * CELL };
@@ -813,6 +918,68 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
       return true;
     }
 
+    if (cmd.type === 'DEPLOY_MECHA') {
+      const cost = MECHA.levels[0].cost;
+      // 每名玩家限一台
+      if (state.mechas.some((m) => m.owner === player)) return false;
+      if (!map.isBuildable(cmd.col, cmd.row)) return false;
+      if (state.towers.some((t) => t.col === cmd.col && t.row === cmd.row)) return false;
+      if (state.mechas.some((m) => m.anchorCol === cmd.col && m.anchorRow === cmd.row)) return false;
+      if (goldOf(player) < cost) return false;
+      setGold(player, goldOf(player) - cost);
+      const x = (cmd.col + 0.5) * CELL;
+      const y = (cmd.row + 0.5) * CELL;
+      state.mechas.push({
+        id: uid++, level: 0, x, y,
+        anchorCol: cmd.col, anchorRow: cmd.row,
+        cooldown: 0, missileT: 2, moveCdUntil: 0,
+        aimX: x, aimY: y - 60,
+        lastFireAt: -999, walkT: 0,
+        kills: 0, invested: cost,
+        owner: player,
+      });
+      addExplosion(x, y, MECHA.color, 18, 140);
+      addRing(x, y, MECHA.color, 10, 60, 0.5);
+      addFloater(x, y - 34, MECHA.name, MECHA.color);
+      notify();
+      return true;
+    }
+
+    if (cmd.type === 'MOVE_MECHA') {
+      const m = state.mechas.find((mm) => mm.id === cmd.id);
+      if (!m) return false;
+      // 协作：只能操作自己的机甲
+      if (state.coop && m.owner !== player) return false;
+      if (state.clock < m.moveCdUntil) return false; // 转移冷却中
+      if (!map.isBuildable(cmd.col, cmd.row)) return false;
+      if (state.towers.some((t) => t.col === cmd.col && t.row === cmd.row)) return false;
+      if (state.mechas.some((mm) => mm.id !== m.id && mm.anchorCol === cmd.col && mm.anchorRow === cmd.row)) return false;
+      m.anchorCol = cmd.col;
+      m.anchorRow = cmd.row;
+      m.moveCdUntil = state.clock + MECHA.moveCooldown;
+      const x = (cmd.col + 0.5) * CELL;
+      const y = (cmd.row + 0.5) * CELL;
+      addRing(x, y, MECHA.color, 8, 46, 0.4);
+      notify();
+      return true;
+    }
+
+    if (cmd.type === 'UPGRADE_MECHA') {
+      const m = state.mechas.find((mm) => mm.id === cmd.id);
+      if (!m || m.level >= 2) return false;
+      // 协作：只能操作自己的机甲
+      if (state.coop && m.owner !== player) return false;
+      const cost = MECHA.levels[m.level + 1].cost;
+      if (goldOf(player) < cost) return false;
+      setGold(player, goldOf(player) - cost);
+      m.level += 1;
+      m.invested += cost;
+      addExplosion(m.x, m.y, MECHA.color, 14, 110);
+      addFloater(m.x, m.y - 34, 'LEVEL UP', '#3DF08C');
+      notify();
+      return true;
+    }
+
     if (cmd.type === 'SELL') {
       const i = state.towers.findIndex((tw) => tw.id === cmd.id);
       if (i < 0) return false;
@@ -837,8 +1004,8 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
   }
 
   function serializeNet(): NetGameState {
-    // 剔除纯装饰数组省带宽；玩法数据（含 zones/techs/golds/killsBy/events）全量保留
-    const { particles, beams, rings, floaters, ...rest } = state;
+    // 剔除纯装饰数组 + 客机不读的 spawnQueue/events 省带宽（事件由联机层在快照外层附带）
+    const { particles, beams, rings, floaters, spawnQueue, events, ...rest } = state;
     return rest;
   }
 

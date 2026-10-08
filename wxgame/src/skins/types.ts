@@ -11,9 +11,9 @@
 import type { Command, Difficulty, GameEngine, TowerType } from '../game/types';
 import type { LEVELS } from '../game/levels';
 import type {
-  DIFFICULTIES, ENEMIES, ENEMY_LIST, TECHS, TOWERS, TOWER_LIST,
+  DIFFICULTIES, ENEMIES, ENEMY_LIST, MECHA, TECHS, TOWERS, TOWER_LIST,
 } from '../game/config';
-import type { drawEnemy, drawTower } from '../game/render';
+import type { drawEnemy, drawMecha, drawTower } from '../game/render';
 import type { hash01 } from '../game/fx';
 import type { sfx } from '../audio';
 import type { track } from '../analytics';
@@ -63,8 +63,12 @@ export interface AppState {
   scroll: number;
   dragY: number | null;
   dragAcc: number;
-  placing: TowerType | null;
+  placing: TowerType | 'mecha' | null;
   selectedId: number | null;
+  /** 选中的机甲 id（底部栏呈现升级/转移面板）；null 表示未选中 */
+  selectedMecha: number | null;
+  /** 转移阵地模式：待选目标格的机甲 id；null 表示未在转移 */
+  movingMecha: number | null;
   result: { won: boolean } | null;
   techShownAt: number;
   techPickedAt: number;
@@ -161,6 +165,9 @@ export interface SkinEnv {
   hash01: typeof hash01;       // 确定性 hash → [0,1)，闪烁/抖动一律用它保证帧间一致
   drawTower: typeof drawTower; // 引擎同款炮塔矢量绘制
   drawEnemy: typeof drawEnemy; // 引擎同款敌人矢量绘制
+  drawMecha: typeof drawMecha; // 引擎同款机甲矢量绘制
+  /** 塔栏末位的机甲槽（几何与主文件 barSlotAt 一致；皮肤在自家塔槽 forEach 之后、clip 区域内调用） */
+  drawMechaBarSlot(engine: GameEngine): void;
 
   // ---- 状态访问 ----
   app: AppState;
@@ -178,7 +185,6 @@ export interface SkinEnv {
 
   // ---- 数据（引擎配置，直接引用共享） ----
   LEVELS: typeof LEVELS;
-  DIFF_LIST: Difficulty[];
   DIFFICULTIES: typeof DIFFICULTIES;
   TOWER_LIST: typeof TOWER_LIST;
   ENEMY_LIST: typeof ENEMY_LIST;
@@ -187,6 +193,7 @@ export interface SkinEnv {
   TECHS: typeof TECHS;
   TOWER_ORDER: TowerType[];
   TOWER_UNLOCK: Record<TowerType, number>;
+  MECHA: typeof MECHA;
   SELL_RATE: number;
   STORY_PARAS: string[];
   CODEX_TABS: [CodexTab, string][];

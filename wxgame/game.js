@@ -302,12 +302,76 @@
     ENEMIES.lurker,
     ENEMIES.boss
   ];
+  var MECHA = {
+    name: "\u7834\u6653\u8005\u673A\u7532",
+    nameEn: "DAWNBREAKER",
+    color: "#9FD8FF",
+    moveSpeed: 2.2,
+    leash: 4.5,
+    moveCooldown: 6,
+    levels: [
+      { damage: 16, rate: 1.6, range: 2.8, missileDamage: 50, missileSplash: 1, missileEvery: 5, cost: 250 },
+      { damage: 28, rate: 1.8, range: 3, missileDamage: 80, missileSplash: 1.1, missileEvery: 4.5, cost: 260 },
+      { damage: 48, rate: 2, range: 3.2, missileDamage: 130, missileSplash: 1.2, missileEvery: 4, cost: 420 }
+    ]
+  };
   var DIFFICULTIES = {
-    easy: { id: "easy", name: "\u7B80\u5355", gold: 500, lives: 25, hpMul: 0.85, speedMul: 1, label: "\u65B0\u5175\u8BAD\u7EC3" },
-    normal: { id: "normal", name: "\u666E\u901A", gold: 350, lives: 16, hpMul: 1.12, speedMul: 1.03, label: "\u6807\u51C6\u6218\u5F79" },
-    hard: { id: "hard", name: "\u56F0\u96BE", gold: 280, lives: 12, hpMul: 1.3, speedMul: 1.08, label: "\u8001\u5175\u8BD5\u70BC" }
+    normal: { id: "normal", name: "\u666E\u901A", gold: 260, lives: 16, hpMul: 1.32, speedMul: 1.08, label: "\u6807\u51C6\u6218\u5F79" }
   };
   var PREP_TIME = 3;
+  var ECONOMY = {
+    rewardMul: 0.55,
+    // 击杀金币 ×0.55
+    bonusMul: 0.5,
+    // 波次奖励 ×0.5
+    techEvery: 3
+    // 每 3 波清空后发放一次科技三选一
+  };
+  var LADDER = {
+    countBase: 1.5,
+    // 全局数量基数 ×1.5（每波怪量整体加厚）
+    countPerLevel: 0.05,
+    // 每章怪物数量 +5%（满值）
+    countPerWave: 0.05,
+    // 关内每波数量 +5%（越往后怪越多）
+    countCap: 2.5,
+    // 数量总倍率上限（同屏性能保护）
+    intervalMul: 1.2,
+    // 出怪间隔 ×1.2（波次拖长，压力更持续而非一波秒光）
+    hpPerLevel: 0.05,
+    // 每章怪物血量 +5%（满值）
+    hpPerWave: 0.1,
+    // 每波血量 +10%（怪物等级随波次递增）
+    speedPerLevel: 0.015,
+    // 每章速度 +1.5%
+    speedPerWave: 5e-3,
+    // 每波速度 +0.5%
+    speedCap: 1.3,
+    // 速度总倍率上限（不含难度系数）
+    startGoldPerLevel: 60,
+    // 每章起始金币 +60（高章节怪物更硬，开局火力同步抬升）
+    chapterRampWaves: 9
+    // 章节倍率爬升波数：第 1 波为 0、第 10 波起达到满值
+  };
+  function chapterRamp(levelId, wave) {
+    if (levelId < 1) return 0;
+    return Math.min(1, (wave - 1) / LADDER.chapterRampWaves);
+  }
+  function ladderCountMul(levelId, wave) {
+    const lvl = 1 + LADDER.countPerLevel * (levelId - 1) * chapterRamp(levelId, wave);
+    return Math.min(LADDER.countCap, LADDER.countBase * lvl * (1 + LADDER.countPerWave * (wave - 1)));
+  }
+  function ladderHpMul(levelId, wave) {
+    const lvl = 1 + LADDER.hpPerLevel * (levelId - 1) * chapterRamp(levelId, wave);
+    return lvl * (1 + LADDER.hpPerWave * (wave - 1));
+  }
+  function ladderSpeedMul(levelId, wave) {
+    const lvl = 1 + LADDER.speedPerLevel * (levelId - 1) * chapterRamp(levelId, wave);
+    return Math.min(LADDER.speedCap, lvl * (1 + LADDER.speedPerWave * (wave - 1)));
+  }
+  function threatStars(levelId) {
+    return Math.min(5, 1 + Math.floor(Math.max(0, levelId - 1) / 3));
+  }
   var TECHS = {
     dmg: {
       id: "dmg",
@@ -534,6 +598,38 @@
           bonus: 500,
           isBoss: true,
           comm: "\u6700\u7EC8\u8B66\u544A\uFF1A\u5DE8\u517D\u6BCD\u4F53\u4EB2\u81EA\u538B\u9635\u3002\u4E3A\u4E86\u6B96\u6C11\u5730\uFF0C\u5F00\u706B\uFF01"
+        },
+        {
+          wave: 16,
+          groups: [
+            { type: "crawler", count: 20, interval: 0.4 },
+            { type: "speeder", count: 14, interval: 0.4 },
+            { type: "tanker", count: 5, interval: 0.6 }
+          ],
+          bonus: 260,
+          isBoss: false,
+          comm: "\u6BCD\u4F53\u5012\u4E0B\u4E86\uFF0C\u4F46\u866B\u7FA4\u5F7B\u5E95\u72C2\u66B4\u2014\u2014\u6B8B\u90E8\u503E\u5DE2\u800C\u51FA\uFF01\u6307\u6325\u5B98\uFF0C\u7A33\u4F4F\u9635\u7EBF\uFF01"
+        },
+        {
+          wave: 17,
+          groups: [
+            { type: "splitter", count: 12, interval: 0.4 },
+            { type: "lurker", count: 12, interval: 0.4 },
+            { type: "tanker", count: 6, interval: 0.5 }
+          ],
+          bonus: 300,
+          isBoss: false
+        },
+        {
+          wave: 18,
+          groups: [
+            { type: "boss", count: 1, interval: 0.8, hpOverride: 18e3, rewardOverride: 1500 },
+            { type: "crawler", count: 12, interval: 0.6 },
+            { type: "lurker", count: 8, interval: 0.5 }
+          ],
+          bonus: 700,
+          isBoss: true,
+          comm: "\u8B66\u544A\uFF1A\u6BCD\u4F53\u6B8B\u9AB8\u91CD\u7EC4\u4E3A\u7B2C\u4E8C\u5F62\u6001\u300C\u6E6E\u706D\u66B4\u541B\u300D\uFF01\u8FD9\u624D\u662F\u5916\u6CBF\u771F\u6B63\u7684\u6700\u540E\u4E00\u6218\u2014\u2014\u5F00\u706B\uFF01"
         }
       ]
     },
@@ -664,6 +760,28 @@
           bonus: 550,
           isBoss: true,
           comm: "\u56DE\u5ECA\u4E4B\u4E3B\u73B0\u8EAB\u5357\u8DEF\u3002\u8FD9\u662F\u56DE\u5ECA\u6700\u540E\u4E00\u6218\u2014\u2014\u503E\u5C3D\u6240\u6709\u706B\u529B\uFF01"
+        },
+        {
+          wave: 13,
+          groups: [
+            { type: "crawler", count: 16, interval: 0.4 },
+            { type: "speeder", count: 12, interval: 0.4 },
+            { type: "splitter", count: 8, interval: 0.5 }
+          ],
+          bonus: 320,
+          isBoss: false,
+          comm: "\u56DE\u5ECA\u4E4B\u4E3B\u5012\u4E0B\u540E\uFF0C\u866B\u7FA4\u6B8B\u90E8\u6CBF\u53CC\u810A\u75AF\u72C2\u53CD\u6251\u2014\u2014\u5B88\u4F4F\u5408\u6D41\u70B9\uFF01"
+        },
+        {
+          wave: 14,
+          groups: [
+            { type: "boss", count: 1, interval: 0.9, hpOverride: 15e3, rewardOverride: 1100, path: 1 },
+            { type: "lurker", count: 8, interval: 0.5, path: 0 },
+            { type: "tanker", count: 5, interval: 0.6, path: 0 }
+          ],
+          bonus: 750,
+          isBoss: true,
+          comm: "\u300C\u56DE\u5ECA\u4E4B\u4E3B\u300D\u7B2C\u4E8C\u5F62\u6001\u4ECE\u5357\u8DEF\u5CA9\u7F1D\u4E2D\u722C\u51FA\uFF01\u503E\u5C3D\u6240\u6709\u706B\u529B\uFF0C\u7EC8\u7ED3\u5B83\uFF01"
         }
       ]
     },
@@ -816,6 +934,28 @@
           bonus: 650,
           isBoss: true,
           comm: "\u6E6E\u706D\u6BCD\u4F53\u4ECE\u4E1C\u4FA7\u6808\u9053\u4EB2\u4E34\u6218\u573A\u3002\u5168\u4F53\u6CE8\u610F\u2014\u2014\u8FD9\u662F 2242 \u5E74\u7684\u6700\u540E\u4E00\u6218\uFF0C\u5F00\u706B\uFF01"
+        },
+        {
+          wave: 16,
+          groups: [
+            { type: "tanker", count: 8, interval: 0.4 },
+            { type: "splitter", count: 10, interval: 0.4 },
+            { type: "speeder", count: 12, interval: 0.35 }
+          ],
+          bonus: 320,
+          isBoss: false,
+          comm: "\u6BCD\u4F53\u53D7\u521B\uFF0C\u866B\u7FA4\u5B64\u6CE8\u4E00\u63B7\u2014\u2014\u4E1C\u897F\u6808\u9053\u540C\u65F6\u6D8C\u6765\u6700\u540E\u7684\u4E3B\u529B\uFF01"
+        },
+        {
+          wave: 17,
+          groups: [
+            { type: "boss", count: 1, interval: 0.9, hpOverride: 14e3, rewardOverride: 1100, path: 0 },
+            { type: "lurker", count: 8, interval: 0.4, path: 1 },
+            { type: "speeder", count: 10, interval: 0.4, path: 1 }
+          ],
+          bonus: 800,
+          isBoss: true,
+          comm: "\u6E6E\u706D\u6BCD\u4F53\u71C3\u70E7\u751F\u547D\u529B\u8FDB\u5165\u72C2\u66B4\u5F62\u6001\uFF0C\u76F4\u6251\u897F\u4FA7\u80FD\u91CF\u95E8\uFF01\u5168\u4F53\u96C6\u706B\uFF01"
         }
       ]
     }
@@ -947,6 +1087,28 @@
           bonus: 520,
           isBoss: true,
           comm: "\u5893\u7891\u5DE8\u517D\u538B\u9635\u800C\u6765\u2014\u2014\u4E3A\u4E86\u4E0B\u4E00\u9053\u9632\u7EBF\uFF0C\u5168\u706B\u529B\u5F00\u52A8\uFF01"
+        },
+        {
+          wave: 13,
+          groups: [
+            { type: "crawler", count: 18, interval: 0.35 },
+            { type: "speeder", count: 14, interval: 0.35 },
+            { type: "tanker", count: 6, interval: 0.5 }
+          ],
+          bonus: 300,
+          isBoss: false,
+          comm: "\u5893\u7891\u5DE8\u517D\u9635\u4EA1\u6FC0\u6012\u4E86\u866B\u7FA4\u2014\u2014\u575F\u573A\u6B8B\u5175\u503E\u5DE2\u800C\u51FA\uFF01"
+        },
+        {
+          wave: 14,
+          groups: [
+            { type: "boss", count: 1, interval: 0.8, hpOverride: 2e4, rewardOverride: 1400 },
+            { type: "splitter", count: 10, interval: 0.5 },
+            { type: "lurker", count: 8, interval: 0.45 }
+          ],
+          bonus: 700,
+          isBoss: true,
+          comm: "\u866B\u5DE2\u7A7A\u6295\u7684\u300C\u7763\u6218\u5DE8\u517D\u300D\u843D\u5730\uFF01\u6E05\u527F\u575F\u573A\uFF0C\u5C31\u770B\u8FD9\u4E00\u6CE2\uFF01"
         }
       ]
     },
@@ -1077,6 +1239,28 @@
           bonus: 560,
           isBoss: true,
           comm: "\u300C\u56DE\u58F0\u4E4B\u4E3B\u300D\u4ECE\u5317\u810A\u73B0\u8EAB\u3002\u96C6\u706B\uFF01\u522B\u8BA9\u5B83\u8FC7\u53BB\uFF01"
+        },
+        {
+          wave: 13,
+          groups: [
+            { type: "lurker", count: 12, interval: 0.4 },
+            { type: "splitter", count: 10, interval: 0.4 },
+            { type: "speeder", count: 14, interval: 0.35 }
+          ],
+          bonus: 300,
+          isBoss: false,
+          comm: "\u56DE\u58F0\u5ECA\u9053\u5168\u9762\u6E17\u6C34\u2014\u2014\u53CC\u810A\u6B8B\u5175\u540C\u65F6\u538B\u4E0A\uFF01"
+        },
+        {
+          wave: 14,
+          groups: [
+            { type: "boss", count: 1, interval: 0.8, hpOverride: 22e3, rewardOverride: 1500, path: 0 },
+            { type: "speeder", count: 10, interval: 0.45, path: 1 },
+            { type: "tanker", count: 5, interval: 0.6, path: 1 }
+          ],
+          bonus: 720,
+          isBoss: true,
+          comm: "\u300C\u56DE\u58F0\u4E4B\u4E3B\u300D\u88F9\u7740\u51B0\u7532\u5377\u571F\u91CD\u6765\uFF01\u6D77\u5CAD\u51B3\u6218\uFF0C\u96C6\u706B\u5317\u810A\uFF01"
         }
       ]
     },
@@ -1208,6 +1392,28 @@
           bonus: 600,
           isBoss: true,
           comm: "\u67A2\u7EBD\u7EDE\u8089\u673A\u6700\u540E\u7684\u543C\u58F0\u2014\u2014\u5DE8\u517D\u8D70\u4E86\u6700\u77ED\u7684\u5317\u76F4\u9053\uFF01\u96C6\u706B\uFF01\u96C6\u706B\uFF01"
+        },
+        {
+          wave: 13,
+          groups: [
+            { type: "crawler", count: 20, interval: 0.3 },
+            { type: "speeder", count: 16, interval: 0.3 },
+            { type: "splitter", count: 10, interval: 0.4 }
+          ],
+          bonus: 320,
+          isBoss: false,
+          comm: "\u88C2\u7F1D\u5410\u51FA\u6700\u540E\u4E00\u6279\u866B\u6F6E\u2014\u2014\u4E09\u6761\u6ED1\u9053\u5168\u90E8\u6EE1\u8D1F\u8377\uFF01"
+        },
+        {
+          wave: 14,
+          groups: [
+            { type: "boss", count: 1, interval: 0.8, hpOverride: 24e3, rewardOverride: 1600, path: 2 },
+            { type: "tanker", count: 6, interval: 0.5, path: 0 },
+            { type: "lurker", count: 8, interval: 0.45, path: 1 }
+          ],
+          bonus: 780,
+          isBoss: true,
+          comm: "\u300C\u6E05\u573A\u8005\u300D\u672C\u5C0A\u722C\u4E0A\u5317\u76F4\u9053\uFF01\u67A2\u7EBD\u5B58\u4EA1\uFF0C\u5728\u6B64\u4E00\u6CE2\uFF01"
         }
       ]
     },
@@ -1334,6 +1540,28 @@
           bonus: 620,
           isBoss: true,
           comm: "\u88C2\u7F1D\u4E3B\u517D\u300C\u566C\u5CA9\u8005\u300D\u94BB\u51FA\u4E86\u55B7\u53E3\uFF01\u5168\u7EBF\u96C6\u706B\uFF0C\u522B\u8BA9\u5B83\u7FFB\u8FC7\u5CA9\u67B6\uFF01"
+        },
+        {
+          wave: 13,
+          groups: [
+            { type: "tanker", count: 8, interval: 0.45 },
+            { type: "splitter", count: 12, interval: 0.4 },
+            { type: "lurker", count: 10, interval: 0.4 }
+          ],
+          bonus: 300,
+          isBoss: false,
+          comm: "\u88C2\u7F1D\u5D29\u584C\u524D\u7684\u6700\u540E\u4E00\u6B21\u55B7\u53D1\u2014\u2014\u866B\u7FA4\u503E\u5DE2\u800C\u51FA\uFF01"
+        },
+        {
+          wave: 14,
+          groups: [
+            { type: "boss", count: 1, interval: 0.8, hpOverride: 27e3, rewardOverride: 1700, path: 1 },
+            { type: "crawler", count: 16, interval: 0.45, path: 0 },
+            { type: "speeder", count: 12, interval: 0.4, path: 1 }
+          ],
+          bonus: 800,
+          isBoss: true,
+          comm: "\u300C\u566C\u5CA9\u8005\u300D\u541E\u98DF\u540C\u65CF\u5C38\u4F53\u540E\u81A8\u5316\u6210\u5B8C\u5168\u4F53\uFF01\u70B8\u584C\u88C2\u7F1D\u524D\uFF0C\u5148\u5E72\u6389\u5B83\uFF01"
         }
       ]
     },
@@ -1475,6 +1703,28 @@
           bonus: 320,
           isBoss: false,
           comm: "\u64A4\u9000\u524D\u6700\u540E\u4E00\u6CE2\u517D\u6F6E\uFF01\u6307\u6325\u5B98\uFF0C\u628A\u51B0\u6676\u9635\u5730\u53D8\u6210\u5B83\u4EEC\u7684\u575F\u573A\uFF01"
+        },
+        {
+          wave: 14,
+          groups: [
+            { type: "speeder", count: 18, interval: 0.3, path: 1 },
+            { type: "lurker", count: 12, interval: 0.35, path: 0 },
+            { type: "tanker", count: 6, interval: 0.5 }
+          ],
+          bonus: 340,
+          isBoss: false,
+          comm: "\u51B0\u76D6\u5F7B\u5E95\u788E\u88C2\u2014\u2014\u5C01\u4E0D\u4F4F\u7684\u866B\u7FA4\u4ECE\u4E24\u6761\u88C2\u7F1D\u4E00\u8D77\u6D8C\u51FA\uFF01"
+        },
+        {
+          wave: 15,
+          groups: [
+            { type: "boss", count: 1, interval: 0.8, hpOverride: 3e4, rewardOverride: 1800, path: 0 },
+            { type: "splitter", count: 10, interval: 0.45, path: 1 },
+            { type: "lurker", count: 8, interval: 0.4, path: 0 }
+          ],
+          bonus: 820,
+          isBoss: true,
+          comm: "\u300C\u878D\u51B0\u517D\u300D\u541E\u4E0B\u5BC6\u5EA6\u70B8\u5F39\u540E\u53D8\u5F02\u66B4\u8D70\uFF01\u54E8\u7AD9\u6700\u540E\u4E00\u6218\uFF0C\u6253\u5149\u6240\u6709\u5F39\u836F\uFF01"
         }
       ]
     },
@@ -1612,6 +1862,27 @@
           bonus: 700,
           isBoss: true,
           comm: "\u53CC\u5DE8\u517D\u540C\u65F6\u8FC7\u6865\uFF01\u5149\u77DB\u9635\u5217\u7531\u4F60\u63A9\u62A4\u2014\u2014\u8FD9\u662F\u6700\u540E\u7684\u6865\u5934\u5821\u6218\u5F79\uFF01"
+        },
+        {
+          wave: 14,
+          groups: [
+            { type: "splitter", count: 14, interval: 0.35 },
+            { type: "lurker", count: 12, interval: 0.35 },
+            { type: "tanker", count: 8, interval: 0.45 }
+          ],
+          bonus: 360,
+          isBoss: false,
+          comm: "\u866B\u5DE2\u5F00\u59CB\u4E0D\u8BA1\u4EE3\u4EF7\u5730\u53CD\u6251\u2014\u2014\u6865\u5934\u5821\u7EDD\u4E0D\u80FD\u4E22\uFF01"
+        },
+        {
+          wave: 15,
+          groups: [
+            { type: "boss", count: 1, interval: 0.8, hpOverride: 34e3, rewardOverride: 2e3, path: 0 },
+            { type: "boss", count: 1, interval: 1.2, hpOverride: 17e3, rewardOverride: 1e3, path: 1 }
+          ],
+          bonus: 900,
+          isBoss: true,
+          comm: "\u300C\u866B\u5DE2\u5148\u950B\u5B98\u300D\u4EB2\u7387\u62A4\u536B\u517D\u51B2\u6865\uFF01\u5149\u77DB\u9635\u5217\u53EA\u5DEE\u6700\u540E\u4E00\u6B21\u5145\u80FD\u2014\u2014\u63A9\u62A4\u5230\u5E95\uFF01"
         }
       ]
     },
@@ -1762,6 +2033,28 @@
           bonus: 750,
           isBoss: true,
           comm: "\u514D\u75AB\u4E2D\u67A2\u7684\u6BCD\u4F53\u300C\u819C\u738B\u300D\u538B\u5883\uFF01\u767B\u9646\u573A\u7684\u5B58\u4EA1\uFF0C\u5C31\u770B\u8FD9\u4E00\u6CE2\uFF01"
+        },
+        {
+          wave: 15,
+          groups: [
+            { type: "crawler", count: 24, interval: 0.25 },
+            { type: "speeder", count: 18, interval: 0.25 },
+            { type: "splitter", count: 12, interval: 0.35 }
+          ],
+          bonus: 380,
+          isBoss: false,
+          comm: "\u5916\u819C\u5168\u9762\u75C9\u631B\u2014\u2014\u518D\u751F\u7EC4\u7EC7\u628A\u6240\u6709\u50A8\u5907\u5175\u529B\u4E00\u6B21\u6027\u55B7\u4E86\u51FA\u6765\uFF01"
+        },
+        {
+          wave: 16,
+          groups: [
+            { type: "boss", count: 1, interval: 0.8, hpOverride: 42e3, rewardOverride: 2400 },
+            { type: "lurker", count: 12, interval: 0.35 },
+            { type: "tanker", count: 6, interval: 0.5 }
+          ],
+          bonus: 950,
+          isBoss: true,
+          comm: "\u300C\u819C\u738B\u300D\u5438\u6536\u518D\u751F\u7EC4\u7EC7\u540E\u8FDB\u5316\u4E3A\u300C\u4E07\u819C\u4E4B\u738B\u300D\uFF01\u70E7\u7A7F\u5B83\uFF0C\u522B\u8BA9\u5B83\u6108\u5408\uFF01"
         }
       ]
     },
@@ -1912,6 +2205,28 @@
           bonus: 380,
           isBoss: false,
           comm: "\u866B\u5DE2\u7684\u514D\u75AB\u519B\u56E2\u5168\u7EBF\u51FA\u51FB\u3002\u5B88\u4F4F\u6CF5\u7AD9\u524D\u7684\u6700\u540E\u4E00\u6BB5\u8D70\u5ECA\uFF01"
+        },
+        {
+          wave: 15,
+          groups: [
+            { type: "tanker", count: 12, interval: 0.35 },
+            { type: "splitter", count: 14, interval: 0.3 },
+            { type: "speeder", count: 16, interval: 0.25 }
+          ],
+          bonus: 400,
+          isBoss: false,
+          comm: "\u8840\u7BA1\u58C1\u5168\u90E8\u7834\u88C2\u2014\u2014\u866B\u5DE2\u628A\u514D\u75AB\u9884\u5907\u961F\u4E5F\u62BC\u4E86\u4E0A\u6765\uFF01"
+        },
+        {
+          wave: 16,
+          groups: [
+            { type: "boss", count: 1, interval: 0.8, hpOverride: 45e3, rewardOverride: 2600, path: 1 },
+            { type: "lurker", count: 12, interval: 0.3, path: 0 },
+            { type: "tanker", count: 6, interval: 0.5, path: 0 }
+          ],
+          bonus: 980,
+          isBoss: true,
+          comm: "\u300C\u8840\u5FC3\u5B88\u536B\u300D\u5206\u88C2\u91CD\u7EC4\u4E3A\u300C\u8840\u5FC3\u9B54\u50CF\u300D\uFF01\u957F\u5ECA\u5C3D\u5934\uFF0C\u51B3\u4E00\u6B7B\u6218\uFF01"
         }
       ]
     },
@@ -2063,6 +2378,27 @@
           bonus: 800,
           isBoss: true,
           comm: "\u6CF5\u7AD9\u5D29\u584C\u524D\u6700\u540E\u4E00\u6218\u2014\u2014\u300C\u5FC3\u5BA4\u603B\u7BA1\u300D\u4EB2\u81EA\u5835\u95E8\uFF01\u6321\u4F4F\u5B83\uFF0C\u6211\u4EEC\u56DE\u5BB6\uFF01"
+        },
+        {
+          wave: 15,
+          groups: [
+            { type: "splitter", count: 16, interval: 0.3 },
+            { type: "lurker", count: 14, interval: 0.25 },
+            { type: "crawler", count: 20, interval: 0.25 }
+          ],
+          bonus: 440,
+          isBoss: false,
+          comm: "\u6CF5\u7AD9\u5F00\u59CB\u5D29\u584C\uFF0C\u5FC3\u5BA4\u536B\u961F\u9677\u5165\u75AF\u72C2\u2014\u2014\u64A4\u79BB\u7A97\u53E3\u53EA\u5269\u6700\u540E\u4E24\u5206\u949F\uFF01"
+        },
+        {
+          wave: 16,
+          groups: [
+            { type: "boss", count: 1, interval: 0.8, hpOverride: 48e3, rewardOverride: 2800, path: 1 },
+            { type: "boss", count: 1, interval: 1.3, hpOverride: 24e3, rewardOverride: 1400, path: 0 }
+          ],
+          bonus: 1050,
+          isBoss: true,
+          comm: "\u300C\u5FC3\u5BA4\u603B\u7BA1\u300D\u4E0E\u6B8B\u5B58\u536B\u961F\u957F\u5408\u4F53\u5835\u95E8\uFF01\u5F15\u7206\u51B2\u51FB\u6CE2\u5DF2\u5230\u8EAB\u540E\u2014\u2014\u6740\u51FA\u53BB\uFF01"
         }
       ]
     },
@@ -2101,8 +2437,8 @@
         {
           wave: 3,
           groups: [
-            { type: "splitter", count: 8, interval: 0.5 },
-            { type: "lurker", count: 6, interval: 0.5, path: 2 }
+            { type: "splitter", count: 6, interval: 0.5 },
+            { type: "lurker", count: 4, interval: 0.5, path: 2 }
           ],
           bonus: 80,
           isBoss: false
@@ -2110,9 +2446,9 @@
         {
           wave: 4,
           groups: [
-            { type: "tanker", count: 5, interval: 0.75, path: 0 },
-            { type: "speeder", count: 10, interval: 0.45, path: 2 },
-            { type: "lurker", count: 6, interval: 0.55, path: 1 }
+            { type: "tanker", count: 4, interval: 0.75, path: 0 },
+            { type: "speeder", count: 8, interval: 0.45, path: 2 },
+            { type: "lurker", count: 4, interval: 0.55, path: 1 }
           ],
           bonus: 100,
           isBoss: false
@@ -2120,8 +2456,8 @@
         {
           wave: 5,
           groups: [
-            { type: "lurker", count: 11, interval: 0.4 },
-            { type: "splitter", count: 11, interval: 0.4, path: 1 }
+            { type: "lurker", count: 8, interval: 0.4 },
+            { type: "splitter", count: 8, interval: 0.4, path: 1 }
           ],
           bonus: 130,
           isBoss: false
@@ -2129,7 +2465,7 @@
         {
           wave: 6,
           groups: [
-            { type: "boss", count: 1, interval: 1, hpOverride: 2e4, rewardOverride: 1400, path: 2 },
+            { type: "boss", count: 1, interval: 1, hpOverride: 9e3, rewardOverride: 1400, path: 2 },
             { type: "crawler", count: 14, interval: 0.5, path: 0 }
           ],
           bonus: 380,
@@ -2166,7 +2502,7 @@
         {
           wave: 10,
           groups: [
-            { type: "boss", count: 1, interval: 1, hpOverride: 22e3, rewardOverride: 1500, path: 0 },
+            { type: "boss", count: 1, interval: 1, hpOverride: 12e3, rewardOverride: 1500, path: 0 },
             { type: "lurker", count: 11, interval: 0.35, path: 1 },
             { type: "splitter", count: 9, interval: 0.4, path: 2 }
           ],
@@ -2196,7 +2532,7 @@
         {
           wave: 13,
           groups: [
-            { type: "boss", count: 2, interval: 1.4, hpOverride: 15e3, rewardOverride: 1100 },
+            { type: "boss", count: 2, interval: 1.4, hpOverride: 1e4, rewardOverride: 1100 },
             { type: "speeder", count: 14, interval: 0.35 }
           ],
           bonus: 760,
@@ -2218,7 +2554,7 @@
         {
           wave: 15,
           groups: [
-            { type: "boss", count: 1, interval: 0.6, hpOverride: 55e3, rewardOverride: 5e3, path: 2 },
+            { type: "boss", count: 1, interval: 0.6, hpOverride: 32e3, rewardOverride: 5e3, path: 2 },
             { type: "lurker", count: 12, interval: 0.3, path: 0 },
             { type: "tanker", count: 8, interval: 0.45, path: 1 },
             { type: "speeder", count: 14, interval: 0.3, path: 2 }
@@ -2226,6 +2562,29 @@
           bonus: 1500,
           isBoss: true,
           comm: "\u6E6E\u706D\u4E4B\u5FC3\u672C\u4F53\u538B\u4E0A\u4E2D\u901A\u8DEF\u2014\u2014\u5E15\u7279\u519C\u4E3B\u70AE\u5DF2\u5145\u80FD\u5B8C\u6BD5\uFF01\u6307\u6325\u5B98\uFF0C\u4E3A\u4E86\u8BA9\u9ECE\u660E\u51C6\u65F6\u5230\u6765\u2014\u2014\u5F00\u706B\uFF01"
+        },
+        {
+          wave: 16,
+          groups: [
+            { type: "tanker", count: 14, interval: 0.3 },
+            { type: "splitter", count: 14, interval: 0.25 },
+            { type: "lurker", count: 14, interval: 0.25 },
+            { type: "speeder", count: 18, interval: 0.25 }
+          ],
+          bonus: 520,
+          isBoss: false,
+          comm: "\u6E6E\u706D\u4E4B\u5FC3\u75AF\u72C2\u640F\u52A8\u2014\u2014\u5B83\u628A\u866B\u7FA4\u6700\u540E\u7684\u79CD\u5B50\u5168\u90E8\u5410\u4E86\u51FA\u6765\uFF01"
+        },
+        {
+          wave: 17,
+          groups: [
+            { type: "boss", count: 1, interval: 0.6, hpOverride: 48e3, rewardOverride: 5e3, path: 2 },
+            { type: "boss", count: 1, interval: 1.2, hpOverride: 14e3, rewardOverride: 1500, path: 0 },
+            { type: "boss", count: 1, interval: 1.2, hpOverride: 14e3, rewardOverride: 1500, path: 1 }
+          ],
+          bonus: 1800,
+          isBoss: true,
+          comm: "\u6E6E\u706D\u4E4B\u5FC3\u5206\u88C2\u51FA\u53CC\u751F\u62A4\u536B\uFF0C\u4E09\u8DEF\u603B\u653B\uFF01\u5E15\u7279\u519C\u4E3B\u70AE\u8D85\u8F7D\u5145\u80FD\u2014\u20142242 \u5E74\u7684\u6700\u540E\u4E00\u53D1\uFF0C\u5F00\u706B\uFF01\uFF01"
         }
       ]
     }
@@ -2408,15 +2767,16 @@
     const lowSpec = typeof navigator !== "undefined" && (navigator.hardwareConcurrency ?? 8) <= 4;
     const particleScale = lowSpec ? 0.5 : 1;
     const coop = !!opts?.coop;
+    const chapterGold = level.id >= 1 ? Math.round((level.id - 1) * LADDER.startGoldPerLevel) : 0;
     const startGolds = coop ? [
-      opts?.startGold?.[0] ?? DIFFICULTIES.normal.gold,
-      opts?.startGold?.[1] ?? DIFFICULTIES.normal.gold
+      (opts?.startGold?.[0] ?? DIFFICULTIES.normal.gold) + chapterGold,
+      (opts?.startGold?.[1] ?? DIFFICULTIES.normal.gold) + chapterGold
     ] : null;
     const state = {
       phase: "prep",
       clock: 0,
       timeSec: 0,
-      gold: startGolds ? startGolds[0] : diff.gold,
+      gold: startGolds ? startGolds[0] : diff.gold + chapterGold,
       lives: diff.lives,
       maxLives: diff.lives,
       coop,
@@ -2429,6 +2789,7 @@
       speed: 1,
       enemies: [],
       towers: [],
+      mechas: [],
       projectiles: [],
       beams: [],
       particles: [],
@@ -2519,8 +2880,8 @@
       return e.type === "lurker" && e.stealthT % 4 >= 3;
     }
     function scaledHp(type, wave, override) {
-      if (override !== void 0) return Math.round(override * diff.hpMul);
-      return Math.round(ENEMIES[type].hp * (1 + 0.12 * (wave - 1)) * diff.hpMul);
+      if (override !== void 0) return override;
+      return Math.round(ENEMIES[type].hp * ladderHpMul(level.id, wave) * diff.hpMul);
     }
     function spawnEnemy(item, dist = 0) {
       const def = ENEMIES[item.type];
@@ -2531,8 +2892,10 @@
         maxHp: 0,
         dist,
         path: item.path ?? 0,
-        speed: def.speed * diff.speedMul,
-        reward: item.rewardOverride ?? def.reward,
+        speed: def.speed * diff.speedMul * ladderSpeedMul(level.id, state.wave),
+        // 击杀奖励随难度阶梯（章节×波次血量倍率）同步放大：金币产出始终与怪物硬度成比例，
+        // 高章节经济能跟上火力需求；rewardOverride（BOSS 等）保持表记面值
+        reward: item.rewardOverride ?? Math.max(1, Math.round(def.reward * ladderHpMul(level.id, state.wave))),
         leak: def.leak,
         slowUntil: 0,
         slowPct: 0,
@@ -2555,13 +2918,16 @@
     function buildSpawnQueue(wave) {
       const def = level.waves[wave - 1];
       const pathCount = map.paths.length;
+      const cntMul = ladderCountMul(level.id, wave);
       let rr2 = 0;
       const pools = def.groups.map((g) => {
         const base = rr2;
-        if (g.path === void 0) rr2 += g.count;
-        return Array.from({ length: g.count }, (_, i) => ({
+        const count = g.type === "boss" ? g.count : Math.max(g.count, Math.round(g.count * cntMul));
+        if (g.path === void 0) rr2 += count;
+        return Array.from({ length: count }, (_, i) => ({
           type: g.type,
-          interval: g.interval,
+          // 节奏系数：整体拉长出怪间隔，单波持续时间更久、压力更持续
+          interval: g.interval * LADDER.intervalMul,
           path: g.path ?? (base + i) % pathCount,
           hpOverride: g.hpOverride,
           rewardOverride: g.rewardOverride
@@ -2582,7 +2948,7 @@
       }
       return queue2;
     }
-    function applyDamage(e, raw, source, tower) {
+    function applyDamage(e, raw, source, killer) {
       if (e.hp <= 0) return;
       let dmg = raw * dmgMul() * critMul();
       const armored = e.type === "tanker" || e.isBoss;
@@ -2595,22 +2961,22 @@
         e.enraged = true;
         e.speed *= 1.4;
       }
-      if (e.hp <= 0) killEnemy(e, tower);
+      if (e.hp <= 0) killEnemy(e, killer);
     }
-    function killEnemy(e, tower) {
+    function killEnemy(e, killer) {
       e.hp = 0;
       state.kills += 1;
-      const earned = Math.max(1, Math.round(e.reward * goldMul()));
+      const earned = Math.max(1, Math.round(e.reward * goldMul() * ECONOMY.rewardMul));
       if (state.golds) {
-        const owner = tower?.owner ?? 0;
+        const owner = killer?.owner ?? 0;
         state.golds[owner] += earned;
         state.gold = state.golds[0];
-        if (tower) state.killsBy[owner] += 1;
+        if (killer) state.killsBy[owner] += 1;
       } else {
         state.gold += earned;
       }
       state.goldEarned += earned;
-      if (tower) tower.kills += 1;
+      if (killer) killer.kills += 1;
       const p = map.posAt(e.path, e.dist);
       const color = e.isBoss ? "#FF3D81" : "#FFC94D";
       addExplosion(p.x, p.y, e.isBoss ? "#FF3D81" : "#B8FF3D", e.isBoss ? 26 : 12, e.isBoss ? 200 : 120);
@@ -2627,7 +2993,7 @@
       if (e.type === "splitter") {
         for (let i = 0; i < 2; i++) {
           spawnEnemy(
-            { type: "crawler", interval: 0, path: e.path, hpOverride: Math.round(scaledHp("crawler", state.wave) * 0.6 / diff.hpMul) },
+            { type: "crawler", interval: 0, path: e.path, hpOverride: Math.round(scaledHp("crawler", state.wave) * 0.6) },
             Math.max(0, e.dist - i * 14)
           );
         }
@@ -2867,6 +3233,90 @@
       else if (t.type === "plasma") firePlasma(t, target);
       else fireFrost(t, target);
     }
+    function updateMecha(m, dt) {
+      const lv = MECHA.levels[m.level];
+      const ax = (m.anchorCol + 0.5) * CELL;
+      const ay = (m.anchorRow + 0.5) * CELL;
+      let anchorTarget = null;
+      for (const e of state.enemies) {
+        if (e.hp <= 0) continue;
+        const p2 = map.posAt(e.path, e.dist);
+        if (Math.hypot(p2.x - ax, p2.y - ay) > MECHA.leash * CELL) continue;
+        if (!anchorTarget || e.dist > anchorTarget.dist) anchorTarget = e;
+      }
+      let dx0 = ax;
+      let dy0 = ay;
+      if (anchorTarget) {
+        const p2 = map.posAt(anchorTarget.path, anchorTarget.dist);
+        const ddx = p2.x - ax;
+        const ddy = p2.y - ay;
+        const dA = Math.hypot(ddx, ddy) || 1;
+        const stand = Math.min(Math.max(0, dA - lv.range * CELL * 0.8), MECHA.leash * CELL);
+        dx0 = ax + ddx / dA * stand;
+        dy0 = ay + ddy / dA * stand;
+      }
+      const mx = dx0 - m.x;
+      const my = dy0 - m.y;
+      const md = Math.hypot(mx, my);
+      if (md > 2) {
+        const step = Math.min(md, MECHA.moveSpeed * CELL * dt);
+        m.x += mx / md * step;
+        m.y += my / md * step;
+        m.walkT += dt;
+        if (Math.random() <= particleScale * 0.6) {
+          state.particles.push({
+            id: uid++,
+            x: m.x + (Math.random() - 0.5) * 8,
+            y: m.y + 14,
+            vx: (Math.random() - 0.5) * 14,
+            vy: 26 + Math.random() * 18,
+            ttl: 0.25,
+            maxTtl: 0.25,
+            color: "#9FD8FF",
+            size: 1.5 + Math.random() * 1.5
+          });
+        }
+      }
+      m.cooldown -= dt;
+      m.missileT -= dt;
+      let target = null;
+      for (const e of state.enemies) {
+        if (e.hp <= 0 || isInvisible(e)) continue;
+        const p2 = map.posAt(e.path, e.dist);
+        if (Math.hypot(p2.x - m.x, p2.y - m.y) > lv.range * CELL) continue;
+        if (!target || e.dist > target.dist) target = e;
+      }
+      if (!target) return;
+      const p = map.posAt(target.path, target.dist);
+      m.aimX = p.x;
+      m.aimY = p.y;
+      if (m.cooldown <= 0) {
+        m.cooldown = 1 / lv.rate;
+        m.lastFireAt = state.clock;
+        addBeam(m.x, m.y - 8, p.x, p.y, "#9FD8FF", 2.5, 0.12);
+        applyDamage(target, lv.damage, "mecha", m);
+      }
+      if (m.missileT <= 0) {
+        m.missileT = lv.missileEvery;
+        state.projectiles.push({
+          id: uid++,
+          kind: "missile",
+          fromX: m.x - 10,
+          fromY: m.y - 16,
+          x: m.x - 10,
+          y: m.y - 16,
+          tx: p.x,
+          ty: p.y,
+          t: 0,
+          dur: 0.4,
+          damage: lv.missileDamage,
+          splash: lv.missileSplash,
+          stun: 0,
+          towerId: m.id
+        });
+        pushEvent({ type: "sfx", name: "missile" });
+      }
+    }
     function startWave() {
       state.phase = "combat";
       state.spawnQueue = buildSpawnQueue(state.wave);
@@ -2877,25 +3327,31 @@
     }
     function clearWave() {
       const def = level.waves[state.wave - 1];
+      const bonus = Math.max(10, Math.round(def.bonus * ECONOMY.bonusMul));
       if (state.golds) {
-        const half = Math.round(def.bonus / 2);
+        const half = Math.round(bonus / 2);
         state.golds[0] += half;
-        state.golds[1] += def.bonus - half;
+        state.golds[1] += bonus - half;
         state.gold = state.golds[0];
       } else {
-        state.gold += def.bonus;
+        state.gold += bonus;
       }
-      state.goldEarned += def.bonus;
-      addFloater(270, 120, `\u6CE2\u6B21\u5956\u52B1 +${def.bonus}`, "#FFC94D");
-      pushEvent({ type: "waveClear", wave: state.wave, bonus: def.bonus });
+      state.goldEarned += bonus;
+      addFloater(270, 120, `\u6CE2\u6B21\u5956\u52B1 +${bonus}`, "#FFC94D");
+      pushEvent({ type: "waveClear", wave: state.wave, bonus });
       if (state.wave >= state.totalWaves) {
         state.phase = "won";
         state.techChoices = null;
         pushEvent({ type: "gameOver", won: true });
       } else {
         state.wave += 1;
-        state.phase = "tech";
-        state.techChoices = rollTechChoices();
+        if (state.wave % ECONOMY.techEvery === 1) {
+          state.phase = "tech";
+          state.techChoices = rollTechChoices();
+        } else {
+          state.phase = "prep";
+          state.prepT = PREP_TIME;
+        }
       }
     }
     function tick(dtReal) {
@@ -2946,13 +3402,14 @@
           pushEvent({ type: "gameOver", won: false });
         }
         for (const t of state.towers) updateTower(t, dt);
+        for (const m of state.mechas) updateMecha(m, dt);
         state.enemies = state.enemies.filter((e) => e.hp > 0);
         for (const pr of state.projectiles) {
           pr.t += dt / pr.dur;
           if (pr.t >= 1) {
             pr.x = pr.tx;
             pr.y = pr.ty;
-            const tower = state.towers.find((tw) => tw.id === pr.towerId);
+            const tower = state.towers.find((tw) => tw.id === pr.towerId) ?? state.mechas.find((mc) => mc.id === pr.towerId);
             if (pr.kind === "plasma") {
               addExplosion(pr.tx, pr.ty, "#FF6B3D", 14, 130);
               addRing(pr.tx, pr.ty, "#FF6B3D", 8, Math.max(30, pr.splash * CELL * 0.9), 0.5);
@@ -3088,6 +3545,7 @@
         const cost = def.levels[0].cost;
         if (!map.isBuildable(cmd.col, cmd.row)) return false;
         if (state.towers.some((t) => t.col === cmd.col && t.row === cmd.row)) return false;
+        if (state.mechas.some((m) => m.anchorCol === cmd.col && m.anchorRow === cmd.row)) return false;
         if (goldOf(player) < cost) return false;
         setGold(player, goldOf(player) - cost);
         const c = { x: (cmd.col + 0.5) * CELL, y: (cmd.row + 0.5) * CELL };
@@ -3129,6 +3587,71 @@
         notify();
         return true;
       }
+      if (cmd.type === "DEPLOY_MECHA") {
+        const cost = MECHA.levels[0].cost;
+        if (state.mechas.some((m) => m.owner === player)) return false;
+        if (!map.isBuildable(cmd.col, cmd.row)) return false;
+        if (state.towers.some((t) => t.col === cmd.col && t.row === cmd.row)) return false;
+        if (state.mechas.some((m) => m.anchorCol === cmd.col && m.anchorRow === cmd.row)) return false;
+        if (goldOf(player) < cost) return false;
+        setGold(player, goldOf(player) - cost);
+        const x = (cmd.col + 0.5) * CELL;
+        const y = (cmd.row + 0.5) * CELL;
+        state.mechas.push({
+          id: uid++,
+          level: 0,
+          x,
+          y,
+          anchorCol: cmd.col,
+          anchorRow: cmd.row,
+          cooldown: 0,
+          missileT: 2,
+          moveCdUntil: 0,
+          aimX: x,
+          aimY: y - 60,
+          lastFireAt: -999,
+          walkT: 0,
+          kills: 0,
+          invested: cost,
+          owner: player
+        });
+        addExplosion(x, y, MECHA.color, 18, 140);
+        addRing(x, y, MECHA.color, 10, 60, 0.5);
+        addFloater(x, y - 34, MECHA.name, MECHA.color);
+        notify();
+        return true;
+      }
+      if (cmd.type === "MOVE_MECHA") {
+        const m = state.mechas.find((mm) => mm.id === cmd.id);
+        if (!m) return false;
+        if (state.coop && m.owner !== player) return false;
+        if (state.clock < m.moveCdUntil) return false;
+        if (!map.isBuildable(cmd.col, cmd.row)) return false;
+        if (state.towers.some((t) => t.col === cmd.col && t.row === cmd.row)) return false;
+        if (state.mechas.some((mm) => mm.id !== m.id && mm.anchorCol === cmd.col && mm.anchorRow === cmd.row)) return false;
+        m.anchorCol = cmd.col;
+        m.anchorRow = cmd.row;
+        m.moveCdUntil = state.clock + MECHA.moveCooldown;
+        const x = (cmd.col + 0.5) * CELL;
+        const y = (cmd.row + 0.5) * CELL;
+        addRing(x, y, MECHA.color, 8, 46, 0.4);
+        notify();
+        return true;
+      }
+      if (cmd.type === "UPGRADE_MECHA") {
+        const m = state.mechas.find((mm) => mm.id === cmd.id);
+        if (!m || m.level >= 2) return false;
+        if (state.coop && m.owner !== player) return false;
+        const cost = MECHA.levels[m.level + 1].cost;
+        if (goldOf(player) < cost) return false;
+        setGold(player, goldOf(player) - cost);
+        m.level += 1;
+        m.invested += cost;
+        addExplosion(m.x, m.y, MECHA.color, 14, 110);
+        addFloater(m.x, m.y - 34, "LEVEL UP", "#3DF08C");
+        notify();
+        return true;
+      }
       if (cmd.type === "SELL") {
         const i = state.towers.findIndex((tw) => tw.id === cmd.id);
         if (i < 0) return false;
@@ -3149,7 +3672,7 @@
       return dispatchAs(0, cmd);
     }
     function serializeNet() {
-      const { particles, beams, rings, floaters, ...rest } = state;
+      const { particles, beams, rings, floaters, spawnQueue, events, ...rest } = state;
       return rest;
     }
     return {
@@ -4014,6 +4537,138 @@
     ctx2.shadowBlur = 12;
     ctx2.fill();
     ctx2.shadowBlur = 0;
+  }
+  function drawMecha(ctx2, level, size, aimAngle, walk, time) {
+    const r = size / 2;
+    const accent = "#9FD8FF";
+    const glow = 0.6 + 0.4 * Math.sin(time * 3);
+    const bob = Math.abs(Math.sin(walk * 8)) * r * 0.06;
+    const step = Math.sin(walk * 8);
+    ctx2.save();
+    ctx2.globalAlpha = 0.35;
+    ctx2.fillStyle = "#000000";
+    ctx2.beginPath();
+    ctx2.ellipse(0, r * 0.72, r * 0.62, r * 0.26, 0, 0, Math.PI * 2);
+    ctx2.fill();
+    ctx2.restore();
+    if (level >= 2) {
+      ctx2.beginPath();
+      ctx2.arc(0, 0, r * 0.95, 0, Math.PI * 2);
+      ctx2.strokeStyle = "rgba(255,201,77,0.5)";
+      ctx2.lineWidth = 1.5;
+      ctx2.setLineDash([9, 7]);
+      ctx2.lineDashOffset = -time * 16;
+      ctx2.stroke();
+      ctx2.setLineDash([]);
+    }
+    ctx2.translate(0, -bob);
+    for (const s of [-1, 1]) {
+      const lift = Math.max(0, step * s) * r * 0.14;
+      ctx2.save();
+      ctx2.translate(s * r * 0.3, r * 0.34 - lift);
+      ctx2.fillStyle = "#22304F";
+      ctx2.strokeStyle = "rgba(159,216,255,0.5)";
+      ctx2.lineWidth = 1;
+      ctx2.beginPath();
+      ctx2.moveTo(-r * 0.13, -r * 0.3);
+      ctx2.lineTo(r * 0.13, -r * 0.3);
+      ctx2.lineTo(r * 0.17, r * 0.3);
+      ctx2.lineTo(-r * 0.17, r * 0.3);
+      ctx2.closePath();
+      ctx2.fill();
+      ctx2.stroke();
+      ctx2.fillStyle = accent;
+      ctx2.globalAlpha = 0.5 + 0.4 * glow;
+      ctx2.beginPath();
+      ctx2.arc(0, r * 0.3, r * 0.05, 0, Math.PI * 2);
+      ctx2.fill();
+      ctx2.restore();
+    }
+    const torsoG = ctx2.createLinearGradient(0, -r * 0.55, 0, r * 0.35);
+    torsoG.addColorStop(0, "#31456E");
+    torsoG.addColorStop(0.6, "#1A2748");
+    torsoG.addColorStop(1, "#0D1528");
+    ctx2.beginPath();
+    ctx2.moveTo(-r * 0.42, -r * 0.28);
+    ctx2.lineTo(-r * 0.3, -r * 0.52);
+    ctx2.lineTo(r * 0.3, -r * 0.52);
+    ctx2.lineTo(r * 0.42, -r * 0.28);
+    ctx2.lineTo(r * 0.36, r * 0.32);
+    ctx2.lineTo(-r * 0.36, r * 0.32);
+    ctx2.closePath();
+    ctx2.fillStyle = torsoG;
+    ctx2.fill();
+    ctx2.strokeStyle = accent;
+    ctx2.globalAlpha = 0.9;
+    ctx2.lineWidth = 1.4;
+    ctx2.stroke();
+    ctx2.globalAlpha = 1;
+    if (level >= 1) {
+      ctx2.fillStyle = "#2A3C62";
+      ctx2.strokeStyle = "rgba(159,216,255,0.65)";
+      ctx2.lineWidth = 1;
+      for (const s of [-1, 1]) {
+        ctx2.beginPath();
+        ctx2.moveTo(s * r * 0.42, -r * 0.5);
+        ctx2.lineTo(s * r * 0.62, -r * 0.34);
+        ctx2.lineTo(s * r * 0.56, -r * 0.14);
+        ctx2.lineTo(s * r * 0.42, -r * 0.22);
+        ctx2.closePath();
+        ctx2.fill();
+        ctx2.stroke();
+      }
+    }
+    ctx2.save();
+    ctx2.fillStyle = "#BDF3FF";
+    ctx2.shadowColor = accent;
+    ctx2.shadowBlur = 8 + 6 * glow;
+    ctx2.beginPath();
+    ctx2.arc(0, -r * 0.12, r * 0.11, 0, Math.PI * 2);
+    ctx2.fill();
+    ctx2.restore();
+    ctx2.fillStyle = "#1A2748";
+    ctx2.strokeStyle = accent;
+    ctx2.lineWidth = 1.2;
+    ctx2.beginPath();
+    ctx2.moveTo(-r * 0.18, -r * 0.52);
+    ctx2.lineTo(-r * 0.14, -r * 0.72);
+    ctx2.lineTo(r * 0.14, -r * 0.72);
+    ctx2.lineTo(r * 0.18, -r * 0.52);
+    ctx2.closePath();
+    ctx2.fill();
+    ctx2.stroke();
+    ctx2.save();
+    ctx2.fillStyle = "#7CF2FF";
+    ctx2.shadowColor = "#22E0FF";
+    ctx2.shadowBlur = 6;
+    ctx2.globalAlpha = 0.7 + 0.3 * glow;
+    ctx2.fillRect(-r * 0.12, -r * 0.64, r * 0.24, r * 0.06);
+    ctx2.restore();
+    ctx2.fillStyle = "#22304F";
+    ctx2.strokeStyle = "rgba(255,159,67,0.8)";
+    ctx2.lineWidth = 1;
+    ctx2.fillRect(-r * 0.58, -r * 0.66, r * 0.2, r * (0.2 + level * 0.05));
+    ctx2.strokeRect(-r * 0.58, -r * 0.66, r * 0.2, r * (0.2 + level * 0.05));
+    ctx2.fillStyle = "#FF9F43";
+    for (let i = 0; i <= level; i++) {
+      ctx2.beginPath();
+      ctx2.arc(-r * 0.48, -r * 0.62 + i * r * 0.08, r * 0.025, 0, Math.PI * 2);
+      ctx2.fill();
+    }
+    ctx2.save();
+    ctx2.translate(r * 0.34, -r * 0.2);
+    ctx2.rotate(aimAngle);
+    ctx2.fillStyle = "#2A3C62";
+    ctx2.strokeStyle = accent;
+    ctx2.lineWidth = 1.2;
+    ctx2.beginPath();
+    ctx2.rect(-r * 0.07, -r * 0.52, r * 0.14, r * 0.5);
+    ctx2.fill();
+    ctx2.stroke();
+    ctx2.fillStyle = accent;
+    ctx2.globalAlpha = 0.85;
+    ctx2.fillRect(-r * 0.09, -r * 0.58, r * 0.18, r * 0.08);
+    ctx2.restore();
   }
 
   // src/game/fx.ts
@@ -4989,15 +5644,25 @@
 
   // src/ghost.ts
   var SNAP_DT = 0.2;
+  var LERP_DT = SNAP_DT * 1.25;
+  var EXTRAP_MAX = 1;
+  var CLOCK_HARD_SYNC = 0.6;
   function createGhostEngine(difficulty, levelId, sendCmd) {
     const base = createEngine(difficulty, levelId, { coop: true });
     const state = base.state;
     const evBuf = [];
     const lerp = /* @__PURE__ */ new Map();
-    let lerpT = SNAP_DT;
+    const aimLerp = /* @__PURE__ */ new Map();
+    const mechaLerp = /* @__PURE__ */ new Map();
+    let lerpT = LERP_DT;
     function applySnap(net, events) {
-      const prev = /* @__PURE__ */ new Map();
-      for (const e of state.enemies) prev.set(e.id, e.dist);
+      const prevDist = /* @__PURE__ */ new Map();
+      for (const e of state.enemies) prevDist.set(e.id, e.dist);
+      const prevAim = /* @__PURE__ */ new Map();
+      for (const t of state.towers) prevAim.set(t.id, { x: t.aimX, y: t.aimY });
+      const prevMecha = /* @__PURE__ */ new Map();
+      for (const m of state.mechas) prevMecha.set(m.id, { x: m.x, y: m.y });
+      const localClock = state.clock;
       const { particles, beams, rings, floaters } = state;
       Object.assign(state, net);
       state.particles = particles;
@@ -5005,21 +5670,91 @@
       state.rings = rings;
       state.floaters = floaters;
       if (state.golds) state.gold = state.golds[1];
+      const clockErr = net.clock - localClock;
+      if (Math.abs(clockErr) > CLOCK_HARD_SYNC) {
+        state.clock = net.clock;
+        state.timeSec = net.timeSec;
+      } else {
+        state.clock = localClock + clockErr * 0.1;
+        state.timeSec += clockErr * 0.1;
+      }
       lerp.clear();
       for (const e of state.enemies) {
-        const p = prev.get(e.id);
-        lerp.set(e.id, { from: p ?? Math.max(0, e.dist - e.speed * CELL * SNAP_DT), to: e.dist });
+        const p = prevDist.get(e.id);
+        lerp.set(e.id, { from: p ?? Math.max(0, e.dist - e.speed * CELL * LERP_DT), to: e.dist });
+      }
+      aimLerp.clear();
+      for (const t of state.towers) {
+        const p = prevAim.get(t.id);
+        aimLerp.set(t.id, { fx: p?.x ?? t.aimX, fy: p?.y ?? t.aimY, tx: t.aimX, ty: t.aimY });
+      }
+      mechaLerp.clear();
+      for (const m of state.mechas) {
+        const p = prevMecha.get(m.id);
+        mechaLerp.set(m.id, { fx: p?.x ?? m.x, fy: p?.y ?? m.y, tx: m.x, ty: m.y });
+      }
+      for (const e of state.enemies) {
+        const seg = lerp.get(e.id);
+        if (seg) e.dist = seg.from;
+      }
+      for (const t of state.towers) {
+        const seg = aimLerp.get(t.id);
+        if (seg) {
+          t.aimX = seg.fx;
+          t.aimY = seg.fy;
+        }
+      }
+      for (const m of state.mechas) {
+        const seg = mechaLerp.get(m.id);
+        if (seg) {
+          m.x = seg.fx;
+          m.y = seg.fy;
+        }
       }
       lerpT = 0;
       evBuf.push(...events);
     }
     function tick(dt) {
-      if (lerpT >= SNAP_DT) return;
-      lerpT = Math.min(SNAP_DT, lerpT + dt);
-      const f = lerpT / SNAP_DT;
+      const flowing = !state.paused && state.phase !== "tech" && state.phase !== "won" && state.phase !== "lost";
+      if (flowing) {
+        const dtSim = dt * state.speed;
+        state.clock += dtSim;
+        state.timeSec += dtSim;
+        for (const pr of state.projectiles) {
+          pr.t = Math.min(1, pr.t + dtSim / pr.dur);
+          const arcH = pr.kind === "plasma" ? 52 : 40;
+          pr.x = pr.fromX + (pr.tx - pr.fromX) * pr.t;
+          pr.y = pr.fromY + (pr.ty - pr.fromY) * pr.t - Math.sin(pr.t * Math.PI) * arcH;
+        }
+      }
+      lerpT += dt;
+      const f = Math.min(1, lerpT / LERP_DT);
       for (const e of state.enemies) {
         const seg = lerp.get(e.id);
-        if (seg) e.dist = seg.from + (seg.to - seg.from) * f;
+        if (!seg) continue;
+        if (lerpT <= LERP_DT || !flowing) {
+          e.dist = seg.from + (seg.to - seg.from) * f;
+        } else {
+          const stunned = state.clock < e.stunUntil;
+          const slowed = state.clock < e.slowUntil;
+          const factor = stunned ? 0 : slowed ? 1 - e.slowPct : 1;
+          const over = Math.min(lerpT - LERP_DT, EXTRAP_MAX);
+          e.dist = seg.to + e.speed * factor * CELL * over;
+        }
+      }
+      if (lerpT <= LERP_DT) {
+        for (const t of state.towers) {
+          const seg = aimLerp.get(t.id);
+          if (!seg) continue;
+          t.aimX = seg.fx + (seg.tx - seg.fx) * f;
+          t.aimY = seg.fy + (seg.ty - seg.fy) * f;
+        }
+        for (const m of state.mechas) {
+          const seg = mechaLerp.get(m.id);
+          if (!seg) continue;
+          m.x = seg.fx + (seg.tx - seg.fx) * f;
+          m.y = seg.fy + (seg.ty - seg.fy) * f;
+        }
       }
     }
     return {
@@ -5039,7 +5774,7 @@
         return true;
       },
       serializeNet() {
-        const { particles, beams, rings, floaters, ...rest } = state;
+        const { particles, beams, rings, floaters, spawnQueue, events, ...rest } = state;
         return rest;
       },
       subscribe() {
@@ -5356,12 +6091,7 @@
     holoAtmosphere(env2, time);
     holoHeader(env2, time, "\u9AD8\u5854\u9632\u7EBF \xB7 \u6218\u5F79\u9009\u62E9", () => env2.goto("splash"));
     const segW = VW2 - MARGIN2 * 2;
-    const diffW = Math.round(segW * 0.6);
-    holoSeg(env2, MARGIN2, env2.TOP_SAFE + 4, diffW, env2.DIFF_LIST.map((d) => env2.DIFFICULTIES[d].name), env2.DIFF_LIST.indexOf(env2.app.difficulty), "diff", (i) => {
-      env2.app.difficulty = env2.DIFF_LIST[i];
-      env2.track("difficulty_select", { difficulty: env2.app.difficulty });
-    }, time);
-    holoSeg(env2, MARGIN2 + diffW + 10, env2.TOP_SAFE + 4, segW - diffW - 10, ["\u5355\u4EBA", "\u8054\u673A"], env2.app.mode === "online" ? 1 : 0, "mode", (i) => {
+    holoSeg(env2, MARGIN2, env2.TOP_SAFE + 4, segW, ["\u5355\u4EBA", "\u8054\u673A"], env2.app.mode === "online" ? 1 : 0, "mode", (i) => {
       env2.setMode(i === 1 ? "online" : "single");
       env2.buzz("light");
     }, time);
@@ -5547,7 +6277,7 @@
     ctx2.globalAlpha = p2;
     ctx2.translate(0, (1 - p2) * 14);
     const afterY = boxY + boxH + 18;
-    const diffTxt = `\u96BE\u5EA6 ${env2.DIFFICULTIES[env2.app.difficulty].name} \xB7 ${env2.DIFFICULTIES[env2.app.difficulty].label}`;
+    const diffTxt = `\u6807\u51C6\u6218\u5F79 \xB7 \u5A01\u80C1\u7B49\u7EA7 ${"\u2605".repeat(threatStars(lv.id))}`;
     ctx2.save();
     ctx2.font = "bold 11px sans-serif";
     const dw = ctx2.measureText(diffTxt).width + 24;
@@ -5731,7 +6461,7 @@
       }, time);
       return;
     }
-    if (env2.app.placing) {
+    if (env2.app.placing && env2.app.placing !== "mecha") {
       const def = env2.TOWERS[env2.app.placing];
       env2.fillText(`\u70B9\u51FB\u5730\u56FE\u4E0A\u7EFF\u8272\u683C\u5EFA\u9020\u300C${def.name}\u300D`, VW2 / 2, VH2 - BAR_H2 + 20, { size: 12, color: def.color, align: "center" });
       holoBtn(env2, { x: VW2 / 2 - 76, y: VH2 - BAR_H2 + 32, w: 152, h: 44, label: "\u53D6\u6D88\u653E\u7F6E", cb: () => {
@@ -5801,6 +6531,7 @@
         env2.fillText(`\u7B2C${env2.TOWER_UNLOCK[type]}\u7AE0`, bx + sw / 2, by + 54, { size: 10, color: env2.C.sub, align: "center" });
       }
     });
+    env2.drawMechaBarSlot(engine);
     ctx2.restore();
     if (env2.stripMaxScroll > 0) {
       if (env2.barScroll > 0) {
@@ -6756,62 +7487,13 @@
     emberHeader(env2, "\u6218\u5F79\u6863\u6848", "OPERATION ARCHIVE", () => env2.goto("splash"));
     const tabY = env2.TOP_SAFE + 6;
     const fullW = VW2 - MARGIN2 * 2;
-    const diffW = Math.round(fullW * 0.62);
-    const tabW = (diffW - 16) / 3;
-    env2.DIFF_LIST.forEach((d, i) => {
-      const x = MARGIN2 + i * (tabW + 8);
-      const on = env2.app.difficulty === d;
-      ctx2.save();
-      env2.rr(x, tabY, tabW, 40, 9);
-      if (on) {
-        const g = ctx2.createLinearGradient(x, tabY, x, tabY + 40);
-        g.addColorStop(0, env2.C.gold);
-        g.addColorStop(1, env2.shade(env2.C.gold));
-        ctx2.fillStyle = g;
-        ctx2.fill();
-      } else {
-        ctx2.fillStyle = env2.skin.panelSolid;
-        ctx2.fill();
-        ctx2.strokeStyle = env2.ac(0.3);
-        ctx2.lineWidth = 1.2;
-        ctx2.stroke();
-      }
-      ctx2.restore();
-      env2.fillText(env2.DIFFICULTIES[d].name, x + tabW / 2, tabY + 15, {
-        size: 13,
-        color: on ? "#1A1209" : env2.C.text,
-        align: "center"
-      });
-      env2.fillText(d.toUpperCase(), x + tabW / 2, tabY + 30, {
-        size: 8,
-        color: on ? "rgba(26,18,9,0.65)" : env2.C.dim,
-        align: "center",
-        weight: "600",
-        font: env2.RES_FONT()
-      });
-      env2.hitBox({
-        x,
-        y: tabY,
-        w: tabW,
-        h: 40,
-        label: "",
-        cb: () => {
-          if (env2.app.difficulty !== d) {
-            env2.app.difficulty = d;
-            env2.track("difficulty_select", { difficulty: d });
-            env2.buzz("light");
-          }
-        }
-      });
-    });
-    const modeX = MARGIN2 + diffW + 10;
-    const modeTabW = (fullW - diffW - 10 - 8) / 2;
+    const modeTabW = (fullW - 8) / 2;
     const MODE_TABS = [
       ["\u5355\u4EBA", "SOLO", "single"],
       ["\u8054\u673A", "ONLINE", "online"]
     ];
     MODE_TABS.forEach(([label, en, mode], i) => {
-      const x = modeX + i * (modeTabW + 8);
+      const x = MARGIN2 + i * (modeTabW + 8);
       const on = env2.app.mode === mode;
       ctx2.save();
       env2.rr(x, tabY, modeTabW, 40, 9);
@@ -7045,7 +7727,7 @@
     let ty = docY + 44 + bannerH + 22;
     for (const para of lv.briefing) ty = env2.wrapBlock(para, bx + 16, ty, textW, { size: textSize, color: "rgba(255,243,226,0.85)" }) + lineH * 0.6;
     env2.fillText(
-      `\u6267\u884C\u96BE\u5EA6\uFF1A${env2.DIFFICULTIES[env2.app.difficulty].name} \xB7 ${env2.DIFFICULTIES[env2.app.difficulty].label}`,
+      `\u6807\u51C6\u6218\u5F79 \xB7 \u5A01\u80C1\u7B49\u7EA7 ${"\u2605".repeat(threatStars(lv.id))}`,
       bx + 16,
       docY + docH - 26,
       { size: 10, color: env2.C.gold, weight: "normal" }
@@ -7250,7 +7932,7 @@
       });
       return;
     }
-    if (env2.app.placing) {
+    if (env2.app.placing && env2.app.placing !== "mecha") {
       const def = env2.TOWERS[env2.app.placing];
       ctx2.fillStyle = def.color;
       ctx2.fillRect(MARGIN2, VH2 - BAR_H2 + 10, 5, 16);
@@ -7301,6 +7983,7 @@
         env2.fillText(`\u7B2C${env2.TOWER_UNLOCK[type]}\u7AE0`, bx + sw / 2, by + 52, { size: 10, color: env2.C.sub, align: "center" });
       }
     });
+    env2.drawMechaBarSlot(engine);
     ctx2.restore();
     if (env2.stripMaxScroll > 0) {
       if (env2.barScroll > 0) {
@@ -8357,55 +9040,13 @@
     const tabY = TOP_SAFE2 + 8;
     const tabH = 36;
     const fullW = VW2 - MARGIN2 * 2;
-    const diffW = Math.round(fullW * 0.62);
-    const tabW = (diffW - 16) / 3;
-    env2.DIFF_LIST.forEach((d, i) => {
-      const x = MARGIN2 + i * (tabW + 8);
-      const on = env2.app.difficulty === d;
-      ctx2.save();
-      env2.rr(x, tabY, tabW, tabH, 10);
-      ctx2.fillStyle = on ? env2.ac(0.16) : "rgba(20,12,36,0.85)";
-      ctx2.fill();
-      ctx2.strokeStyle = on ? env2.ac(0.8) : "rgba(110,92,142,0.4)";
-      ctx2.lineWidth = on ? 1.5 : 1;
-      ctx2.stroke();
-      if (on) {
-        const ug = ctx2.createLinearGradient(x, 0, x + tabW, 0);
-        ug.addColorStop(0, env2.ac(0.9));
-        ug.addColorStop(1, "rgba(255,61,129,0.9)");
-        ctx2.fillStyle = ug;
-        ctx2.shadowColor = env2.C.cyan;
-        ctx2.shadowBlur = 6;
-        ctx2.fillRect(x + 10, tabY + tabH - 3, tabW - 20, 2);
-      }
-      ctx2.restore();
-      env2.fillText(env2.DIFFICULTIES[d].name, x + tabW / 2, tabY + tabH / 2, {
-        size: 13,
-        color: on ? env2.C.text : env2.C.dim,
-        align: "center"
-      });
-      env2.hitBox({
-        x,
-        y: tabY,
-        w: tabW,
-        h: tabH,
-        label: `diff-${d}`,
-        cb: () => {
-          if (env2.app.difficulty === d) return;
-          env2.app.difficulty = d;
-          env2.track("difficulty_select", { difficulty: d });
-          env2.buzz("light");
-        }
-      });
-    });
-    const modeX = MARGIN2 + diffW + 10;
-    const modeTabW = (fullW - diffW - 10 - 8) / 2;
+    const modeTabW = (fullW - 8) / 2;
     const MODE_TABS = [
       ["\u5355\u4EBA", "single"],
       ["\u8054\u673A", "online"]
     ];
     MODE_TABS.forEach(([label, mode], i) => {
-      const x = modeX + i * (modeTabW + 8);
+      const x = MARGIN2 + i * (modeTabW + 8);
       const on = env2.app.mode === mode;
       ctx2.save();
       env2.rr(x, tabY, modeTabW, tabH, 10);
@@ -8553,7 +9194,7 @@
     drawOverlays2(env2);
   }
   function briefLines(env2, lv, textW, size) {
-    const key = `${lv.id}|${textW}|${env2.skin.id}|${env2.app.difficulty}`;
+    const key = `${lv.id}|${textW}|${env2.skin.id}`;
     if (briefCache && briefCache.key === key) return briefCache.lines;
     const per = Math.max(6, Math.floor(textW / size));
     const body = "rgba(164,143,200,0.95)";
@@ -8568,7 +9209,7 @@
     }
     const bossTxt = lv.waves.filter((w) => w.isBoss).map((w) => `W${w.wave}`).join(" ");
     lines.push([`> \u6CE2\u6B21 ${lv.waves.length} \xB7 BOSS ${bossTxt || "\u2014"}`, "#FF9F43"]);
-    lines.push([`> \u96BE\u5EA6 ${env2.DIFFICULTIES[env2.app.difficulty].name} \xB7 ${env2.DIFFICULTIES[env2.app.difficulty].label}`, env2.C.gold]);
+    lines.push([`> \u6807\u51C6\u6218\u5F79 \xB7 \u5A01\u80C1\u7B49\u7EA7 ${"\u2605".repeat(threatStars(lv.id))}`, env2.C.gold]);
     briefCache = { key, lines };
     return lines;
   }
@@ -8827,7 +9468,7 @@
       });
       return;
     }
-    if (env2.app.placing) {
+    if (env2.app.placing && env2.app.placing !== "mecha") {
       const def = env2.TOWERS[env2.app.placing];
       env2.fillText(`\u70B9\u51FB\u5730\u56FE\u4E0A\u7EFF\u8272\u683C\u5EFA\u9020\u300C${def.name}\u300D`, VW2 / 2, VH2 - BAR_H2 + 18, { size: 12, color: def.color, align: "center" });
       env2.btn({ x: VW2 / 2 - 76, y: VH2 - BAR_H2 + 36, w: 152, h: 40, label: "\u53D6\u6D88\u653E\u7F6E", cb: () => {
@@ -8885,6 +9526,7 @@
         env2.fillText(`\u7B2C${env2.TOWER_UNLOCK[type]}\u7AE0`, bx + sw / 2, by + 54, { size: 10, color: env2.C.sub, align: "center" });
       }
     });
+    env2.drawMechaBarSlot(engine);
     ctx2.restore();
     if (env2.stripMaxScroll > 0) {
       if (env2.barScroll > 0) {
@@ -9695,11 +10337,10 @@
   function battleGrade(st, won) {
     return !won ? "D" : st.leaked === 0 ? "S" : st.leaked <= 2 ? "A" : "B";
   }
-  var DIFF_MUL = { easy: 0.8, normal: 1, hard: 1.4 };
   var GRADE_BONUS = { S: 1.25, A: 1.1, B: 1, D: 0.4 };
-  function calcScore(st, difficulty, levelId, won) {
+  function calcScore(st, levelId, won) {
     const base = st.kills * 10 + st.wave * 60 + st.techs.length * 40 + st.lives * 15 + levelId * 50 - st.leaked * 30;
-    return Math.max(0, Math.round(base * DIFF_MUL[difficulty] * GRADE_BONUS[battleGrade(st, won)]));
+    return Math.max(0, Math.round(base * GRADE_BONUS[battleGrade(st, won)]));
   }
   function applyCloudScore(cp) {
     let localBigger = false;
@@ -9794,7 +10435,7 @@
                   configureAnalytics({
                     endpoint: API_BASE,
                     getOpenid: () => session?.openid ?? "",
-                    getBuildId: () => true ? "b1005-0841" : "dev"
+                    getBuildId: () => true ? "b1008-1556" : "dev"
                   });
                   track("login_ok", { level: 1 });
                   mergeScoreWithCloud();
@@ -10617,7 +11258,8 @@
   var app = {
     screen: "splash",
     splashAt: Date.now(),
-    difficulty: loadProgress().cleared.length > 0 ? "normal" : "easy",
+    difficulty: "normal",
+    // 难度固定：普通 · 标准战役（挑战度由关卡难度阶梯承载）
     levelId: 1,
     engine: null,
     scroll: 0,
@@ -10625,6 +11267,8 @@
     dragAcc: 0,
     placing: null,
     selectedId: null,
+    selectedMecha: null,
+    movingMecha: null,
     result: null,
     techShownAt: 0,
     techPickedAt: 0,
@@ -10662,7 +11306,6 @@
   };
   var unlockedChapter = () => Math.max(0, ...loadProgress().cleared) + 1;
   var towerUnlocked = (t) => TOWER_UNLOCK[t] <= unlockedChapter();
-  var DIFF_LIST = ["easy", "normal", "hard"];
   var engineCmd = (cmd) => app.engine ? app.engine.dispatch(cmd) : false;
   var codex = { tab: "story", scroll: 0 };
   var codexMaxScroll2 = 0;
@@ -10687,15 +11330,19 @@
   var leakFlashAt = -9999;
   var SLOT_W = 64;
   var SLOT_GAP = 8;
-  var stripContentW = TOWER_ORDER.length * (SLOT_W + SLOT_GAP) - SLOT_GAP;
+  var stripContentW = (TOWER_ORDER.length + 1) * (SLOT_W + SLOT_GAP) - SLOT_GAP;
   var stripMaxScroll = Math.max(0, stripContentW - (VW - MARGIN * 2));
-  function towerSlotAt(p) {
+  function barSlotAt(p) {
     if (p.y < VH - BAR_H) return null;
-    for (let i = 0; i < TOWER_ORDER.length; i++) {
+    for (let i = 0; i <= TOWER_ORDER.length; i++) {
       const bx = MARGIN + i * (SLOT_W + SLOT_GAP) - barScroll;
-      if (p.x >= bx && p.x <= bx + SLOT_W) return TOWER_ORDER[i];
+      if (p.x >= bx && p.x <= bx + SLOT_W) return i < TOWER_ORDER.length ? TOWER_ORDER[i] : "mecha";
     }
     return null;
+  }
+  function myMecha(st) {
+    const owner = online?.started ? online.player : 0;
+    return st.mechas.find((m) => m.owner === owner);
   }
   var bgmAc = null;
   var musicTarget = "";
@@ -11043,7 +11690,7 @@
     const dim = 0.4 + 0.3 * Math.sin(t * 1.1);
     fillText("\u6DF1\u7A7A\u76D1\u542C\u7AD9 \xB7 \u7B2C 41 \u8F68\u9053\u5468\u671F", VW / 2, VH - 46, { size: 9, color: `rgba(124,141,176,${dim})`, align: "center", weight: "normal" });
     fillText("SIGNAL FADING", VW / 2, VH - 30, { size: 8, color: `rgba(255,61,129,${dim * 0.8})`, align: "center", weight: "600" });
-    fillText(true ? "b1005-0841" : "dev", VW - 10, VH - 10, { size: 8, color: "rgba(124,141,176,0.4)", align: "right", weight: "normal" });
+    fillText(true ? "b1008-1556" : "dev", VW - 10, VH - 10, { size: 8, color: "rgba(124,141,176,0.4)", align: "right", weight: "normal" });
     const menuA = Math.min(1, Math.max(0, (t - 1) / 0.5));
     if (menuA <= 0) {
       if (t > 0.2) hitBox({ x: 0, y: 0, w: VW, h: VH, label: "", cb: () => {
@@ -11152,12 +11799,7 @@
     drawHeader("\u9AD8\u5854\u9632\u7EBF \xB7 \u6218\u5F79\u9009\u62E9", { back: () => goto("splash") });
     const segW = VW - MARGIN * 2;
     const segY = TOP_SAFE + 4;
-    const diffW = Math.round(segW * 0.6);
-    segControl(MARGIN, segY, diffW, DIFF_LIST.map((d) => DIFFICULTIES[d].name), DIFF_LIST.indexOf(app.difficulty), "diff", (i) => {
-      app.difficulty = DIFF_LIST[i];
-      track("difficulty_select", { difficulty: app.difficulty });
-    });
-    segControl(MARGIN + diffW + 10, segY, segW - diffW - 10, ["\u5355\u4EBA", "\u8054\u673A"], app.mode === "online" ? 1 : 0, "mode", (i) => setMode(i === 1 ? "online" : "single"));
+    segControl(MARGIN, segY, segW, ["\u5355\u4EBA", "\u8054\u673A"], app.mode === "online" ? 1 : 0, "mode", (i) => setMode(i === 1 ? "online" : "single"));
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, homeTop, VW, homeBottom - homeTop);
@@ -11313,7 +11955,7 @@
     let ty = boxY + 24;
     for (const para of lv.briefing) ty = wrapBlock(para, MARGIN + 16, ty, textW, { size: textSize }) + lineH * 0.6;
     const afterY = boxY + boxH + 18;
-    const diffTxt = `\u96BE\u5EA6 ${DIFFICULTIES[app.difficulty].name} \xB7 ${DIFFICULTIES[app.difficulty].label}`;
+    const diffTxt = `\u6807\u51C6\u6218\u5F79 \xB7 \u5A01\u80C1\u7B49\u7EA7 ${"\u2605".repeat(threatStars(lv.id))}`;
     ctx.save();
     ctx.font = "bold 11px sans-serif";
     const dw = ctx.measureText(diffTxt).width + 24;
@@ -11343,6 +11985,8 @@
   function initBattleView() {
     app.placing = null;
     app.selectedId = null;
+    app.selectedMecha = null;
+    app.movingMecha = null;
     app.result = null;
     lastSettlement = null;
     barScroll = 0;
@@ -11390,7 +12034,7 @@
     onlineResultInfo = { peerNick: sess.peerNick, player: sess.player };
     const st0 = app.engine.state;
     const myKills = st0.killsBy?.[sess.player] ?? st0.kills;
-    const gained = Math.round(calcScore({ ...st0, kills: myKills }, app.difficulty, 0, won) * 1.2);
+    const gained = Math.round(calcScore({ ...st0, kills: myKills }, 0, won) * 1.2);
     const grade = battleGrade(st0, won);
     lastSettlement = { score: gained, grade };
     const rankBefore = commanderRank();
@@ -11445,7 +12089,7 @@
           sess.player = 1;
           sess.peerNick = info2.hostNick ?? "";
           sess.peerReady = true;
-          if (info2.difficulty === "easy" || info2.difficulty === "normal" || info2.difficulty === "hard") {
+          if (info2.difficulty === "normal") {
             app.difficulty = info2.difficulty;
           }
           track("room_join", { room_id: roomHash(info2.roomId) });
@@ -11654,11 +12298,11 @@
         cb: startOnlineBattle
       });
       y += 68;
-      fillText(`\u96BE\u5EA6 ${DIFFICULTIES[app.difficulty].name}\uFF08\u5EFA\u623F\u65F6\u9009\u5B9A\uFF09`, VW / 2, y + 8, { size: 11, color: C.dim, align: "center", weight: "normal" });
+      fillText("\u6807\u51C6\u6218\u5F79 \xB7 \u53CC\u8DEF\u538B\u529B\u76F8\u5F53\uFF08\u96BE\u5EA6\u968F\u5173\u5361\u9636\u68AF\u751F\u6548\uFF09", VW / 2, y + 8, { size: 11, color: C.dim, align: "center", weight: "normal" });
     } else {
       panel(px, y, pw, 120, C.panelLine);
       fillText(`\u5DF2\u52A0\u5165 ${sess.peerNick || "\u597D\u53CB"} \u7684\u623F\u95F4`, VW / 2, y + 32, { size: 16, align: "center" });
-      fillText(`\u623F\u95F4\u7801 ${sess.roomId} \xB7 \u96BE\u5EA6 ${DIFFICULTIES[app.difficulty].name}`, VW / 2, y + 60, { size: 11, color: C.sub, align: "center", weight: "normal" });
+      fillText(`\u623F\u95F4\u7801 ${sess.roomId} \xB7 \u6807\u51C6\u6218\u5F79`, VW / 2, y + 60, { size: 11, color: C.sub, align: "center", weight: "normal" });
       const dots = ".".repeat(1 + Math.floor(Date.now() / 500) % 3);
       fillText(sess.connecting ? "\u8FDE\u63A5\u670D\u52A1\u5668\u4E2D\u2026" : `\u7B49\u5F85\u4E3B\u673A\u5F00\u59CB\u6218\u6597${dots}`, VW / 2, y + 90, { size: 12, color: C.gold, align: "center", weight: "normal" });
       y += 140;
@@ -11794,10 +12438,12 @@
         btn({ x: VW / 2 - 62, y: by2 + 66, w: 124, h: 36, label: "\u25B6 \u7ACB\u5373\u5F00\u6218", color: C.gold, primary: true, cb: () => engineCmd({ type: "SKIP_PREP" }) });
       }
     }
-    if (bm?.drawBottomBar) bm.drawBottomBar(env, engine);
+    const mechaUi = app.selectedMecha != null || app.movingMecha != null || app.placing === "mecha";
+    if (mechaUi) drawBottomBar4(st);
+    else if (bm?.drawBottomBar) bm.drawBottomBar(env, engine);
     else drawBottomBar4(st);
     if (barTouch?.mode === "drag" && dragPos && barTouch.type) {
-      if (bm?.drawDragGhost) bm.drawDragGhost(env, engine, barTouch.type, dragPos);
+      if (bm?.drawDragGhost && barTouch.type !== "mecha") bm.drawDragGhost(env, engine, barTouch.type, dragPos);
       else drawDragGhost3(st, barTouch.type, dragPos);
     }
     if (st.paused) {
@@ -11838,11 +12484,14 @@
   }
   function drawDragGhost3(st, type, p) {
     const engine = app.engine;
-    const def = TOWERS[type];
+    const isMecha = type === "mecha";
+    const def = isMecha ? null : TOWERS[type];
+    const cost = isMecha ? MECHA.levels[0].cost : def.levels[0].cost;
+    const range0 = isMecha ? MECHA.levels[0].range : def.levels[0].range;
     const gx = Math.floor(toMapX(p.x) / CELL);
     const gy = Math.floor(toMapY(p.y) / CELL);
     const inMap = gx >= 0 && gx < COLS && gy >= 0 && gy < ROWS;
-    const canBuild = inMap && engine.map.isBuildable(gx, gy) && !st.towers.some((tw) => tw.col === gx && tw.row === gy) && st.gold >= def.levels[0].cost;
+    const canBuild = inMap && engine.map.isBuildable(gx, gy) && !st.towers.some((tw) => tw.col === gx && tw.row === gy) && !st.mechas.some((m) => m.anchorCol === gx && m.anchorRow === gy) && st.gold >= cost;
     if (inMap) {
       ctx.save();
       ctx.beginPath();
@@ -11859,21 +12508,30 @@
       ctx.fillRect(cx + 2, cy + 2, CELL - 4, CELL - 4);
       ctx.strokeRect(cx + 2, cy + 2, CELL - 4, CELL - 4);
       if (canBuild) {
-        ctx.strokeStyle = `${def.color}55`;
+        ctx.strokeStyle = isMecha ? `${MECHA.color}55` : `${def.color}55`;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.arc(cx + CELL / 2, cy + CELL / 2, def.levels[0].range * CELL, 0, Math.PI * 2);
+        ctx.arc(cx + CELL / 2, cy + CELL / 2, range0 * CELL, 0, Math.PI * 2);
         ctx.stroke();
+        if (isMecha) {
+          ctx.strokeStyle = `${MECHA.color}33`;
+          ctx.setLineDash([8, 6]);
+          ctx.beginPath();
+          ctx.arc(cx + CELL / 2, cy + CELL / 2, MECHA.leash * CELL, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
         ctx.save();
         ctx.globalAlpha = 0.85;
         ctx.translate(cx + CELL / 2, cy + CELL / 2);
-        drawTower(ctx, type, 0, CELL * 0.92, 0, 0, st.clock, { ticks: false });
+        if (isMecha) drawMecha(ctx, 0, CELL * 0.8, 0, 0, st.clock);
+        else drawTower(ctx, type, 0, CELL * 0.92, 0, 0, st.clock, { ticks: false });
         ctx.restore();
       }
       ctx.restore();
     }
     fillText(
-      canBuild ? "\u677E\u624B\u5EFA\u9020" : inMap ? "\u6B64\u5904\u4E0D\u53EF\u5EFA\u9020" : "\u62D6\u5230\u5730\u56FE\u7A7A\u683C\u4E0A",
+      canBuild ? isMecha ? "\u677E\u624B\u90E8\u7F72\u673A\u7532" : "\u677E\u624B\u5EFA\u9020" : inMap ? "\u6B64\u5904\u4E0D\u53EF\u5EFA\u9020" : "\u62D6\u5230\u5730\u56FE\u7A7A\u683C\u4E0A",
       VW / 2,
       VH - BAR_H - 18,
       { size: 12, color: canBuild ? C.green : C.sub, align: "center" }
@@ -11888,6 +12546,57 @@
     ctx.lineTo(VW, VH - BAR_H + 0.5);
     ctx.stroke();
     if (st.phase === "tech") return;
+    const selM = app.selectedMecha != null ? st.mechas.find((m) => m.id === app.selectedMecha) : void 0;
+    if (selM) {
+      fillText(`${MECHA.name} Lv${selM.level + 1}`, MARGIN + 4, VH - BAR_H + 17, { size: 13, color: MECHA.color });
+      const upCost = selM.level < 2 ? MECHA.levels[selM.level + 1].cost : -1;
+      btn({
+        x: MARGIN,
+        y: VH - BAR_H + 34,
+        w: VW / 2 - MARGIN - 6,
+        h: 46,
+        label: upCost >= 0 ? `\u5347\u7EA7 \u25C8 ${upCost}` : "\u5DF2\u6EE1\u7EA7",
+        disabled: upCost < 0 || st.gold < upCost,
+        color: C.green,
+        primary: upCost >= 0 && st.gold >= upCost,
+        cb: () => {
+          if (engineCmd({ type: "UPGRADE_MECHA", id: selM.id })) {
+            sfx.play("upgrade");
+            buzz("light");
+            track("mecha_upgrade", { level_id: app.levelId, wave: st.wave });
+          }
+        }
+      });
+      const cdRemain = Math.max(0, selM.moveCdUntil - st.clock);
+      btn({
+        x: VW / 2 + 6,
+        y: VH - BAR_H + 34,
+        w: VW / 2 - MARGIN - 6,
+        h: 46,
+        label: cdRemain > 0 ? `\u8F6C\u79FB\u51B7\u5374 ${Math.ceil(cdRemain)}s` : "\u8F6C\u79FB\u9635\u5730",
+        disabled: cdRemain > 0,
+        color: MECHA.color,
+        cb: () => {
+          app.movingMecha = selM.id;
+          app.selectedMecha = null;
+        }
+      });
+      return;
+    }
+    if (app.movingMecha != null) {
+      fillText("\u70B9\u51FB\u5730\u56FE\u4E0A\u7EFF\u8272\u683C\u8F6C\u79FB\u673A\u7532\uFF086s \u51B7\u5374\uFF09", VW / 2, VH - BAR_H + 19, { size: 13, color: MECHA.color, align: "center" });
+      btn({ x: VW / 2 - 76, y: VH - BAR_H + 38, w: 152, h: 42, label: "\u53D6\u6D88\u8F6C\u79FB", cb: () => {
+        app.movingMecha = null;
+      } });
+      return;
+    }
+    if (app.placing === "mecha") {
+      fillText(`\u70B9\u51FB\u5730\u56FE\u4E0A\u7EFF\u8272\u683C\u90E8\u7F72\u300C${MECHA.name}\u300D`, VW / 2, VH - BAR_H + 19, { size: 13, color: MECHA.color, align: "center" });
+      btn({ x: VW / 2 - 76, y: VH - BAR_H + 38, w: 152, h: 42, label: "\u53D6\u6D88\u90E8\u7F72", cb: () => {
+        app.placing = null;
+      } });
+      return;
+    }
     const sel = app.selectedId != null ? st.towers.find((t) => t.id === app.selectedId) : void 0;
     if (sel) {
       const def = TOWERS[sel.type];
@@ -11982,6 +12691,7 @@
         fillText(`\u7B2C${TOWER_UNLOCK[type]}\u7AE0`, bx + sw / 2, by + 54, { size: 10, color: C.sub, align: "center" });
       }
     });
+    drawMechaBarSlot(app.engine);
     ctx.restore();
     if (stripMaxScroll > 0) {
       if (barScroll > 0) {
@@ -11998,6 +12708,40 @@
         ctx.fillStyle = gr;
         ctx.fillRect(viewX + viewW - 18, VH - BAR_H + 4, 22, BAR_H - 8);
       }
+    }
+  }
+  function drawMechaBarSlot(engine) {
+    const st = engine.state;
+    const sw = SLOT_W;
+    const slotH = BAR_H - 24;
+    const viewX = MARGIN;
+    const viewW = VW - MARGIN * 2;
+    const bx = viewX + TOWER_ORDER.length * (sw + SLOT_GAP) - barScroll;
+    const by = VH - BAR_H + 12;
+    if (bx + sw < viewX - 4 || bx > viewX + viewW + 4) return;
+    const my = myMecha(st);
+    const cost = MECHA.levels[0].cost;
+    const disabled = !my && st.gold < cost;
+    ctx.save();
+    ctx.globalAlpha = disabled ? 0.55 : 1;
+    rr(bx, by, sw, slotH, 12);
+    const g = ctx.createLinearGradient(bx, by, bx, by + slotH);
+    g.addColorStop(0, "rgba(30,42,72,0.96)");
+    g.addColorStop(1, "rgba(16,24,48,0.96)");
+    ctx.fillStyle = g;
+    ctx.fill();
+    const active = my != null && app.selectedMecha === my.id;
+    ctx.strokeStyle = active ? "#FFFFFF" : disabled ? "rgba(124,141,176,0.4)" : `${MECHA.color}AA`;
+    ctx.lineWidth = active ? 2 : 1.4;
+    ctx.stroke();
+    ctx.translate(bx + sw / 2, by + 28);
+    drawMecha(ctx, my?.level ?? 0, 34, Math.sin(st.clock * 1.1) * 0.08, 0, st.clock);
+    ctx.restore();
+    if (my) {
+      fillText("\u5DF2\u51FA\u51FB", bx + sw / 2, by + 12, { size: 8, color: C.sub, align: "center", weight: "normal" });
+      fillText(`Lv${my.level + 1}`, bx + sw / 2, by + 54, { size: 11, color: MECHA.color, align: "center" });
+    } else {
+      fillText(`\u25C8${cost}`, bx + sw / 2, by + 54, { size: 11, color: disabled ? "#C77A34" : C.gold, align: "center" });
     }
   }
   function drawTechOverlay4(st) {
@@ -12102,7 +12846,7 @@
       y0 + 32,
       { size: 13, color: C.sub, align: "center", weight: "normal" }
     );
-    const gained = lastSettlement ? lastSettlement.score : calcScore(st, app.difficulty, app.levelId, won);
+    const gained = lastSettlement ? lastSettlement.score : calcScore(st, app.levelId, won);
     const myKills = oi ? st.killsBy?.[oi.player] ?? st.kills : st.kills;
     const rows = [
       ["\u51FB\u6740", String(myKills), myKills],
@@ -12255,11 +12999,12 @@
     drawPath(ctx, engine.level.paths, time);
     fx?.drawScorches(ctx);
     for (const ex of engine.map.exits) drawBase(ctx, time, st.lives / st.maxLives, ex.centerX, ex.centerY);
-    if (app.placing) {
+    if (app.placing || app.movingMecha != null) {
       for (let c = 0; c < COLS; c++) {
         for (let r = 0; r < ROWS; r++) {
           if (!engine.map.isBuildable(c, r)) continue;
           if (st.towers.some((tw) => tw.col === c && tw.row === r)) continue;
+          if (st.mechas.some((m) => m.anchorCol === c && m.anchorRow === r && m.id !== app.movingMecha)) continue;
           ctx.fillStyle = "rgba(61,240,140,0.10)";
           ctx.strokeStyle = "rgba(61,240,140,0.35)";
           ctx.fillRect(c * CELL + 4, r * CELL + 4, CELL - 8, CELL - 8);
@@ -12318,6 +13063,45 @@
           ctx.arc(c.x + 10 + i * 8, c.y - CELL * 0.38, 2.4, 0, Math.PI * 2);
           ctx.fill();
         }
+      }
+    }
+    for (const m of st.mechas) {
+      const mlv = MECHA.levels[m.level];
+      const ax = (m.anchorCol + 0.5) * CELL;
+      const ay = (m.anchorRow + 0.5) * CELL;
+      if (app.selectedMecha === m.id) {
+        ctx.save();
+        ctx.strokeStyle = `${MECHA.color}44`;
+        ctx.setLineDash([8, 6]);
+        ctx.beginPath();
+        ctx.arc(ax, ay, MECHA.leash * CELL, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.strokeStyle = `${MECHA.color}66`;
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, mlv.range * CELL, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+        ctx.save();
+        ctx.strokeStyle = `${MECHA.color}88`;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(ax - 8, ay - 8, 16, 16);
+        ctx.restore();
+      }
+      ctx.save();
+      ctx.translate(m.x, m.y);
+      drawMecha(ctx, m.level, CELL * 0.8, Math.atan2(m.aimY - m.y, m.aimX - m.x) + Math.PI / 2, m.walkT, time);
+      ctx.restore();
+      if (m.level > 0) {
+        for (let i = 0; i <= m.level; i++) {
+          ctx.fillStyle = "#FFC94D";
+          ctx.beginPath();
+          ctx.arc(m.x + 8 + i * 8, m.y - CELL * 0.42, 2.4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      if (st.coop) {
+        fillText(`P${m.owner + 1}`, m.x, m.y - CELL * 0.52, { size: 9, color: m.owner === 0 ? C.gold : C.green, align: "center", weight: "600" });
       }
     }
     fx?.drawTrails(ctx);
@@ -12658,7 +13442,7 @@
             app.result = { won: ev.won };
             const st0 = app.engine.state;
             const levelId = app.engine.level.id;
-            const gained = calcScore(st0, app.difficulty, levelId, ev.won);
+            const gained = calcScore(st0, levelId, ev.won);
             const grade = battleGrade(st0, ev.won);
             lastSettlement = { score: gained, grade };
             const rankBefore = commanderRank();
@@ -12797,6 +13581,8 @@
     hash01,
     drawTower,
     drawEnemy,
+    drawMecha,
+    drawMechaBarSlot,
     // 状态访问
     app,
     codex,
@@ -12823,7 +13609,6 @@
     getEngine: () => app.engine,
     // 数据
     LEVELS,
-    DIFF_LIST,
     DIFFICULTIES,
     TOWER_LIST,
     ENEMY_LIST,
@@ -12836,6 +13621,7 @@
     STORY_PARAS,
     CODEX_TABS,
     ENEMY_CATEGORY,
+    MECHA,
     SLOT_W,
     SLOT_GAP,
     stripMaxScroll,
@@ -12924,10 +13710,36 @@
       if (!engine || engine.state.phase === "tech") return;
       if (pressedBtn) return;
       if (p.y >= VH - BAR_H) {
-        if (!app.placing && app.selectedId == null) {
-          const t = towerSlotAt(p);
-          const unusable = !t ? null : !towerUnlocked(t) ? `\u901A\u5173\u7B2C ${TOWER_UNLOCK[t]} \u7AE0\u540E\u89E3\u9501\u300C${TOWERS[t].name}\u300D` : engine.state.gold < TOWERS[t].levels[0].cost ? "\u91D1\u5E01\u4E0D\u8DB3\uFF0C\u5148\u6512\u4E00\u6512" : null;
-          barTouch = { mode: "pending", type: unusable ? null : t, unusable, startX: p.x, startY: p.y, lastX: p.x };
+        if (!app.placing && app.selectedId == null && app.selectedMecha == null && app.movingMecha == null) {
+          const slot = barSlotAt(p);
+          if (slot === "mecha") {
+            const my = myMecha(engine.state);
+            if (my) {
+              barTouch = { mode: "pending", type: null, unusable: null, startX: p.x, startY: p.y, lastX: p.x, mechaId: my.id };
+            } else {
+              const noGold = engine.state.gold < MECHA.levels[0].cost ? "\u91D1\u5E01\u4E0D\u8DB3\uFF0C\u5148\u6512\u4E00\u6512" : null;
+              barTouch = { mode: "pending", type: noGold ? null : "mecha", unusable: noGold, startX: p.x, startY: p.y, lastX: p.x };
+            }
+          } else {
+            const unusable = !slot ? null : !towerUnlocked(slot) ? `\u901A\u5173\u7B2C ${TOWER_UNLOCK[slot]} \u7AE0\u540E\u89E3\u9501\u300C${TOWERS[slot].name}\u300D` : engine.state.gold < TOWERS[slot].levels[0].cost ? "\u91D1\u5E01\u4E0D\u8DB3\uFF0C\u5148\u6512\u4E00\u6512" : null;
+            barTouch = { mode: "pending", type: unusable ? null : slot, unusable, startX: p.x, startY: p.y, lastX: p.x };
+          }
+        }
+        return;
+      }
+      if (app.movingMecha != null) {
+        const cx = Math.floor(toMapX(p.x) / CELL);
+        const cy = Math.floor(toMapY(p.y) / CELL);
+        const id = app.movingMecha;
+        app.movingMecha = null;
+        if (cx >= 0 && cx < COLS && cy >= 0 && cy < ROWS) {
+          if (engine.dispatch({ type: "MOVE_MECHA", id, col: cx, row: cy })) {
+            sfx.play("build");
+            buzz("light");
+          } else {
+            showToast("\u65E0\u6CD5\u8F6C\u79FB\u5230\u8BE5\u4F4D\u7F6E");
+            buzz("light");
+          }
         }
         return;
       }
@@ -12935,8 +13747,14 @@
         const st = engine.state;
         const cx = Math.floor(toMapX(p.x) / CELL);
         const cy = Math.floor(toMapY(p.y) / CELL);
-        if (cx >= 0 && cx < COLS && cy >= 0 && cy < ROWS && engine.map.isBuildable(cx, cy) && !st.towers.some((tw) => tw.col === cx && tw.row === cy)) {
-          if (engine.dispatch({ type: "BUILD", col: cx, row: cy, tower: app.placing })) {
+        if (cx >= 0 && cx < COLS && cy >= 0 && cy < ROWS && engine.map.isBuildable(cx, cy) && !st.towers.some((tw) => tw.col === cx && tw.row === cy) && !st.mechas.some((m) => m.anchorCol === cx && m.anchorRow === cy)) {
+          if (app.placing === "mecha") {
+            if (engine.dispatch({ type: "DEPLOY_MECHA", col: cx, row: cy })) {
+              sfx.play("build");
+              buzz("light");
+              track("mecha_deploy", { level_id: app.levelId, wave: engine.state.wave });
+            }
+          } else if (engine.dispatch({ type: "BUILD", col: cx, row: cy, tower: app.placing })) {
             sfx.play("build");
             buzz("light");
             track("tower_build", { tower_type: app.placing, level_id: app.levelId, wave: engine.state.wave });
@@ -13018,8 +13836,14 @@
             const st = app.engine.state;
             const cx = Math.floor(toMapX(p.x) / CELL);
             const cy = Math.floor(toMapY(p.y) / CELL);
-            if (cx >= 0 && cx < COLS && cy >= 0 && cy < ROWS && app.engine.map.isBuildable(cx, cy) && !st.towers.some((tw) => tw.col === cx && tw.row === cy)) {
-              if (app.engine.dispatch({ type: "BUILD", col: cx, row: cy, tower: bt.type })) {
+            if (cx >= 0 && cx < COLS && cy >= 0 && cy < ROWS && app.engine.map.isBuildable(cx, cy) && !st.towers.some((tw) => tw.col === cx && tw.row === cy) && !st.mechas.some((m) => m.anchorCol === cx && m.anchorRow === cy)) {
+              if (bt.type === "mecha") {
+                if (app.engine.dispatch({ type: "DEPLOY_MECHA", col: cx, row: cy })) {
+                  sfx.play("build");
+                  buzz("light");
+                  track("mecha_deploy", { level_id: app.levelId, wave: st.wave });
+                }
+              } else if (app.engine.dispatch({ type: "BUILD", col: cx, row: cy, tower: bt.type })) {
                 sfx.play("build");
                 buzz("light");
                 track("tower_build", { tower_type: bt.type, level_id: app.levelId, wave: st.wave });
@@ -13028,7 +13852,14 @@
           }
           return;
         }
-        if (bt.type) {
+        if (bt.mechaId != null) {
+          app.selectedMecha = bt.mechaId;
+          app.selectedId = null;
+          sfx.play("select");
+        } else if (bt.type === "mecha") {
+          app.placing = "mecha";
+          app.selectedId = null;
+        } else if (bt.type) {
           app.placing = bt.type;
           app.selectedId = null;
         } else if (bt.unusable) {
@@ -13041,12 +13872,23 @@
         const moved = battleMoved > 8;
         mapTouch = null;
         if (moved) return;
-        if (app.engine && !app.placing) {
+        if (app.engine && !app.placing && app.movingMecha == null) {
+          const st = app.engine.state;
           const cx = Math.floor(toMapX(p.x) / CELL);
           const cy = Math.floor(toMapY(p.y) / CELL);
-          const tw = app.engine.state.towers.find((t) => t.col === cx && t.row === cy);
-          app.selectedId = tw ? tw.id : null;
-          if (tw) sfx.play("select");
+          const tw = st.towers.find((t) => t.col === cx && t.row === cy);
+          if (tw) {
+            app.selectedId = tw.id;
+            app.selectedMecha = null;
+            sfx.play("select");
+            return;
+          }
+          const mx = toMapX(p.x);
+          const my2 = toMapY(p.y);
+          const mc = st.mechas.find((m) => m.anchorCol === cx && m.anchorRow === cy || Math.hypot(m.x - mx, m.y - my2) < CELL * 0.7);
+          app.selectedMecha = mc ? mc.id : null;
+          app.selectedId = null;
+          if (mc) sfx.play("select");
           return;
         }
       }
