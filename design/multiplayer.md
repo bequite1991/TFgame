@@ -1,6 +1,6 @@
 # 双人模式 + 用户体系 + 积分体系 — 《高塔防线》微信小游戏（multiplayer.md）
 
-> **实施状态**：MVP（用户/积分体系）已上线；A 档「双人同屏」已下线移除（2026-10，代码仅保留「单人 / 在线联机」两档）；C 档「实时联机」已按 `design/coop-online.md` 的主机权威模型实现并上线。B 档「异步挑战」未做。
+> **实施状态**：MVP（用户/积分体系）已上线；A 档「双人同屏」已下线移除（2026-10，代码仅保留「单人 / 在线联机」两档）；C 档「实时联机」已按 `design/coop-online.md` 的主机权威模型实现并上线。B 档「异步挑战」未做。3–4 人扩展设计见 `design/coop-multi.md`（未实施）。
 
 > 范围：仅微信小游戏端（`wxgame/`）。页面结构对齐现有 `splash → home → briefing → battle → result`（+ `codex` 与档案/设置弹层），存储键对齐 `srd.*` 命名空间，埋点走 `wxgame/src/analytics.ts` 的 `track()`，评级沿用结算页 S/A/B/D 规则。
 >

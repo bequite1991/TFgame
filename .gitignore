@@ -5,3 +5,9 @@ dist/
 .env
 .env.*
 shots/
+
+# 单位 3D 素材走 CDN（oss.chujian.site/srd-game/），不入库；本地可再生（wxgame/tools/gen-*.py）
+wxgame/assets/enemies/
+wxgame/assets/turrets/
+wxgame/assets/enemies-h/
+wxgame/assets/turrets-h/

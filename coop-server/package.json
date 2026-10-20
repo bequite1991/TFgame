@@ -2,7 +2,7 @@
   "name": "srd-coop-server",
   "version": "1.0.0",
   "private": true,
-  "description": "《高塔防线》在线联机房间服务（host-authoritative 纯转发，协议见 design/coop-online.md §3）",
+  "description": "《高塔防线》在线联机房间服务（host-authoritative 纯转发，2–4 人槽位制，协议见 design/coop-online.md §3 + design/coop-multi.md §2）",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
