@@ -319,11 +319,31 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
     desc: '免疫眩晕，减速效果减半。血量 50% 以下狂暴：速度 +40%，外壳变为品红。',
     weakness: '满级电磁炮 + 减速牵制',
   },
+  miniboss: {
+    type: 'miniboss', name: '掠晶兽', nameEn: 'SHARD REAVER', category: 'special',
+    hp: 260, speed: 0.6, reward: 60, leak: 4, threat: 4, color: '#FFC94D', size: 26,
+    desc: '随机混入虫群的精英掠食者，免疫眩晕、减速效果减半。击杀后散逸的能量晶核会短暂强化附近的炮塔。',
+    weakness: '在炮塔密集区集火击杀，收割增益',
+  },
 };
 
 export const ENEMY_LIST: EnemyDef[] = [
-  ENEMIES.crawler, ENEMIES.speeder, ENEMIES.tanker, ENEMIES.splitter, ENEMIES.lurker, ENEMIES.boss,
+  ENEMIES.crawler, ENEMIES.speeder, ENEMIES.tanker, ENEMIES.splitter, ENEMIES.lurker, ENEMIES.miniboss, ENEMIES.boss,
 ];
+
+// ---------------- 随机小 BOSS（掠晶兽） ----------------
+
+/**
+ * 随机小 BOSS 玩法参数：非 BOSS 波按 chance 概率在出怪队列随机位置插入一只掠晶兽，
+ * 击杀后以死亡点为圆心强化 radius 格内的炮塔（伤害 ×dmgMul、攻速 ×rateMul，持续 duration 秒）。
+ */
+export const MINI_BOSS = {
+  chance: 0.25, // 每个非 BOSS 波出现概率
+  radius: 2.5, // 增益半径（格）
+  dmgMul: 1.3, // 增益期间伤害倍率
+  rateMul: 1.2, // 增益期间攻速倍率
+  duration: 20, // 增益时长（秒，引擎时钟）
+};
 
 // ---------------- 机甲（移动作战单位，每名玩家一台） ----------------
 
@@ -465,6 +485,21 @@ export function ladderSpeedMul(levelId: number, wave: number): number {
 export function threatStars(levelId: number): number {
   return Math.min(5, 1 + Math.floor(Math.max(0, levelId - 1) / 3));
 }
+
+// ---------------- 协作局人数缩放（2–4 人，表驱动便于平衡调整） ----------------
+
+/** 协作局玩家人数上限（主机上行带宽与网格可读性约束，见 design/coop-multi.md §0） */
+export const COOP_MAX_PLAYERS = 4;
+
+/**
+ * 协作局虫群 HP 系数：2 人 ×1.0 / 3 人 ×1.45 / 4 人 ×1.85。
+ * 亚线性——人多塔多但配合有损耗；含 hpOverride 的 BOSS，在敌人 spawn 处统一乘。
+ * 单人（players=1）恒为 1，不进入协作分支。
+ */
+export const COOP_HP_MUL: Record<number, number> = { 1: 1, 2: 1.0, 3: 1.45, 4: 1.85 };
+
+/** 协作局共享生命系数：2 人 ×1.0 / 3 人 ×1.1 / 4 人 ×1.2（对 diff.lives 取整，防止人数越多死得越快） */
+export const COOP_LIVES_MUL: Record<number, number> = { 1: 1, 2: 1.0, 3: 1.1, 4: 1.2 };
 
 // ---------------- 局内科技（roguelike 三选一） ----------------
 

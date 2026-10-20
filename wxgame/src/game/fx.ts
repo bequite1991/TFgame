@@ -97,6 +97,29 @@ export function readQualityHigh(): boolean {
   return platform.readQualityHigh();
 }
 
+// ---------------- 光斑贴图缓存 ----------------
+
+/** 预渲染径向渐变光斑（白芯→颜色→透明）离屏小图，按颜色缓存；drawImage 贴图替代每帧 createRadialGradient / shadowBlur */
+const GLOW_SPRITE_SIZE = 64;
+const glowSprites = new Map<string, HTMLCanvasElement>();
+export function glowSprite(color: string): HTMLCanvasElement {
+  const hit = glowSprites.get(color);
+  if (hit) return hit;
+  const cvs = platform.createCanvas();
+  cvs.width = GLOW_SPRITE_SIZE;
+  cvs.height = GLOW_SPRITE_SIZE;
+  const g = cvs.getContext('2d') as CanvasRenderingContext2D;
+  const r = GLOW_SPRITE_SIZE / 2;
+  const grad = g.createRadialGradient(r, r, 0, r, r, r);
+  grad.addColorStop(0, '#FFFFFF');
+  grad.addColorStop(0.35, color);
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, GLOW_SPRITE_SIZE, GLOW_SPRITE_SIZE);
+  glowSprites.set(color, cvs);
+  return cvs;
+}
+
 // ---------------- 星云纹理 ----------------
 
 /** 星云底图加载器：加载失败时 img 保持 null，调用方回退程序化深色底 */
@@ -283,7 +306,7 @@ export class FxLayer {
     for (const [id, p] of this.prevEnemies) {
       if (seen.has(id)) continue;
       this.prevEnemies.delete(id);
-      if (p.dist >= map.paths[p.path].length - LEAK_MARGIN) continue; // 漏怪
+      if (p.dist >= (map.paths[p.path]?.length ?? 0) - LEAK_MARGIN) continue; // 漏怪
       this.onEnemyDeath(p);
     }
 
@@ -507,15 +530,16 @@ export class FxLayer {
       const life = Math.max(0, r.ttl / r.maxTtl);
       const k = 1 - life;
       const rad = r.r0 + (r.r1 - r.r0) * (1 - (1 - k) * (1 - k));
+      // 双层描边模拟辉光（替代 shadowBlur 软件模糊）
       ctx.beginPath();
       ctx.arc(r.x, r.y, rad, 0, Math.PI * 2);
-      ctx.globalAlpha = life * 0.8;
+      ctx.globalAlpha = life * 0.26;
       ctx.strokeStyle = r.color;
-      ctx.lineWidth = Math.max(1, 7 * life);
-      ctx.shadowColor = r.color;
-      ctx.shadowBlur = 14;
+      ctx.lineWidth = Math.max(1, 7 * life) * 2.6;
       ctx.stroke();
-      ctx.shadowBlur = 0;
+      ctx.globalAlpha = life * 0.8;
+      ctx.lineWidth = Math.max(1, 7 * life);
+      ctx.stroke();
     }
     ctx.globalAlpha = 1;
   }
@@ -569,6 +593,12 @@ export class FxLayer {
         g.fillStyle = '#FFF3D6';
         g.beginPath();
         g.arc(pr.x, pr.y, 3, 0, Math.PI * 2);
+        g.fill();
+      } else if (pr.kind === 'frost') {
+        g.globalAlpha = 0.7;
+        g.fillStyle = '#3DF08C';
+        g.beginPath();
+        g.arc(pr.x, pr.y, 4.5, 0, Math.PI * 2);
         g.fill();
       } else {
         g.globalAlpha = 0.7;

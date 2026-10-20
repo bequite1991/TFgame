@@ -3,7 +3,7 @@ import type { LevelMap } from './config';
 import type { LevelDef } from './levels';
 
 export type TowerType = 'laser' | 'missile' | 'frost' | 'railgun' | 'tesla' | 'plasma';
-export type EnemyType = 'crawler' | 'speeder' | 'tanker' | 'splitter' | 'lurker' | 'boss';
+export type EnemyType = 'crawler' | 'speeder' | 'tanker' | 'splitter' | 'lurker' | 'miniboss' | 'boss';
 // 难度已收敛为单一「普通 · 标准战役」：挑战度改由关卡难度阶梯（config.LADDER）承载
 export type Difficulty = 'normal';
 export type Phase = 'prep' | 'combat' | 'tech' | 'won' | 'lost';
@@ -25,8 +25,13 @@ export interface TowerState {
   lastFireAt: number; // 最近一次开火时刻（引擎时钟，驱动开火帧动画）
   kills: number;
   invested: number; // 累计投入金币（建造+升级）
-  /** 塔的归属玩家：单人恒为 0；联机协作 0=主机 / 1=客机（建造/升级/出售鉴权与击杀分账依据） */
+  /** 塔的归属玩家：单人恒为 0；协作局 0=主机 / 1..3=客机（建造/升级/出售鉴权与击杀分账依据） */
   owner: number;
+  /** 塔心像素坐标（建造时算好，射程扫描复用，避免每对塔×怪重复换算格坐标） */
+  cx: number;
+  cy: number;
+  /** 掠晶兽增益到期时刻（引擎时钟，0=无增益；过期后攻速/伤害加成自动失效） */
+  buffUntil: number;
 }
 
 export interface EnemyState {
@@ -50,9 +55,12 @@ export interface EnemyState {
   enraged: boolean;
   bornAt: number;
   lastHitAt: number; // 最近一次受伤时刻（引擎时钟，驱动受击闪光）
+  /** 每 tick 缓存的命中坐标（像素，敌人移动更新后由 posAt 解算一次；射程/溅射/连锁等扫描循环复用） */
+  ex: number;
+  ey: number;
 }
 
-/** 机甲：可部署的移动作战单位（锚点巡逻 + 机炮/导弹双武器），联机双方各一台 */
+/** 机甲：可部署的移动作战单位（锚点巡逻 + 机炮/导弹双武器），协作局每名玩家各一台 */
 export interface MechaState {
   id: number;
   level: number; // 0 | 1 | 2 对应 Lv1/2/3
@@ -69,13 +77,13 @@ export interface MechaState {
   walkT: number; // 行走动画相位（移动时推进）
   kills: number;
   invested: number; // 累计投入金币（部署+升级）
-  /** 归属玩家：单人恒为 0；联机协作 0=主机 / 1=客机 */
+  /** 归属玩家：单人恒为 0；协作局 0=主机 / 1..3=客机 */
   owner: number;
 }
 
 export interface ProjectileState {
   id: number;
-  kind: 'missile' | 'plasma';
+  kind: 'missile' | 'plasma' | 'frost';
   fromX: number;
   fromY: number;
   x: number;
@@ -90,6 +98,8 @@ export interface ProjectileState {
   towerId: number;
   dps?: number; // plasma：灼烧区每秒伤害
   zoneR?: number; // plasma：灼烧区半径（格）
+  slowPct?: number; // frost：粘阻剂减速幅度（落地时按精英/迅捷兽修正）
+  slowDur?: number; // frost：粘阻剂减速持续（秒）
 }
 
 export interface BeamState {
@@ -137,6 +147,17 @@ export interface FloaterState {  id: number;
   maxTtl: number;
 }
 
+/** 分裂体死亡分裂动画：纯装饰特效（两瓣分离精灵表，见 enemy3d.ts） */
+export interface SplitFxState {
+  id: number;
+  x: number;
+  y: number;
+  /** 父体死亡时朝向（canvas 角，0=+X 顺时针），用于选精灵表朝向行 */
+  angle: number;
+  ttl: number;
+  maxTtl: number;
+}
+
 /** 等离子灼烧区域：对范围内敌人持续造成 dps */
 export interface ZoneState {
   id: number;
@@ -163,24 +184,27 @@ export type GameEvent =
   | { type: 'waveClear'; wave: number; bonus: number }
   | { type: 'leak'; lives: number }
   | { type: 'bossDown'; wave: number }
+  | { type: 'miniBossDown'; x: number; y: number }
   | { type: 'comm'; wave: number; text: string }
-  | { type: 'sfx'; name: 'missile' | 'railgun' | 'plasma' }
+  | { type: 'sfx'; name: 'missile' | 'railgun' | 'plasma' | 'frost' }
   | { type: 'gameOver'; won: boolean };
 
 export interface GameState {
   phase: Phase;
   clock: number; // 引擎时钟（秒，受加速影响）
   timeSec: number; // 本局用时
-  /** 单人：唯一金币池；联机协作：恒等于 golds[0] 的镜像（供 UI/兼容旧逻辑读取） */
+  /** 单人：唯一金币池；协作局：恒等于 golds[0] 的镜像（供 UI/兼容旧逻辑读取） */
   gold: number;
-  lives: number; // 联机协作为双方共享生命
+  lives: number; // 协作局为全员共享生命
   maxLives: number;
-  /** 联机协作：是否为双人协作局（createEngine opts.coop） */
+  /** 协作局标记：恒等于 players > 1（由 createEngine opts.coop / opts.players 推导） */
   coop: boolean;
-  /** 联机协作：双方独立金币池 [主机, 客机]；单人恒为 null */
-  golds: [number, number] | null;
-  /** 联机协作：双方各自击杀数 [主机, 客机]（塔与机甲击杀均计入）；单人恒为 null */
-  killsBy: [number, number] | null;
+  /** 本局玩家数：单人恒 1；协作局 2–4。golds/killsBy 的数组长度即此值 */
+  players: number;
+  /** 协作局：各玩家独立金币池（长度 = players，索引 0=主机 / 1..3=客机）；单人恒为 null */
+  golds: number[] | null;
+  /** 协作局：各玩家各自击杀数（长度 = players，塔与机甲击杀均计入）；单人恒为 null */
+  killsBy: number[] | null;
   wave: number; // 当前/即将开始波次
   totalWaves: number; // 本关总波数
   prepT: number; // 波次前倒计时
@@ -194,6 +218,7 @@ export interface GameState {
   particles: ParticleState[];
   rings: RingState[];
   floaters: FloaterState[];
+  splits: SplitFxState[];
   zones: ZoneState[];
   spawnQueue: SpawnItem[];
   spawnT: number;
@@ -213,9 +238,9 @@ export interface GameState {
   events: GameEvent[];
 }
 
-/** 联机快照类型：玩法状态全量，剔除纯装饰特效数组与客机不读的 spawnQueue/events 以省带宽
- * （zones 保留——灼烧区是玩法数据；事件由快照消息外层附带，见 GameEngine.serializeNet 注） */
-export type NetGameState = Omit<GameState, 'particles' | 'beams' | 'rings' | 'floaters' | 'spawnQueue' | 'events'>;
+/** 联机快照类型：玩法状态全量（golds/killsBy 为按玩家数的变长数组），剔除粒子（量大，客机由击杀 diff 兜底）与客机不读的 spawnQueue/events 以省带宽
+ * （beams/rings/floaters/splits 量小且客机直接渲染，必须随快照下发；zones 保留——灼烧区是玩法数据；事件由快照消息外层附带，见 GameEngine.serializeNet 注） */
+export type NetGameState = Omit<GameState, 'particles' | 'spawnQueue' | 'events'>;
 
 export type Command =
   | { type: 'BUILD'; col: number; row: number; tower: TowerType }
@@ -236,9 +261,9 @@ export interface GameEngine {
   level: LevelDef;
   tick(dtReal: number): void;
   dispatch(cmd: Command): boolean;
-  /** 以指定玩家身份执行命令（联机协作鉴权：0=主机 / 1=客机）；dispatch(cmd) 等价于 dispatchAs(0, cmd) */
+  /** 以指定玩家身份执行命令（协作局鉴权：0=主机 / 1..players-1=客机）；dispatch(cmd) 等价于 dispatchAs(0, cmd) */
   dispatchAs(player: number, cmd: Command): boolean;
-  /** 联机快照：剔除纯装饰数组（particles/beams/rings/floaters）与客机不读的 spawnQueue/events 后的玩法状态。
+  /** 联机快照：剔除粒子数组（particles，客机由击杀 diff 兜底）与客机不读的 spawnQueue/events 后的玩法状态。
    *  游戏事件不在快照内，由联机层在快照消息外层附带（main.ts snapEvents） */
   serializeNet(): NetGameState;
   subscribe(fn: () => void): () => void;

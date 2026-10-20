@@ -1,50 +1,75 @@
 // 游戏引擎 —— 固定步长逻辑，无 DOM/React 依赖，可整体移植
 import {
-  buildLevelMap, CELL, DIFFICULTIES, ECONOMY, ENEMIES, LADDER, MECHA, PREP_TIME, SELL_RATE, TOWERS,
+  buildLevelMap, CELL, COOP_HP_MUL, COOP_LIVES_MUL, COOP_MAX_PLAYERS, DIFFICULTIES, ECONOMY, ENEMIES, LADDER, MECHA,
+  MINI_BOSS, PREP_TIME, SELL_RATE, TOWERS,
   ladderCountMul, ladderHpMul, ladderSpeedMul,
 } from './config';
-import { getLevel } from './levels';
+import { getCoopLevel, getLevel } from './levels';
 import { TECH_LIST } from './config';
 import type {
-  Command, Difficulty, EnemyState, GameEngine, GameEvent, GameState, MechaState, NetGameState, SpawnItem, TechId, TowerState,
+  Command, Difficulty, EnemyState, GameEngine, GameEvent, GameState, MechaState, NetGameState, ParticleState, SpawnItem, TechId, TowerState,
 } from './types';
 
 let uid = 1;
 
+/** 引擎粒子硬上限：超出后新粒子直接丢弃（随机数照常被消耗，不改变随机序列） */
+const PARTICLE_MAX = 300;
+
+// 低端机判定：微信小游戏无 navigator，优先读 wx.getDeviceInfo 的 benchmarkLevel（<=0 为未知不判低端）；浏览器预览回退核数
+declare const wx: { getDeviceInfo?(): { benchmarkLevel?: number } } | undefined;
+
+function detectLowSpec(): boolean {
+  try {
+    if (typeof wx !== 'undefined' && wx && wx.getDeviceInfo) {
+      const lv = wx.getDeviceInfo().benchmarkLevel;
+      if (typeof lv === 'number' && lv > 0) return lv <= 20;
+      return false;
+    }
+  } catch { /* ignore */ }
+  return typeof navigator !== 'undefined' && (navigator.hardwareConcurrency ?? 8) <= 4;
+}
+
 export interface EngineOptions {
-  /** 双人协作模式：双路地图 + 共享生命 + 经济独立（golds）+ 科技主机为准 */
+  /** 协作模式（2–4 人）：多路地图 + 共享生命 + 经济独立（golds）+ 科技主机为准 */
   coop?: boolean;
-  /** 协作模式双方起始金币；缺省各为 normal 难度标准起始金（难度系数仍经 hpMul/speedMul 生效） */
-  startGold?: [number, number];
+  /** 协作局玩家数（2–4，超界钳制）；coop:true 且未给 players 时按 2 处理（向后兼容双人调用方） */
+  players?: number;
+  /** 协作模式各玩家起始金币（长度 = players）；缺省各为 normal 难度标准起始金（难度系数仍经 hpMul/speedMul 生效） */
+  startGold?: number[];
 }
 
 export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?: EngineOptions): GameEngine {
   const diff = DIFFICULTIES[difficulty];
-  const level = getLevel(levelId);
+  // 玩家数：协作局 2–4（coop:true 缺省按 2），单人恒 1；coop = players > 1
+  const coop = !!opts?.coop || (opts?.players ?? 1) > 1;
+  const players = coop ? Math.min(COOP_MAX_PLAYERS, Math.max(2, Math.round(opts?.players ?? 2))) : 1;
+  // 协作局按人数选图（2 人双路 / 3–4 人四路），levelId 仅在单人局生效
+  const level = coop ? getCoopLevel(players) : getLevel(levelId);
   const map = buildLevelMap(level.paths);
-  const lowSpec =
-    typeof navigator !== 'undefined' && (navigator.hardwareConcurrency ?? 8) <= 4;
+  const lowSpec = detectLowSpec();
   const particleScale = lowSpec ? 0.5 : 1;
-  const coop = !!opts?.coop;
   // 起始金币随章节抬升：高章节怪物经阶梯加硬，开局需能立刻铺开更多火力
   const chapterGold = level.id >= 1 ? Math.round((level.id - 1) * LADDER.startGoldPerLevel) : 0;
-  const startGolds: [number, number] | null = coop
-    ? [
-        (opts?.startGold?.[0] ?? DIFFICULTIES.normal.gold) + chapterGold,
-        (opts?.startGold?.[1] ?? DIFFICULTIES.normal.gold) + chapterGold,
-      ]
+  const startGolds: number[] | null = coop
+    ? Array.from(
+        { length: players },
+        (_, i) => (opts?.startGold?.[i] ?? DIFFICULTIES.normal.gold) + chapterGold,
+      )
     : null;
+  // 协作局共享生命随人数微调（2 人 ×1.0 / 3 人 ×1.1 / 4 人 ×1.2），防止人数越多死得越快
+  const startLives = coop ? Math.round(diff.lives * (COOP_LIVES_MUL[players] ?? 1)) : diff.lives;
 
   const state: GameState = {
     phase: 'prep',
     clock: 0,
     timeSec: 0,
     gold: startGolds ? startGolds[0] : diff.gold + chapterGold,
-    lives: diff.lives,
-    maxLives: diff.lives,
+    lives: startLives,
+    maxLives: startLives,
     coop,
+    players,
     golds: startGolds,
-    killsBy: coop ? [0, 0] : null,
+    killsBy: coop ? new Array(players).fill(0) : null,
     wave: 1,
     totalWaves: level.waves.length,
     prepT: PREP_TIME,
@@ -58,6 +83,7 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
     particles: [],
     rings: [],
     floaters: [],
+    splits: [],
     zones: [],
     spawnQueue: [],
     spawnT: 0,
@@ -76,12 +102,32 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
 
   // ---------- 局内科技加成 ----------
 
-  const techCount = (id: TechId) => state.techs.reduce((n, t) => n + (t === id ? 1 : 0), 0);
-  const dmgMul = () => 1 + 0.15 * techCount('dmg');
-  const rateMul = () => 1 + 0.12 * techCount('rate');
-  const rangeMul = () => 1 + 0.1 * techCount('range');
-  const goldMul = () => 1 + 0.25 * techCount('gold');
-  const splashMul = () => 1 + 0.2 * techCount('splash');
+  // 科技计数/倍率缓存：techs 仅在指令阶段（tick 之间）变化，每 tick 开头重算一次，扫描热循环零 reduce
+  const techCounts: Record<TechId, number> = {
+    dmg: 0, rate: 0, range: 0, gold: 0, crit: 0,
+    splash: 0, slow: 0, pierce: 0, supply: 0, repair: 0,
+  };
+  let dmgMulV = 1;
+  let rateMulV = 1;
+  let rangeMulV = 1;
+  let goldMulV = 1;
+  let splashMulV = 1;
+  function refreshTechCache() {
+    for (const k in techCounts) techCounts[k as TechId] = 0;
+    for (const t of state.techs) techCounts[t] += 1;
+    dmgMulV = 1 + 0.15 * techCounts.dmg;
+    rateMulV = 1 + 0.12 * techCounts.rate;
+    rangeMulV = 1 + 0.1 * techCounts.range;
+    goldMulV = 1 + 0.25 * techCounts.gold;
+    splashMulV = 1 + 0.2 * techCounts.splash;
+  }
+
+  const techCount = (id: TechId) => techCounts[id];
+  const dmgMul = () => dmgMulV;
+  const rateMul = () => rateMulV;
+  const rangeMul = () => rangeMulV;
+  const goldMul = () => goldMulV;
+  const splashMul = () => splashMulV;
   /** 暴击倍率：roll 成功 → 双倍 */
   function critMul() {
     return Math.random() < 0.1 * techCount('crit') ? 2 : 1;
@@ -135,12 +181,13 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
       const a = Math.random() * Math.PI * 2;
       const v = power * (0.4 + Math.random() * 0.8);
       const ttl = 0.4 + Math.random() * 0.3;
-      state.particles.push({
+      const p: ParticleState = {
         id: uid++, x, y,
         vx: Math.cos(a) * v, vy: Math.sin(a) * v,
         ttl, maxTtl: ttl, color,
         size: 2 + Math.random() * 3,
-      });
+      };
+      if (state.particles.length < PARTICLE_MAX) state.particles.push(p);
     }
   }
 
@@ -154,6 +201,16 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
 
   function isInvisible(e: EnemyState): boolean {
     return e.type === 'lurker' && e.stealthT % 4 >= 3;
+  }
+
+  /** 精英待遇（BOSS 与掠晶兽）：减速减半、免眩晕；不置 isBoss，避免误触发 bossDown/成就/结算 */
+  function isElite(e: EnemyState): boolean {
+    return e.isBoss || e.type === 'miniboss';
+  }
+
+  /** 掠晶兽增益是否生效（引擎时钟未过 buffUntil） */
+  function towerBuffActive(t: TowerState): boolean {
+    return state.clock < t.buffUntil;
   }
 
   function scaledHp(type: EnemyState['type'], wave: number, override?: number): number {
@@ -186,9 +243,16 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
       isBoss: item.type === 'boss',
       enraged: false,
       bornAt: state.clock,
+      ex: 0,
+      ey: 0,
     };
     e.maxHp = scaledHp(item.type, state.wave, item.hpOverride);
+    // 协作局虫群 HP 人数系数（含 hpOverride 的 BOSS，统一在此乘；单人 coop=false 不进入此分支）
+    if (coop) e.maxHp = Math.round(e.maxHp * (COOP_HP_MUL[players] ?? 1));
     e.hp = e.maxHp;
+    const ep = map.posAt(e.path, e.dist);
+    e.ex = ep.x;
+    e.ey = ep.y;
     state.enemies.push(e);
     if (e.isBoss) {
       state.shake = 1;
@@ -200,6 +264,10 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
     const def = level.waves[wave - 1];
     // 各组交错（round-robin），BOSS 优先第一个出场
     const pathCount = map.paths.length;
+    // 协作局活跃路数 = min(玩家数, 地图路径数)：显式 path 按活跃路数取模重映射
+    // （如 3 人局四路图的 path 3 组落回 path 0，空路不出怪）；未指定路径的组在活跃路之间轮转。
+    // 单人局 laneCount = pathCount，重映射为恒等，行为与现版一致。
+    const laneCount = coop ? Math.min(players, pathCount) : pathCount;
     // 难度阶梯：普通怪数量随章节与波次递增（BOSS 只数不放大，血量见 hpOverride）
     const cntMul = ladderCountMul(level.id, wave);
     let rr = 0; // 未指定路径的组在所有路径间轮转（确定性）
@@ -211,7 +279,7 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
         type: g.type,
         // 节奏系数：整体拉长出怪间隔，单波持续时间更久、压力更持续
         interval: g.interval * LADDER.intervalMul,
-        path: g.path ?? ((base + i) % pathCount),
+        path: g.path !== undefined ? g.path % laneCount : (base + i) % laneCount,
         hpOverride: g.hpOverride,
         rewardOverride: g.rewardOverride,
       }));
@@ -229,6 +297,16 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
         }
       }
     }
+    // 随机小 BOSS：非 BOSS 波按概率向队列随机位置注入一只掠晶兽（血量/奖励走标准难度阶梯管线；
+    // interval 取 0 不拖长整波节奏，路径随机落到活跃路之一）。
+    // 教学关（id < 1 的单人局）不注入：波次构成保持表记的 crawler/speeder 纯教学编排
+    if (!def.isBoss && queue.length > 0 && (level.id >= 1 || coop) && Math.random() < MINI_BOSS.chance) {
+      queue.splice(Math.floor(Math.random() * (queue.length + 1)), 0, {
+        type: 'miniboss',
+        interval: 0,
+        path: Math.floor(Math.random() * laneCount),
+      });
+    }
     return queue;
   }
 
@@ -240,6 +318,8 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
   function applyDamage(e: EnemyState, raw: number, source: 'laser' | 'missile' | 'frost' | 'railgun' | 'tesla' | 'plasma' | 'mecha', killer?: Killer) {
     if (e.hp <= 0) return;
     let dmg = raw * dmgMul() * critMul();
+    // 掠晶兽增益：伤害加成在命中结算处统一乘一次（killer 为塔且增益未过期；机甲无 buffUntil 不受影响）
+    if (killer && 'buffUntil' in killer && state.clock < (killer as TowerState).buffUntil) dmg *= MINI_BOSS.dmgMul;
     const armored = e.type === 'tanker' || e.isBoss;
     if (armored) dmg *= 1 + 0.25 * techCount('pierce'); // 穿甲：对甲壳/BOSS +25%/层
     if (source === 'laser' && e.type === 'tanker' && techCount('pierce') === 0) dmg *= 0.75; // 装甲
@@ -268,7 +348,7 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
     }
     state.goldEarned += earned;
     if (killer) killer.kills += 1;
-    const p = map.posAt(e.path, e.dist);
+    const p = { x: e.ex, y: e.ey };
     const color = e.isBoss ? '#FF3D81' : '#FFC94D';
     addExplosion(p.x, p.y, e.isBoss ? '#FF3D81' : '#B8FF3D', e.isBoss ? 26 : 12, e.isBoss ? 200 : 120);
     addFloater(p.x, p.y - 10, `+${earned}`, color);
@@ -282,7 +362,29 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
       state.boss1Killed = true; // 本关任意 BOSS 波击杀 BOSS 即置位
       pushEvent({ type: 'bossDown', wave: state.wave });
     }
+    if (e.type === 'miniboss') {
+      // 掠晶兽击杀：晶核能量强化死亡点周边炮塔（已有更长的增益不被缩短）
+      const until = state.clock + MINI_BOSS.duration;
+      for (const t of state.towers) {
+        if (Math.hypot(t.cx - p.x, t.cy - p.y) <= MINI_BOSS.radius * CELL) {
+          t.buffUntil = Math.max(t.buffUntil, until);
+        }
+      }
+      addRing(p.x, p.y, '#FFC94D', 10, MINI_BOSS.radius * CELL, 0.7);
+      addFloater(p.x, p.y - 24, '炮塔强化！', '#FFC94D');
+      pushEvent({ type: 'miniBossDown', x: p.x, y: p.y });
+    }
     if (e.type === 'splitter') {
+      // 分裂动画特效（纯装饰，不进联机快照）：父体两瓣分离，幼体从裂口中爬出
+      const ahead = map.posAt(e.path, e.dist + 10);
+      state.splits.push({
+        id: uid++,
+        x: p.x,
+        y: p.y,
+        angle: Math.atan2(ahead.y - p.y, ahead.x - p.x),
+        ttl: 0.65,
+        maxTtl: 0.65,
+      });
       // 分裂为 2 个爬行者，HP 为当前波爬行者 60%，继承父体路径
       for (let i = 0; i < 2; i++) {
         spawnEnemy(
@@ -295,15 +397,9 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
 
   // ---------- 塔开火 ----------
 
-  function towerCenter(t: TowerState) {
-    return { x: (t.col + 0.5) * CELL, y: (t.row + 0.5) * CELL };
-  }
-
   function inRange(t: TowerState, e: EnemyState): boolean {
     const def = TOWERS[t.type].levels[t.level];
-    const c = towerCenter(t);
-    const p = map.posAt(e.path, e.dist);
-    return e.hp > 0 && Math.hypot(p.x - c.x, p.y - c.y) <= def.range * CELL * rangeMul();
+    return e.hp > 0 && Math.hypot(e.ex - t.cx, e.ey - t.cy) <= def.range * CELL * rangeMul();
   }
 
   function pickTarget(t: TowerState, ignoreStealth: boolean): EnemyState | null {
@@ -319,9 +415,8 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
   function fireLaser(t: TowerState, target: EnemyState) {
     const lv = TOWERS.laser.levels[t.level];
     t.lastFireAt = state.clock;
-    const c = towerCenter(t);
-    const p = map.posAt(target.path, target.dist);
-    addBeam(c.x, c.y, p.x, p.y, '#22E0FF', 2);
+    const p = { x: target.ex, y: target.ey };
+    addBeam(t.cx, t.cy, p.x, p.y, '#22E0FF', 2);
     applyDamage(target, lv.damage, 'laser', t);
     if (t.level === 2) {
       // Lv3 光束贯穿 1 个额外目标（50% 伤害）
@@ -331,8 +426,7 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
         if (!second || e.dist > second.dist) second = e;
       }
       if (second) {
-        const p2 = map.posAt(second.path, second.dist);
-        addBeam(p.x, p.y, p2.x, p2.y, '#22E0FF88', 1.5);
+        addBeam(p.x, p.y, second.ex, second.ey, '#22E0FF88', 1.5);
         applyDamage(second, lv.damage * 0.5, 'laser', t);
       }
     }
@@ -342,12 +436,10 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
     const def = TOWERS.missile;
     const lv = def.levels[t.level];
     t.lastFireAt = state.clock;
-    const c = towerCenter(t);
-    const p = map.posAt(target.path, target.dist);
     state.projectiles.push({
       id: uid++, kind: 'missile',
-      fromX: c.x, fromY: c.y, x: c.x, y: c.y,
-      tx: p.x, ty: p.y, t: 0, dur: 0.35,
+      fromX: t.cx, fromY: t.cy, x: t.cx, y: t.cy,
+      tx: target.ex, ty: target.ey, t: 0, dur: 0.35,
       damage: lv.damage,
       splash: def.splash![t.level] * splashMul(),
       stun: def.stun![t.level],
@@ -377,21 +469,19 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
     const def = TOWERS.tesla;
     t.lastFireAt = state.clock;
     const lv = def.levels[t.level];
-    const c = towerCenter(t);
     const jumps = def.chain![t.level]; // 主目标之外的连锁数
     const decay = def.chainDecay!;
     const hit = new Set<number>();
-    let px = c.x;
-    let py = c.y;
+    let px = t.cx;
+    let py = t.cy;
     let dmg = lv.damage;
     let cur: EnemyState | null = target;
     while (cur) {
-      const p = map.posAt(cur.path, cur.dist);
-      addLightning(px, py, p.x, p.y);
+      addLightning(px, py, cur.ex, cur.ey);
       applyDamage(cur, dmg, 'tesla', t);
       hit.add(cur.id);
-      px = p.x;
-      py = p.y;
+      px = cur.ex;
+      py = cur.ey;
       dmg *= decay;
       if (hit.size > jumps) break;
       // 距上一个命中目标 2.5 格内最近的未命中敌人（隐身不可被闪电锁定）
@@ -399,8 +489,7 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
       let best = Infinity;
       for (const e of state.enemies) {
         if (e.hp <= 0 || hit.has(e.id) || isInvisible(e)) continue;
-        const ep = map.posAt(e.path, e.dist);
-        const d = Math.hypot(ep.x - px, ep.y - py);
+        const d = Math.hypot(e.ex - px, e.ey - py);
         if (d <= 2.5 * CELL && d < best) {
           best = d;
           next = e;
@@ -415,12 +504,10 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
     const def = TOWERS.plasma;
     t.lastFireAt = state.clock;
     const lv = def.levels[t.level];
-    const c = towerCenter(t);
-    const p = map.posAt(target.path, target.dist);
     state.projectiles.push({
       id: uid++, kind: 'plasma',
-      fromX: c.x, fromY: c.y, x: c.x, y: c.y,
-      tx: p.x, ty: p.y, t: 0, dur: 0.45,
+      fromX: t.cx, fromY: t.cy, x: t.cx, y: t.cy,
+      tx: target.ex, ty: target.ey, t: 0, dur: 0.45,
       damage: lv.damage,      splash: def.splash![t.level] * splashMul(),
       stun: 0,
       towerId: t.id,
@@ -434,62 +521,53 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
     const def = TOWERS.frost;
     t.lastFireAt = state.clock;
     const lv = def.levels[t.level];
-    const c = towerCenter(t);
-    const p = map.posAt(target.path, target.dist);
-    addBeam(c.x, c.y, p.x, p.y, '#3DF08C66', 1.5, 0.15);
-    const pct = def.slowPct![t.level];
-    const dur = def.slowDur![t.level];
-    for (const e of state.enemies) {
-      if (e.hp <= 0) continue;
-      const ep = map.posAt(e.path, e.dist);
-      if (Math.hypot(ep.x - p.x, ep.y - p.y) > CELL) continue; // 1 格脉冲
-      let factor = pct + 0.06 * techCount('slow');
-      if (factor > 0.8) factor = 0.8;
-      if (e.isBoss) factor *= 0.5; // BOSS 减速减半
-      if (e.type === 'speeder') factor = Math.min(0.8, factor * 1.2);
-      e.slowPct = Math.max(e.slowPct, factor);
-      e.slowUntil = state.clock + dur;
-      applyDamage(e, lv.damage, 'frost', t);
-    }
-    // 冰蓝脉冲环粒子
-    addExplosion(p.x, p.y, '#3DF08C', 8, 70);
+    // 粘阻弹：弹体抛物线飞到目标点炸开，粘阻剂溅 2 格范围内的敌人（落地结算在弹丸更新循环）
+    state.projectiles.push({
+      id: uid++, kind: 'frost',
+      fromX: t.cx, fromY: t.cy, x: t.cx, y: t.cy,
+      tx: target.ex, ty: target.ey, t: 0, dur: 0.4,
+      damage: lv.damage,
+      splash: 2,
+      stun: 0,
+      towerId: t.id,
+      slowPct: def.slowPct![t.level],
+      slowDur: def.slowDur![t.level],
+    });
+    pushEvent({ type: 'sfx', name: 'frost' });
   }
 
   function updateRailgun(t: TowerState, dt: number) {
     const def = TOWERS.railgun;
     const lv = def.levels[t.level];
-    const c = towerCenter(t);
     if (t.charging) {
       const target = pickTarget(t, true);
       if (target) {
-        const p = map.posAt(target.path, target.dist);
-        t.aimX = p.x;
-        t.aimY = p.y;
+        t.aimX = target.ex;
+        t.aimY = target.ey;
       }
       t.chargeT -= dt;
       if (t.chargeT <= 0) {
         t.charging = false;
-        t.cooldown = 1 / lv.rate / rateMul();
+        t.cooldown = 1 / lv.rate / rateMul() / (towerBuffActive(t) ? MINI_BOSS.rateMul : 1);
         t.lastFireAt = state.clock;
         // 贯穿直线：从塔心沿瞄准方向 range 内所有敌人（含隐身）
-        const dx = t.aimX - c.x;
-        const dy = t.aimY - c.y;
+        const dx = t.aimX - t.cx;
+        const dy = t.aimY - t.cy;
         const len = Math.hypot(dx, dy) || 1;
         const ux = dx / len;
         const uy = dy / len;
         const reach = lv.range * CELL * rangeMul();
-        const ex = c.x + ux * reach;
-        const ey = c.y + uy * reach;
-        addBeam(c.x, c.y, ex, ey, '#8B5CF6', 6, 0.18);
+        const ex = t.cx + ux * reach;
+        const ey = t.cy + uy * reach;
+        addBeam(t.cx, t.cy, ex, ey, '#8B5CF6', 6, 0.18);
         state.shake = Math.max(state.shake, 0.4);
         pushEvent({ type: 'sfx', name: 'railgun' });
         const hits = state.enemies
           .filter((e) => {
             if (e.hp <= 0) return false;
-            const p = map.posAt(e.path, e.dist);
-            const proj = (p.x - c.x) * ux + (p.y - c.y) * uy;
+            const proj = (e.ex - t.cx) * ux + (e.ey - t.cy) * uy;
             if (proj < 0 || proj > reach) return false;
-            const perp = Math.abs((p.x - c.x) * uy - (p.y - c.y) * ux);
+            const perp = Math.abs((e.ex - t.cx) * uy - (e.ey - t.cy) * ux);
             return perp <= CELL * 0.5;
           })
           .sort((a, b) => a.dist - b.dist);
@@ -504,9 +582,8 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
     if (t.cooldown > 0) return;
     const target = pickTarget(t, true); // 电磁炮可锁定隐身目标
     if (!target) return;
-    const p = map.posAt(target.path, target.dist);
-    t.aimX = p.x;
-    t.aimY = p.y;
+    t.aimX = target.ex;
+    t.aimY = target.ey;
     t.charging = true;
     t.chargeT = def.charge!;
   }
@@ -521,10 +598,9 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
     const target = pickTarget(t, false);
     if (!target) return;
     const lv = TOWERS[t.type].levels[t.level];
-    t.cooldown = 1 / lv.rate / rateMul();
-    const p = map.posAt(target.path, target.dist);
-    t.aimX = p.x;
-    t.aimY = p.y;
+    t.cooldown = 1 / lv.rate / rateMul() / (towerBuffActive(t) ? MINI_BOSS.rateMul : 1);
+    t.aimX = target.ex;
+    t.aimY = target.ey;
     if (t.type === 'laser') fireLaser(t, target);
     else if (t.type === 'missile') fireMissile(t, target);
     else if (t.type === 'tesla') fireTesla(t, target);
@@ -543,17 +619,15 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
     let anchorTarget: EnemyState | null = null;
     for (const e of state.enemies) {
       if (e.hp <= 0) continue;
-      const p = map.posAt(e.path, e.dist);
-      if (Math.hypot(p.x - ax, p.y - ay) > MECHA.leash * CELL) continue;
+      if (Math.hypot(e.ex - ax, e.ey - ay) > MECHA.leash * CELL) continue;
       if (!anchorTarget || e.dist > anchorTarget.dist) anchorTarget = e;
     }
     // 期望站位：锚点 → 目标方向，停在机炮射程边沿；无敌时回锚点
     let dx0 = ax;
     let dy0 = ay;
     if (anchorTarget) {
-      const p = map.posAt(anchorTarget.path, anchorTarget.dist);
-      const ddx = p.x - ax;
-      const ddy = p.y - ay;
+      const ddx = anchorTarget.ex - ax;
+      const ddy = anchorTarget.ey - ay;
       const dA = Math.hypot(ddx, ddy) || 1;
       const stand = Math.min(Math.max(0, dA - lv.range * CELL * 0.8), MECHA.leash * CELL);
       dx0 = ax + (ddx / dA) * stand;
@@ -569,11 +643,12 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
       m.walkT += dt;
       // 推进器尾焰
       if (Math.random() <= particleScale * 0.6) {
-        state.particles.push({
+        const p: ParticleState = {
           id: uid++, x: m.x + (Math.random() - 0.5) * 8, y: m.y + 14,
           vx: (Math.random() - 0.5) * 14, vy: 26 + Math.random() * 18,
           ttl: 0.25, maxTtl: 0.25, color: '#9FD8FF', size: 1.5 + Math.random() * 1.5,
-        });
+        };
+        if (state.particles.length < PARTICLE_MAX) state.particles.push(p);
       }
     }
     // 攻击：当前位置射程内最前沿敌人（隐身不可锁定）
@@ -582,18 +657,16 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
     let target: EnemyState | null = null;
     for (const e of state.enemies) {
       if (e.hp <= 0 || isInvisible(e)) continue;
-      const p = map.posAt(e.path, e.dist);
-      if (Math.hypot(p.x - m.x, p.y - m.y) > lv.range * CELL) continue;
+      if (Math.hypot(e.ex - m.x, e.ey - m.y) > lv.range * CELL) continue;
       if (!target || e.dist > target.dist) target = e;
     }
     if (!target) return;
-    const p = map.posAt(target.path, target.dist);
-    m.aimX = p.x;
-    m.aimY = p.y;
+    m.aimX = target.ex;
+    m.aimY = target.ey;
     if (m.cooldown <= 0) {
       m.cooldown = 1 / lv.rate;
       m.lastFireAt = state.clock;
-      addBeam(m.x, m.y - 8, p.x, p.y, '#9FD8FF', 2.5, 0.12);
+      addBeam(m.x, m.y - 8, target.ex, target.ey, '#9FD8FF', 2.5, 0.12);
       applyDamage(target, lv.damage, 'mecha', m);
     }
     if (m.missileT <= 0) {
@@ -601,7 +674,7 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
       state.projectiles.push({
         id: uid++, kind: 'missile',
         fromX: m.x - 10, fromY: m.y - 16, x: m.x - 10, y: m.y - 16,
-        tx: p.x, ty: p.y, t: 0, dur: 0.4,
+        tx: target.ex, ty: target.ey, t: 0, dur: 0.4,
         damage: lv.missileDamage,
         splash: lv.missileSplash,
         stun: 0,
@@ -626,10 +699,10 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
     const def = level.waves[state.wave - 1];
     const bonus = Math.max(10, Math.round(def.bonus * ECONOMY.bonusMul));
     if (state.golds) {
-      // 协作：波次奖励双方平分（奇数时主机多得 1，保证两池之和精确等于 bonus）
-      const half = Math.round(bonus / 2);
-      state.golds[0] += half;
-      state.golds[1] += bonus - half;
+      // 协作：波次奖励全员平分（除不尽的零头归末位玩家，保证各池之和精确等于 bonus）
+      const share = Math.round(bonus / players);
+      for (let i = 0; i < players - 1; i++) state.golds[i] += share;
+      state.golds[players - 1] += bonus - share * (players - 1);
       state.gold = state.golds[0];
     } else {
       state.gold += bonus;
@@ -668,6 +741,7 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
     state.clock += dt;
     state.timeSec += dt;
     state.shake = Math.max(0, state.shake - dtReal * 2.2);
+    refreshTechCache();
 
     if (state.phase === 'prep') {
       state.prepT -= dt;
@@ -706,6 +780,13 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
       }
       state.enemies = state.enemies.filter((e) => e.hp > 0);
 
+      // 命中坐标每 tick 解算一次写入 ex/ey，后续塔/机甲/溅射/灼烧扫描全部读缓存
+      for (const e of state.enemies) {
+        const p = map.posAt(e.path, e.dist);
+        e.ex = p.x;
+        e.ey = p.y;
+      }
+
       if (state.lives <= 0) {
         state.lives = 0;
         state.phase = 'lost';
@@ -733,8 +814,7 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
             // 落点瞬时小溅射
             for (const e of state.enemies) {
               if (e.hp <= 0) continue;
-              const p = map.posAt(e.path, e.dist);
-              if (Math.hypot(p.x - pr.tx, p.y - pr.ty) <= pr.splash * CELL) {
+              if (Math.hypot(e.ex - pr.tx, e.ey - pr.ty) <= pr.splash * CELL) {
                 applyDamage(e, pr.damage, 'plasma', tower);
               }
             }
@@ -747,14 +827,27 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
               maxTtl: TOWERS.plasma.zoneDur ?? 2.5,
               towerId: pr.towerId,
             });
+          } else if (pr.kind === 'frost') {
+            // 粘阻弹炸开：粘液溅射 2 格范围，减速 + 小额伤害（精英减半、迅捷兽加成的修正在落地时结算）
+            addExplosion(pr.tx, pr.ty, '#3DF08C', 12, 110);
+            addRing(pr.tx, pr.ty, '#3DF08C', 6, Math.max(26, pr.splash * CELL * 0.9), 0.45);
+            for (const e of state.enemies) {
+              if (e.hp <= 0) continue;
+              if (Math.hypot(e.ex - pr.tx, e.ey - pr.ty) > pr.splash * CELL) continue;
+              let factor = (pr.slowPct ?? 0.35) + 0.06 * techCount('slow');
+              if (factor > 0.8) factor = 0.8;
+              if (isElite(e)) factor *= 0.5; // BOSS/掠晶兽减速减半
+              if (e.type === 'speeder') factor = Math.min(0.8, factor * 1.2);
+              e.slowPct = Math.max(e.slowPct, factor);
+              e.slowUntil = state.clock + (pr.slowDur ?? 1.5);
+              applyDamage(e, pr.damage, 'frost', tower);
+            }
           } else {
-            addExplosion(pr.tx, pr.ty, '#FF9F43', 16, 150);
             addRing(pr.tx, pr.ty, '#FF9F43', 6, Math.max(26, pr.splash * CELL * 0.9), 0.45);
             for (const e of state.enemies) {
               if (e.hp <= 0) continue;
-              const p = map.posAt(e.path, e.dist);
-              if (Math.hypot(p.x - pr.tx, p.y - pr.ty) <= pr.splash * CELL) {
-                if (pr.stun > 0 && !e.isBoss) e.stunUntil = state.clock + pr.stun;
+              if (Math.hypot(e.ex - pr.tx, e.ey - pr.ty) <= pr.splash * CELL) {
+                if (pr.stun > 0 && !isElite(e)) e.stunUntil = state.clock + pr.stun;
                 applyDamage(e, pr.damage, 'missile', tower);
               }
             }
@@ -768,16 +861,17 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
           for (let i = 0; i < trailN; i++) {
             if (Math.random() > particleScale) continue;
             const ttl = 0.22 + Math.random() * 0.14;
-            state.particles.push({
+            const p: ParticleState = {
               id: uid++,
               x: pr.x + (Math.random() - 0.5) * 4,
               y: pr.y + (Math.random() - 0.5) * 4,
               vx: (Math.random() - 0.5) * 16,
               vy: (Math.random() - 0.5) * 16,
               ttl, maxTtl: ttl,
-              color: pr.kind === 'plasma' ? '#FF6B3D' : '#FF9F43',
+              color: pr.kind === 'plasma' ? '#FF6B3D' : pr.kind === 'frost' ? '#3DF08C' : '#FF9F43',
               size: 1.5 + Math.random() * 1.5,
-            });
+            };
+            if (state.particles.length < PARTICLE_MAX) state.particles.push(p);
           }
         }
       }
@@ -788,8 +882,7 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
         const tower = state.towers.find((tw) => tw.id === z.towerId);
         for (const e of state.enemies) {
           if (e.hp <= 0) continue;
-          const p = map.posAt(e.path, e.dist);
-          if (Math.hypot(p.x - z.x, p.y - z.y) <= z.r) {
+          if (Math.hypot(e.ex - z.x, e.ey - z.y) <= z.r) {
             applyDamage(e, z.dps * dt, 'plasma', tower);
           }
         }
@@ -826,6 +919,8 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
       f.y -= 44 * dt;
     }
     state.floaters = state.floaters.filter((f) => f.ttl > 0);
+    for (const s of state.splits) s.ttl -= dt;
+    state.splits = state.splits.filter((s) => s.ttl > 0);
 
     notify();
   }
@@ -833,6 +928,8 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
   // ---------- 命令 ----------
 
   function dispatchAs(player: number, cmd: Command): boolean {
+    // 玩家索引越界直接拒绝（合法身份为 0..players-1；联机层按 slot 转发，坏包不能越权分账）
+    if (player < 0 || player >= players) return false;
     if (state.phase === 'tech') {
       // 科技选择期间：只接受 PICK_TECH
       if (cmd.type !== 'PICK_TECH') return false;
@@ -892,6 +989,8 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
         lastFireAt: -999,
         kills: 0, invested: cost,
         owner: player,
+        cx: c.x, cy: c.y,
+        buffUntil: 0,
       });
       if (!state.towerTypesBuilt.includes(cmd.tower)) state.towerTypesBuilt.push(cmd.tower);
       if (cmd.tower === 'frost') state.usedFrost = true;
@@ -911,9 +1010,8 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
       t.level += 1;
       t.invested += cost;
       state.maxTowerLevel = Math.max(state.maxTowerLevel, t.level + 1);
-      const c = towerCenter(t);
-      addExplosion(c.x, c.y, TOWERS[t.type].color, 14, 110);
-      addFloater(c.x, c.y - 30, 'LEVEL UP', '#3DF08C');
+      addExplosion(t.cx, t.cy, TOWERS[t.type].color, 14, 110);
+      addFloater(t.cx, t.cy - 30, 'LEVEL UP', '#3DF08C');
       notify();
       return true;
     }
@@ -988,9 +1086,8 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
       if (state.coop && t.owner !== player) return false;
       const refund = Math.floor(t.invested * SELL_RATE);
       addGold(player, refund);
-      const c = towerCenter(t);
-      addFloater(c.x, c.y - 20, `+${refund}`, '#FFC94D');
-      addExplosion(c.x, c.y, '#7C8DB0', 8, 80);
+      addFloater(t.cx, t.cy - 20, `+${refund}`, '#FFC94D');
+      addExplosion(t.cx, t.cy, '#7C8DB0', 8, 80);
       state.towers.splice(i, 1);
       notify();
       return true;
@@ -1004,8 +1101,8 @@ export function createEngine(difficulty: Difficulty, levelId: number = 1, opts?:
   }
 
   function serializeNet(): NetGameState {
-    // 剔除纯装饰数组 + 客机不读的 spawnQueue/events 省带宽（事件由联机层在快照外层附带）
-    const { particles, beams, rings, floaters, spawnQueue, events, ...rest } = state;
+    // 剔除粒子（量大，客机由击杀 diff 兜底）+ 客机不读的 spawnQueue/events 省带宽（事件由联机层在快照外层附带）
+    const { particles, spawnQueue, events, ...rest } = state;
     return rest;
   }
 

@@ -292,6 +292,21 @@
       size: 34,
       desc: "\u514D\u75AB\u7729\u6655\uFF0C\u51CF\u901F\u6548\u679C\u51CF\u534A\u3002\u8840\u91CF 50% \u4EE5\u4E0B\u72C2\u66B4\uFF1A\u901F\u5EA6 +40%\uFF0C\u5916\u58F3\u53D8\u4E3A\u54C1\u7EA2\u3002",
       weakness: "\u6EE1\u7EA7\u7535\u78C1\u70AE + \u51CF\u901F\u7275\u5236"
+    },
+    miniboss: {
+      type: "miniboss",
+      name: "\u63A0\u6676\u517D",
+      nameEn: "SHARD REAVER",
+      category: "special",
+      hp: 260,
+      speed: 0.6,
+      reward: 60,
+      leak: 4,
+      threat: 4,
+      color: "#FFC94D",
+      size: 26,
+      desc: "\u968F\u673A\u6DF7\u5165\u866B\u7FA4\u7684\u7CBE\u82F1\u63A0\u98DF\u8005\uFF0C\u514D\u75AB\u7729\u6655\u3001\u51CF\u901F\u6548\u679C\u51CF\u534A\u3002\u51FB\u6740\u540E\u6563\u9038\u7684\u80FD\u91CF\u6676\u6838\u4F1A\u77ED\u6682\u5F3A\u5316\u9644\u8FD1\u7684\u70AE\u5854\u3002",
+      weakness: "\u5728\u70AE\u5854\u5BC6\u96C6\u533A\u96C6\u706B\u51FB\u6740\uFF0C\u6536\u5272\u589E\u76CA"
     }
   };
   var ENEMY_LIST = [
@@ -300,8 +315,21 @@
     ENEMIES.tanker,
     ENEMIES.splitter,
     ENEMIES.lurker,
+    ENEMIES.miniboss,
     ENEMIES.boss
   ];
+  var MINI_BOSS = {
+    chance: 0.25,
+    // 每个非 BOSS 波出现概率
+    radius: 2.5,
+    // 增益半径（格）
+    dmgMul: 1.3,
+    // 增益期间伤害倍率
+    rateMul: 1.2,
+    // 增益期间攻速倍率
+    duration: 20
+    // 增益时长（秒，引擎时钟）
+  };
   var MECHA = {
     name: "\u7834\u6653\u8005\u673A\u7532",
     nameEn: "DAWNBREAKER",
@@ -372,6 +400,9 @@
   function threatStars(levelId) {
     return Math.min(5, 1 + Math.floor(Math.max(0, levelId - 1) / 3));
   }
+  var COOP_MAX_PLAYERS = 4;
+  var COOP_HP_MUL = { 1: 1, 2: 1, 3: 1.45, 4: 1.85 };
+  var COOP_LIVES_MUL = { 1: 1, 2: 1, 3: 1.1, 4: 1.2 };
   var TECHS = {
     dmg: {
       id: "dmg",
@@ -2591,8 +2622,69 @@
   );
   function getLevel(id) {
     if (id === COOP_LEVEL.id) return COOP_LEVEL;
+    if (id === TUTORIAL_LEVEL.id) return TUTORIAL_LEVEL;
     return LEVELS.find((l) => l.id === id) ?? LEVELS[0];
   }
+  var TUTORIAL_LEVEL = {
+    id: -2,
+    name: "\u8BAD\u7EC3\u54E8\u7AD9",
+    sub: "\u65B0\u5175\u6F14\u7EC3 \xB7 \u6559\u5B66\u5173",
+    briefing: [
+      "\u8BAD\u7EC3\u54E8\u7AD9\u2014\u2014\u661F\u73AF\u9632\u7EBF\u7684\u65B0\u5175\u6F14\u7EC3\u573A\u3002\u8FD9\u91CC\u6CA1\u6709\u866B\u7FA4\u4E3B\u529B\uFF0C\u53EA\u6709\u9776\u673A\u6A21\u62DF\u7684\u8F7B\u91CF\u517D\u6F6E\uFF0C\u653E\u5FC3\u5927\u80C6\u5730\u8BD5\u3002",
+      "\u6F14\u7EC3\u76EE\u6807\uFF1A\u5B66\u4F1A\u5EFA\u9020\u70AE\u5854\u3001\u5347\u7EA7\u4E0E\u51FA\u552E\uFF0C\u8BA4\u8BC6\u673A\u7532\u3002\u8DDF\u7740\u9876\u90E8\u7684\u6218\u5730\u901A\u8BAF\u4E00\u6B65\u6B65\u6765\uFF0C5 \u6CE2\u5C0F\u573A\u9762\uFF0C\u5B88\u5230\u5E95\u5C31\u6BD5\u4E1A\u3002",
+      "\u6F14\u7EC3\u7ED3\u675F\u540E\uFF0C\u7B2C 1 \u7AE0\u300C\u661F\u73AF\u5916\u6CBF\u300D\u89C1\u3002\u6307\u6325\u5B98\uFF0C\u5F00\u59CB\u5427\u3002"
+    ],
+    epilogue: "\u6F14\u7EC3\u5B8C\u6210\uFF01\u4F60\u5DF2\u7ECF\u638C\u63E1\u4E86\u5EFA\u5854\u3001\u5347\u7EA7\u4E0E\u673A\u7532\u90E8\u7F72\u3002\u771F\u6B63\u7684\u866B\u7FA4\u5728\u661F\u73AF\u5916\u6CBF\u7B49\u4F60\u2014\u2014\u7B2C 1 \u7AE0\uFF0C\u51FA\u51FB\u3002",
+    paths: [
+      [[-1, 2], [7, 2], [7, 6], [1, 6], [1, 10], [7, 10], [7, 13], [4, 13], [4, 16]]
+    ],
+    waves: [
+      {
+        wave: 1,
+        groups: [{ type: "crawler", count: 6, interval: 1.5 }],
+        bonus: 60,
+        isBoss: false,
+        comm: "\u70B9\u5E95\u90E8\u5854\u680F\u9009\u70AE\u5854\uFF0C\u518D\u70B9\u7EFF\u8272\u683C\u5EFA\u9020"
+      },
+      {
+        wave: 2,
+        groups: [{ type: "crawler", count: 8, interval: 1.3 }],
+        bonus: 70,
+        isBoss: false,
+        comm: "\u70B9\u5DF2\u5EFA\u597D\u7684\u70AE\u5854\uFF1A\u53EF\u5347\u7EA7\uFF0C\u4E5F\u53EF\u51FA\u552E"
+      },
+      {
+        wave: 3,
+        groups: [
+          { type: "speeder", count: 6, interval: 1 },
+          { type: "crawler", count: 4, interval: 1.2 }
+        ],
+        bonus: 80,
+        isBoss: false,
+        comm: "\u5FEB\u901F\u5355\u4F4D\u903C\u8FD1\u2014\u2014\u706B\u529B\u5C3D\u91CF\u94FA\u5F00"
+      },
+      {
+        wave: 4,
+        groups: [
+          { type: "crawler", count: 8, interval: 1 },
+          { type: "speeder", count: 6, interval: 0.9 }
+        ],
+        bonus: 100,
+        isBoss: false,
+        comm: "\u5854\u680F\u672B\u4F4D\u662F\u673A\u7532\uFF1A\u53EF\u90E8\u7F72\u5230\u524D\u7EBF\u652F\u63F4"
+      },
+      {
+        wave: 5,
+        groups: [
+          { type: "crawler", count: 12, interval: 0.8 },
+          { type: "speeder", count: 8, interval: 0.7 }
+        ],
+        bonus: 160,
+        isBoss: false,
+        comm: "\u6700\u540E\u4E00\u6CE2\uFF01\u5168\u529B\u5F00\u706B\uFF0C\u5B88\u4F4F\u51FA\u53E3"
+      }
+    ]
+  };
   var COOP_LEVEL = {
     id: 0,
     name: "\u53CC\u5B50\u661F\u95E8",
@@ -2757,31 +2849,311 @@
       }
     ]
   };
+  var COOP_LEVEL4 = {
+    id: -1,
+    name: "\u56DB\u8C61\u661F\u5792",
+    sub: "\u534F\u540C\u4F5C\u6218 \xB7 \u56DB\u8DEF\u8054\u673A\u9632\u7EBF",
+    briefing: [
+      "\u56DB\u8C61\u661F\u5792\u2014\u2014\u6B96\u6C11\u5730\u8F68\u9053\u9632\u5FA1\u7F51\u7684\u6700\u540E\u652F\u70B9\u3002\u866B\u7FA4\u4E3B\u529B\u6495\u6210\u56DB\u80A1\uFF0C\u6CBF\u56DB\u6761\u5782\u76F4\u7A7A\u964D\u8D70\u5ECA\u540C\u65F6\u6251\u5411\u5792\u5E95\u62A4\u76FE\u6838\u5FC3\u3002",
+      "\u6307\u6325\u90E8\u547D\u4EE4\uFF1A\u56DB\u540D\u6307\u6325\u5B98\u5404\u9886\u4E00\u6761\u8D70\u5ECA\uFF0C\u72EC\u7ACB\u519B\u8D39\u3001\u5404\u81EA\u4E3A\u6218\u2014\u2014\u4F46\u62A4\u76FE\u6838\u5FC3\u53EA\u6709\u4E00\u5EA7\uFF0C\u4EFB\u4F55\u4E00\u8DEF\u6F0F\u6389\u7684\u866B\u5B50\u90FD\u5728\u70E7\u5171\u540C\u7684\u751F\u547D\u3002",
+      "\u5B88\u4F4F\u5168\u90E8\u6CE2\u6B21\u3002\u56DB\u6761\u8D70\u5ECA\u7B49\u957F\u7B49\u538B\uFF0C\u6CA1\u6709\u8C01\u7684\u9632\u7EBF\u66F4\u8F7B\u677E\u3002\u534F\u540C\u52A0\u6210\u5DF2\u8BA1\u5165\u6218\u540E\u519B\u529F\uFF0C\u6307\u6325\u5B98\uFF0C\u5E76\u80A9\u4F5C\u6218\u3002"
+    ],
+    epilogue: "\u56DB\u8C61\u661F\u5792\u5728\u56DB\u9762\u706B\u529B\u7F51\u4E2D\u5C79\u7ACB\u4E0D\u5012\u3002\u56DB\u6761\u8D70\u5ECA\u7684\u7126\u571F\u8FDE\u6210\u4E00\u7EBF\u2014\u2014\u8FD9\u4E00\u6218\uFF0C\u662F\u56DB\u53CC\u773C\u775B\u4E00\u8D77\u8D62\u4E0B\u7684\u3002",
+    // 四条纵向蛇形路（各据一条 2 列纵向带，互不接触；中央第 4 列为公共建造带），顶进底出、四路等长
+    paths: [
+      [[0, -1], [0, 1], [1, 1], [1, 3], [0, 3], [0, 5], [1, 5], [1, 7], [0, 7], [0, 9], [1, 9], [1, 11], [0, 11], [0, 13], [1, 13], [1, 16]],
+      [[3, -1], [3, 1], [2, 1], [2, 3], [3, 3], [3, 5], [2, 5], [2, 7], [3, 7], [3, 9], [2, 9], [2, 11], [3, 11], [3, 13], [2, 13], [2, 16]],
+      [[5, -1], [5, 1], [6, 1], [6, 3], [5, 3], [5, 5], [6, 5], [6, 7], [5, 7], [5, 9], [6, 9], [6, 11], [5, 11], [5, 13], [6, 13], [6, 16]],
+      [[8, -1], [8, 1], [7, 1], [7, 3], [8, 3], [8, 5], [7, 5], [7, 7], [8, 7], [8, 9], [7, 9], [7, 11], [8, 11], [8, 13], [7, 13], [7, 16]]
+    ],
+    waves: [
+      {
+        wave: 1,
+        groups: [
+          { type: "crawler", count: 2, interval: 1.1, path: 0 },
+          { type: "crawler", count: 2, interval: 1.1, path: 1 },
+          { type: "crawler", count: 2, interval: 1.1, path: 2 },
+          { type: "crawler", count: 2, interval: 1.1, path: 3 }
+        ],
+        bonus: 40,
+        isBoss: false,
+        comm: "\u56DB\u8C61\u661F\u5792\u63A5\u654C\u2014\u2014\u866B\u7FA4\u5148\u950B\u540C\u65F6\u51FA\u73B0\u5728\u56DB\u6761\u7A7A\u964D\u8D70\u5ECA\u3002\u5404\u5B88\u4E00\u8DEF\uFF0C\u6307\u6325\u5B98\uFF01"
+      },
+      {
+        wave: 2,
+        groups: [
+          { type: "speeder", count: 2, interval: 0.8, path: 0 },
+          { type: "crawler", count: 3, interval: 1, path: 1 },
+          { type: "crawler", count: 3, interval: 1, path: 2 },
+          { type: "speeder", count: 2, interval: 0.8, path: 3 }
+        ],
+        bonus: 55,
+        isBoss: false,
+        comm: "\u56DB\u8DEF\u540C\u65F6\u9047\u88AD\uFF01\u522B\u8BA9\u4EFB\u4F55\u4E00\u8DEF\u653E\u7A7A\u3002"
+      },
+      {
+        wave: 3,
+        groups: [
+          { type: "splitter", count: 2, interval: 0.9, path: 0 },
+          { type: "lurker", count: 2, interval: 0.9, path: 1 },
+          { type: "splitter", count: 3, interval: 0.9, path: 2 },
+          { type: "lurker", count: 2, interval: 0.9, path: 3 }
+        ],
+        bonus: 65,
+        isBoss: false
+      },
+      {
+        wave: 4,
+        groups: [
+          { type: "tanker", count: 1, interval: 0.9, path: 0 },
+          { type: "tanker", count: 1, interval: 0.9, path: 1 },
+          { type: "tanker", count: 1, interval: 0.9, path: 2 },
+          { type: "tanker", count: 1, interval: 0.9, path: 3 },
+          { type: "crawler", count: 2, interval: 0.8, path: 0 },
+          { type: "crawler", count: 2, interval: 0.8, path: 1 },
+          { type: "crawler", count: 2, interval: 0.8, path: 2 },
+          { type: "crawler", count: 2, interval: 0.8, path: 3 }
+        ],
+        bonus: 80,
+        isBoss: false
+      },
+      {
+        wave: 5,
+        groups: [
+          { type: "lurker", count: 2, interval: 0.6, path: 0 },
+          { type: "lurker", count: 2, interval: 0.6, path: 1 },
+          { type: "lurker", count: 2, interval: 0.6, path: 2 },
+          { type: "lurker", count: 2, interval: 0.6, path: 3 },
+          { type: "speeder", count: 3, interval: 0.6, path: 0 },
+          { type: "speeder", count: 3, interval: 0.6, path: 1 },
+          { type: "speeder", count: 2, interval: 0.6, path: 2 },
+          { type: "speeder", count: 2, interval: 0.6, path: 3 }
+        ],
+        bonus: 100,
+        isBoss: false,
+        comm: "\u9690\u533F\u8005\u5F00\u59CB\u6E17\u900F\u5168\u90E8\u8D70\u5ECA\u2014\u2014\u7535\u78C1\u70AE\u53EF\u65E0\u89C6\u9690\u8EAB\u3002"
+      },
+      {
+        wave: 6,
+        groups: [
+          { type: "splitter", count: 2, interval: 0.65, path: 0 },
+          { type: "splitter", count: 2, interval: 0.65, path: 1 },
+          { type: "splitter", count: 3, interval: 0.65, path: 2 },
+          { type: "splitter", count: 2, interval: 0.65, path: 3 },
+          { type: "tanker", count: 1, interval: 0.8, path: 0 },
+          { type: "tanker", count: 1, interval: 0.8, path: 1 },
+          { type: "tanker", count: 1, interval: 0.8, path: 2 },
+          { type: "tanker", count: 1, interval: 0.8, path: 3 }
+        ],
+        bonus: 130,
+        isBoss: false
+      },
+      {
+        wave: 7,
+        groups: [
+          { type: "lurker", count: 3, interval: 0.55, path: 0 },
+          { type: "lurker", count: 2, interval: 0.55, path: 1 },
+          { type: "lurker", count: 3, interval: 0.55, path: 2 },
+          { type: "lurker", count: 2, interval: 0.55, path: 3 },
+          { type: "speeder", count: 3, interval: 0.5, path: 0 },
+          { type: "speeder", count: 3, interval: 0.5, path: 1 },
+          { type: "speeder", count: 3, interval: 0.5, path: 2 },
+          { type: "speeder", count: 3, interval: 0.5, path: 3 }
+        ],
+        bonus: 150,
+        isBoss: false
+      },
+      {
+        wave: 8,
+        groups: [
+          // 同级单 BOSS 基线约 6667 血（COOP_LEVEL 第 8 波 4000 = 60%）；四路各取约 33%，总血量约 1.32 倍
+          { type: "boss", count: 1, interval: 1, hpOverride: 2200, rewardOverride: 200, path: 0 },
+          { type: "boss", count: 1, interval: 1, hpOverride: 2200, rewardOverride: 200, path: 1 },
+          { type: "boss", count: 1, interval: 1, hpOverride: 2200, rewardOverride: 200, path: 2 },
+          { type: "boss", count: 1, interval: 1, hpOverride: 2200, rewardOverride: 200, path: 3 }
+        ],
+        bonus: 280,
+        isBoss: true,
+        comm: "\u8B66\u544A\uFF1A\u56DB\u8DEF\u5404\u6709\u4E00\u53EA\u5DE8\u517D\u538B\u9635\uFF01\u5404\u81EA\u96C6\u706B\uFF0C\u522B\u8BA9\u5B83\u78B0\u5230\u62A4\u76FE\u6838\u5FC3\uFF01"
+      },
+      {
+        wave: 9,
+        groups: [
+          { type: "tanker", count: 2, interval: 0.6, path: 0 },
+          { type: "tanker", count: 2, interval: 0.6, path: 1 },
+          { type: "tanker", count: 1, interval: 0.6, path: 2 },
+          { type: "tanker", count: 2, interval: 0.6, path: 3 },
+          { type: "lurker", count: 2, interval: 0.55, path: 0 },
+          { type: "lurker", count: 2, interval: 0.55, path: 1 },
+          { type: "lurker", count: 2, interval: 0.55, path: 2 },
+          { type: "lurker", count: 2, interval: 0.55, path: 3 }
+        ],
+        bonus: 170,
+        isBoss: false
+      },
+      {
+        wave: 10,
+        groups: [
+          { type: "splitter", count: 3, interval: 0.55, path: 0 },
+          { type: "splitter", count: 2, interval: 0.55, path: 1 },
+          { type: "splitter", count: 3, interval: 0.55, path: 2 },
+          { type: "splitter", count: 2, interval: 0.55, path: 3 },
+          { type: "speeder", count: 3, interval: 0.5, path: 0 },
+          { type: "speeder", count: 2, interval: 0.5, path: 1 },
+          { type: "speeder", count: 3, interval: 0.5, path: 2 },
+          { type: "speeder", count: 2, interval: 0.5, path: 3 },
+          { type: "crawler", count: 3, interval: 0.5, path: 0 },
+          { type: "crawler", count: 3, interval: 0.5, path: 1 },
+          { type: "crawler", count: 3, interval: 0.5, path: 2 },
+          { type: "crawler", count: 3, interval: 0.5, path: 3 }
+        ],
+        bonus: 200,
+        isBoss: false,
+        comm: "\u517D\u6F6E\u5BC6\u5EA6\u8FD8\u5728\u4E0A\u5347\u3002\u519B\u8D39\u72EC\u7ACB\u2014\u2014\u7167\u770B\u597D\u4F60\u81EA\u5DF1\u7684\u90A3\u4E00\u8DEF\u3002"
+      },
+      {
+        wave: 11,
+        groups: [
+          { type: "lurker", count: 3, interval: 0.5, path: 0 },
+          { type: "lurker", count: 3, interval: 0.5, path: 1 },
+          { type: "lurker", count: 3, interval: 0.5, path: 2 },
+          { type: "lurker", count: 3, interval: 0.5, path: 3 },
+          { type: "tanker", count: 1, interval: 0.7, path: 0 },
+          { type: "tanker", count: 1, interval: 0.7, path: 1 },
+          { type: "tanker", count: 2, interval: 0.7, path: 2 },
+          { type: "tanker", count: 1, interval: 0.7, path: 3 },
+          { type: "splitter", count: 2, interval: 0.55, path: 0 },
+          { type: "splitter", count: 2, interval: 0.55, path: 1 },
+          { type: "splitter", count: 1, interval: 0.55, path: 2 },
+          { type: "splitter", count: 2, interval: 0.55, path: 3 }
+        ],
+        bonus: 240,
+        isBoss: false
+      },
+      {
+        wave: 12,
+        groups: [
+          { type: "crawler", count: 4, interval: 0.4, path: 0 },
+          { type: "crawler", count: 3, interval: 0.4, path: 1 },
+          { type: "crawler", count: 4, interval: 0.4, path: 2 },
+          { type: "crawler", count: 3, interval: 0.4, path: 3 },
+          { type: "speeder", count: 3, interval: 0.4, path: 0 },
+          { type: "speeder", count: 3, interval: 0.4, path: 1 },
+          { type: "speeder", count: 3, interval: 0.4, path: 2 },
+          { type: "speeder", count: 3, interval: 0.4, path: 3 },
+          { type: "tanker", count: 2, interval: 0.6, path: 0 },
+          { type: "tanker", count: 1, interval: 0.6, path: 1 },
+          { type: "tanker", count: 2, interval: 0.6, path: 2 },
+          { type: "tanker", count: 1, interval: 0.6, path: 3 }
+        ],
+        bonus: 280,
+        isBoss: false
+      },
+      {
+        wave: 13,
+        groups: [
+          { type: "splitter", count: 3, interval: 0.45, path: 0 },
+          { type: "splitter", count: 2, interval: 0.45, path: 1 },
+          { type: "splitter", count: 3, interval: 0.45, path: 2 },
+          { type: "splitter", count: 2, interval: 0.45, path: 3 },
+          { type: "lurker", count: 2, interval: 0.45, path: 0 },
+          { type: "lurker", count: 3, interval: 0.45, path: 1 },
+          { type: "lurker", count: 2, interval: 0.45, path: 2 },
+          { type: "lurker", count: 3, interval: 0.45, path: 3 },
+          { type: "speeder", count: 3, interval: 0.4, path: 0 },
+          { type: "speeder", count: 3, interval: 0.4, path: 1 },
+          { type: "speeder", count: 3, interval: 0.4, path: 2 },
+          { type: "speeder", count: 3, interval: 0.4, path: 3 }
+        ],
+        bonus: 320,
+        isBoss: false
+      },
+      {
+        wave: 14,
+        groups: [
+          { type: "tanker", count: 2, interval: 0.5, path: 0 },
+          { type: "tanker", count: 2, interval: 0.5, path: 1 },
+          { type: "tanker", count: 2, interval: 0.5, path: 2 },
+          { type: "tanker", count: 2, interval: 0.5, path: 3 },
+          { type: "lurker", count: 3, interval: 0.4, path: 0 },
+          { type: "lurker", count: 2, interval: 0.4, path: 1 },
+          { type: "lurker", count: 3, interval: 0.4, path: 2 },
+          { type: "lurker", count: 2, interval: 0.4, path: 3 },
+          { type: "splitter", count: 2, interval: 0.45, path: 0 },
+          { type: "splitter", count: 2, interval: 0.45, path: 1 },
+          { type: "splitter", count: 2, interval: 0.45, path: 2 },
+          { type: "splitter", count: 2, interval: 0.45, path: 3 }
+        ],
+        bonus: 380,
+        isBoss: false,
+        comm: "\u661F\u5792\u62A4\u76FE\u80FD\u91CF\u89C1\u5E95\u3002\u6700\u540E\u4E00\u6CE2\u603B\u653B\u8981\u6765\u4E86\u2014\u2014\u628A\u519B\u8D39\u5168\u90E8\u82B1\u6389\uFF01"
+      },
+      {
+        wave: 15,
+        groups: [
+          // 同级单 BOSS 基线约 16000 血（COOP_LEVEL 第 15 波 9600 = 60%）；四路各取约 32.5%，总血量约 1.3 倍
+          { type: "boss", count: 1, interval: 0.8, hpOverride: 5200, rewardOverride: 450, path: 0 },
+          { type: "boss", count: 1, interval: 0.8, hpOverride: 5200, rewardOverride: 450, path: 1 },
+          { type: "boss", count: 1, interval: 0.8, hpOverride: 5200, rewardOverride: 450, path: 2 },
+          { type: "boss", count: 1, interval: 0.8, hpOverride: 5200, rewardOverride: 450, path: 3 },
+          { type: "speeder", count: 2, interval: 0.7, path: 0 },
+          { type: "speeder", count: 2, interval: 0.7, path: 1 },
+          { type: "speeder", count: 2, interval: 0.7, path: 2 },
+          { type: "speeder", count: 2, interval: 0.7, path: 3 },
+          { type: "lurker", count: 2, interval: 0.8, path: 0 },
+          { type: "lurker", count: 1, interval: 0.8, path: 1 },
+          { type: "lurker", count: 2, interval: 0.8, path: 2 },
+          { type: "lurker", count: 1, interval: 0.8, path: 3 }
+        ],
+        bonus: 650,
+        isBoss: true,
+        comm: "\u6700\u7EC8\u8B66\u544A\uFF1A\u56DB\u8DEF\u5404\u73B0\u8EAB\u4E00\u53EA\u6E6E\u706D\u5DE8\u517D\uFF01\u8FD9\u662F\u56DB\u8C61\u661F\u5792\u7684\u6700\u540E\u4E00\u6218\u2014\u2014\u5168\u5458\u5F00\u706B\uFF01"
+      }
+    ]
+  };
+  function getCoopLevel(players) {
+    return players >= 3 ? COOP_LEVEL4 : COOP_LEVEL;
+  }
 
   // src/game/engine.ts
   var uid = 1;
+  var PARTICLE_MAX = 300;
+  function detectLowSpec() {
+    try {
+      if (typeof wx !== "undefined" && wx && wx.getDeviceInfo) {
+        const lv = wx.getDeviceInfo().benchmarkLevel;
+        if (typeof lv === "number" && lv > 0) return lv <= 20;
+        return false;
+      }
+    } catch {
+    }
+    return typeof navigator !== "undefined" && (navigator.hardwareConcurrency ?? 8) <= 4;
+  }
   function createEngine(difficulty, levelId = 1, opts) {
     const diff = DIFFICULTIES[difficulty];
-    const level = getLevel(levelId);
+    const coop = !!opts?.coop || (opts?.players ?? 1) > 1;
+    const players = coop ? Math.min(COOP_MAX_PLAYERS, Math.max(2, Math.round(opts?.players ?? 2))) : 1;
+    const level = coop ? getCoopLevel(players) : getLevel(levelId);
     const map = buildLevelMap(level.paths);
-    const lowSpec = typeof navigator !== "undefined" && (navigator.hardwareConcurrency ?? 8) <= 4;
+    const lowSpec = detectLowSpec();
     const particleScale = lowSpec ? 0.5 : 1;
-    const coop = !!opts?.coop;
     const chapterGold = level.id >= 1 ? Math.round((level.id - 1) * LADDER.startGoldPerLevel) : 0;
-    const startGolds = coop ? [
-      (opts?.startGold?.[0] ?? DIFFICULTIES.normal.gold) + chapterGold,
-      (opts?.startGold?.[1] ?? DIFFICULTIES.normal.gold) + chapterGold
-    ] : null;
+    const startGolds = coop ? Array.from(
+      { length: players },
+      (_, i) => (opts?.startGold?.[i] ?? DIFFICULTIES.normal.gold) + chapterGold
+    ) : null;
+    const startLives = coop ? Math.round(diff.lives * (COOP_LIVES_MUL[players] ?? 1)) : diff.lives;
     const state = {
       phase: "prep",
       clock: 0,
       timeSec: 0,
       gold: startGolds ? startGolds[0] : diff.gold + chapterGold,
-      lives: diff.lives,
-      maxLives: diff.lives,
+      lives: startLives,
+      maxLives: startLives,
       coop,
+      players,
       golds: startGolds,
-      killsBy: coop ? [0, 0] : null,
+      killsBy: coop ? new Array(players).fill(0) : null,
       wave: 1,
       totalWaves: level.waves.length,
       prepT: PREP_TIME,
@@ -2795,6 +3167,7 @@
       particles: [],
       rings: [],
       floaters: [],
+      splits: [],
       zones: [],
       spawnQueue: [],
       spawnT: 0,
@@ -2810,12 +3183,38 @@
       techChoices: null,
       events: []
     };
-    const techCount = (id) => state.techs.reduce((n, t) => n + (t === id ? 1 : 0), 0);
-    const dmgMul = () => 1 + 0.15 * techCount("dmg");
-    const rateMul = () => 1 + 0.12 * techCount("rate");
-    const rangeMul = () => 1 + 0.1 * techCount("range");
-    const goldMul = () => 1 + 0.25 * techCount("gold");
-    const splashMul = () => 1 + 0.2 * techCount("splash");
+    const techCounts = {
+      dmg: 0,
+      rate: 0,
+      range: 0,
+      gold: 0,
+      crit: 0,
+      splash: 0,
+      slow: 0,
+      pierce: 0,
+      supply: 0,
+      repair: 0
+    };
+    let dmgMulV = 1;
+    let rateMulV = 1;
+    let rangeMulV = 1;
+    let goldMulV = 1;
+    let splashMulV = 1;
+    function refreshTechCache() {
+      for (const k in techCounts) techCounts[k] = 0;
+      for (const t of state.techs) techCounts[t] += 1;
+      dmgMulV = 1 + 0.15 * techCounts.dmg;
+      rateMulV = 1 + 0.12 * techCounts.rate;
+      rangeMulV = 1 + 0.1 * techCounts.range;
+      goldMulV = 1 + 0.25 * techCounts.gold;
+      splashMulV = 1 + 0.2 * techCounts.splash;
+    }
+    const techCount = (id) => techCounts[id];
+    const dmgMul = () => dmgMulV;
+    const rateMul = () => rateMulV;
+    const rangeMul = () => rangeMulV;
+    const goldMul = () => goldMulV;
+    const splashMul = () => splashMulV;
     function critMul() {
       return Math.random() < 0.1 * techCount("crit") ? 2 : 1;
     }
@@ -2857,7 +3256,7 @@
         const a = Math.random() * Math.PI * 2;
         const v = power * (0.4 + Math.random() * 0.8);
         const ttl = 0.4 + Math.random() * 0.3;
-        state.particles.push({
+        const p = {
           id: uid++,
           x,
           y,
@@ -2867,7 +3266,8 @@
           maxTtl: ttl,
           color,
           size: 2 + Math.random() * 3
-        });
+        };
+        if (state.particles.length < PARTICLE_MAX) state.particles.push(p);
       }
     }
     function addBeam(x1, y1, x2, y2, color, width, ttl = 0.1) {
@@ -2878,6 +3278,12 @@
     }
     function isInvisible(e) {
       return e.type === "lurker" && e.stealthT % 4 >= 3;
+    }
+    function isElite(e) {
+      return e.isBoss || e.type === "miniboss";
+    }
+    function towerBuffActive(t) {
+      return state.clock < t.buffUntil;
     }
     function scaledHp(type, wave, override) {
       if (override !== void 0) return override;
@@ -2905,10 +3311,16 @@
         stealthT: Math.random() * 2,
         isBoss: item.type === "boss",
         enraged: false,
-        bornAt: state.clock
+        bornAt: state.clock,
+        ex: 0,
+        ey: 0
       };
       e.maxHp = scaledHp(item.type, state.wave, item.hpOverride);
+      if (coop) e.maxHp = Math.round(e.maxHp * (COOP_HP_MUL[players] ?? 1));
       e.hp = e.maxHp;
+      const ep = map.posAt(e.path, e.dist);
+      e.ex = ep.x;
+      e.ey = ep.y;
       state.enemies.push(e);
       if (e.isBoss) {
         state.shake = 1;
@@ -2918,6 +3330,7 @@
     function buildSpawnQueue(wave) {
       const def = level.waves[wave - 1];
       const pathCount = map.paths.length;
+      const laneCount = coop ? Math.min(players, pathCount) : pathCount;
       const cntMul = ladderCountMul(level.id, wave);
       let rr2 = 0;
       const pools = def.groups.map((g) => {
@@ -2928,7 +3341,7 @@
           type: g.type,
           // 节奏系数：整体拉长出怪间隔，单波持续时间更久、压力更持续
           interval: g.interval * LADDER.intervalMul,
-          path: g.path ?? (base + i) % pathCount,
+          path: g.path !== void 0 ? g.path % laneCount : (base + i) % laneCount,
           hpOverride: g.hpOverride,
           rewardOverride: g.rewardOverride
         }));
@@ -2946,11 +3359,19 @@
           }
         }
       }
+      if (!def.isBoss && queue2.length > 0 && (level.id >= 1 || coop) && Math.random() < MINI_BOSS.chance) {
+        queue2.splice(Math.floor(Math.random() * (queue2.length + 1)), 0, {
+          type: "miniboss",
+          interval: 0,
+          path: Math.floor(Math.random() * laneCount)
+        });
+      }
       return queue2;
     }
     function applyDamage(e, raw, source, killer) {
       if (e.hp <= 0) return;
       let dmg = raw * dmgMul() * critMul();
+      if (killer && "buffUntil" in killer && state.clock < killer.buffUntil) dmg *= MINI_BOSS.dmgMul;
       const armored = e.type === "tanker" || e.isBoss;
       if (armored) dmg *= 1 + 0.25 * techCount("pierce");
       if (source === "laser" && e.type === "tanker" && techCount("pierce") === 0) dmg *= 0.75;
@@ -2977,7 +3398,7 @@
       }
       state.goldEarned += earned;
       if (killer) killer.kills += 1;
-      const p = map.posAt(e.path, e.dist);
+      const p = { x: e.ex, y: e.ey };
       const color = e.isBoss ? "#FF3D81" : "#FFC94D";
       addExplosion(p.x, p.y, e.isBoss ? "#FF3D81" : "#B8FF3D", e.isBoss ? 26 : 12, e.isBoss ? 200 : 120);
       addFloater(p.x, p.y - 10, `+${earned}`, color);
@@ -2990,7 +3411,27 @@
         state.boss1Killed = true;
         pushEvent({ type: "bossDown", wave: state.wave });
       }
+      if (e.type === "miniboss") {
+        const until = state.clock + MINI_BOSS.duration;
+        for (const t of state.towers) {
+          if (Math.hypot(t.cx - p.x, t.cy - p.y) <= MINI_BOSS.radius * CELL) {
+            t.buffUntil = Math.max(t.buffUntil, until);
+          }
+        }
+        addRing(p.x, p.y, "#FFC94D", 10, MINI_BOSS.radius * CELL, 0.7);
+        addFloater(p.x, p.y - 24, "\u70AE\u5854\u5F3A\u5316\uFF01", "#FFC94D");
+        pushEvent({ type: "miniBossDown", x: p.x, y: p.y });
+      }
       if (e.type === "splitter") {
+        const ahead = map.posAt(e.path, e.dist + 10);
+        state.splits.push({
+          id: uid++,
+          x: p.x,
+          y: p.y,
+          angle: Math.atan2(ahead.y - p.y, ahead.x - p.x),
+          ttl: 0.65,
+          maxTtl: 0.65
+        });
         for (let i = 0; i < 2; i++) {
           spawnEnemy(
             { type: "crawler", interval: 0, path: e.path, hpOverride: Math.round(scaledHp("crawler", state.wave) * 0.6) },
@@ -2999,14 +3440,9 @@
         }
       }
     }
-    function towerCenter(t) {
-      return { x: (t.col + 0.5) * CELL, y: (t.row + 0.5) * CELL };
-    }
     function inRange(t, e) {
       const def = TOWERS[t.type].levels[t.level];
-      const c = towerCenter(t);
-      const p = map.posAt(e.path, e.dist);
-      return e.hp > 0 && Math.hypot(p.x - c.x, p.y - c.y) <= def.range * CELL * rangeMul();
+      return e.hp > 0 && Math.hypot(e.ex - t.cx, e.ey - t.cy) <= def.range * CELL * rangeMul();
     }
     function pickTarget(t, ignoreStealth) {
       let best = null;
@@ -3020,9 +3456,8 @@
     function fireLaser(t, target) {
       const lv = TOWERS.laser.levels[t.level];
       t.lastFireAt = state.clock;
-      const c = towerCenter(t);
-      const p = map.posAt(target.path, target.dist);
-      addBeam(c.x, c.y, p.x, p.y, "#22E0FF", 2);
+      const p = { x: target.ex, y: target.ey };
+      addBeam(t.cx, t.cy, p.x, p.y, "#22E0FF", 2);
       applyDamage(target, lv.damage, "laser", t);
       if (t.level === 2) {
         let second = null;
@@ -3031,8 +3466,7 @@
           if (!second || e.dist > second.dist) second = e;
         }
         if (second) {
-          const p2 = map.posAt(second.path, second.dist);
-          addBeam(p.x, p.y, p2.x, p2.y, "#22E0FF88", 1.5);
+          addBeam(p.x, p.y, second.ex, second.ey, "#22E0FF88", 1.5);
           applyDamage(second, lv.damage * 0.5, "laser", t);
         }
       }
@@ -3041,17 +3475,15 @@
       const def = TOWERS.missile;
       const lv = def.levels[t.level];
       t.lastFireAt = state.clock;
-      const c = towerCenter(t);
-      const p = map.posAt(target.path, target.dist);
       state.projectiles.push({
         id: uid++,
         kind: "missile",
-        fromX: c.x,
-        fromY: c.y,
-        x: c.x,
-        y: c.y,
-        tx: p.x,
-        ty: p.y,
+        fromX: t.cx,
+        fromY: t.cy,
+        x: t.cx,
+        y: t.cy,
+        tx: target.ex,
+        ty: target.ey,
         t: 0,
         dur: 0.35,
         damage: lv.damage,
@@ -3080,29 +3512,26 @@
       const def = TOWERS.tesla;
       t.lastFireAt = state.clock;
       const lv = def.levels[t.level];
-      const c = towerCenter(t);
       const jumps = def.chain[t.level];
       const decay = def.chainDecay;
       const hit2 = /* @__PURE__ */ new Set();
-      let px = c.x;
-      let py = c.y;
+      let px = t.cx;
+      let py = t.cy;
       let dmg = lv.damage;
       let cur = target;
       while (cur) {
-        const p = map.posAt(cur.path, cur.dist);
-        addLightning(px, py, p.x, p.y);
+        addLightning(px, py, cur.ex, cur.ey);
         applyDamage(cur, dmg, "tesla", t);
         hit2.add(cur.id);
-        px = p.x;
-        py = p.y;
+        px = cur.ex;
+        py = cur.ey;
         dmg *= decay;
         if (hit2.size > jumps) break;
         let next = null;
         let best = Infinity;
         for (const e of state.enemies) {
           if (e.hp <= 0 || hit2.has(e.id) || isInvisible(e)) continue;
-          const ep = map.posAt(e.path, e.dist);
-          const d = Math.hypot(ep.x - px, ep.y - py);
+          const d = Math.hypot(e.ex - px, e.ey - py);
           if (d <= 2.5 * CELL && d < best) {
             best = d;
             next = e;
@@ -3116,17 +3545,15 @@
       const def = TOWERS.plasma;
       t.lastFireAt = state.clock;
       const lv = def.levels[t.level];
-      const c = towerCenter(t);
-      const p = map.posAt(target.path, target.dist);
       state.projectiles.push({
         id: uid++,
         kind: "plasma",
-        fromX: c.x,
-        fromY: c.y,
-        x: c.x,
-        y: c.y,
-        tx: p.x,
-        ty: p.y,
+        fromX: t.cx,
+        fromY: t.cy,
+        x: t.cx,
+        y: t.cy,
+        tx: target.ex,
+        ty: target.ey,
         t: 0,
         dur: 0.45,
         damage: lv.damage,
@@ -3142,58 +3569,56 @@
       const def = TOWERS.frost;
       t.lastFireAt = state.clock;
       const lv = def.levels[t.level];
-      const c = towerCenter(t);
-      const p = map.posAt(target.path, target.dist);
-      addBeam(c.x, c.y, p.x, p.y, "#3DF08C66", 1.5, 0.15);
-      const pct = def.slowPct[t.level];
-      const dur = def.slowDur[t.level];
-      for (const e of state.enemies) {
-        if (e.hp <= 0) continue;
-        const ep = map.posAt(e.path, e.dist);
-        if (Math.hypot(ep.x - p.x, ep.y - p.y) > CELL) continue;
-        let factor = pct + 0.06 * techCount("slow");
-        if (factor > 0.8) factor = 0.8;
-        if (e.isBoss) factor *= 0.5;
-        if (e.type === "speeder") factor = Math.min(0.8, factor * 1.2);
-        e.slowPct = Math.max(e.slowPct, factor);
-        e.slowUntil = state.clock + dur;
-        applyDamage(e, lv.damage, "frost", t);
-      }
-      addExplosion(p.x, p.y, "#3DF08C", 8, 70);
+      state.projectiles.push({
+        id: uid++,
+        kind: "frost",
+        fromX: t.cx,
+        fromY: t.cy,
+        x: t.cx,
+        y: t.cy,
+        tx: target.ex,
+        ty: target.ey,
+        t: 0,
+        dur: 0.4,
+        damage: lv.damage,
+        splash: 2,
+        stun: 0,
+        towerId: t.id,
+        slowPct: def.slowPct[t.level],
+        slowDur: def.slowDur[t.level]
+      });
+      pushEvent({ type: "sfx", name: "frost" });
     }
     function updateRailgun(t, dt) {
       const def = TOWERS.railgun;
       const lv = def.levels[t.level];
-      const c = towerCenter(t);
       if (t.charging) {
         const target2 = pickTarget(t, true);
         if (target2) {
-          const p2 = map.posAt(target2.path, target2.dist);
-          t.aimX = p2.x;
-          t.aimY = p2.y;
+          t.aimX = target2.ex;
+          t.aimY = target2.ey;
         }
         t.chargeT -= dt;
         if (t.chargeT <= 0) {
           t.charging = false;
-          t.cooldown = 1 / lv.rate / rateMul();
+          t.cooldown = 1 / lv.rate / rateMul() / (towerBuffActive(t) ? MINI_BOSS.rateMul : 1);
           t.lastFireAt = state.clock;
-          const dx = t.aimX - c.x;
-          const dy = t.aimY - c.y;
+          const dx = t.aimX - t.cx;
+          const dy = t.aimY - t.cy;
           const len = Math.hypot(dx, dy) || 1;
           const ux = dx / len;
           const uy = dy / len;
           const reach = lv.range * CELL * rangeMul();
-          const ex = c.x + ux * reach;
-          const ey = c.y + uy * reach;
-          addBeam(c.x, c.y, ex, ey, "#8B5CF6", 6, 0.18);
+          const ex = t.cx + ux * reach;
+          const ey = t.cy + uy * reach;
+          addBeam(t.cx, t.cy, ex, ey, "#8B5CF6", 6, 0.18);
           state.shake = Math.max(state.shake, 0.4);
           pushEvent({ type: "sfx", name: "railgun" });
           const hits = state.enemies.filter((e) => {
             if (e.hp <= 0) return false;
-            const p2 = map.posAt(e.path, e.dist);
-            const proj = (p2.x - c.x) * ux + (p2.y - c.y) * uy;
+            const proj = (e.ex - t.cx) * ux + (e.ey - t.cy) * uy;
             if (proj < 0 || proj > reach) return false;
-            const perp = Math.abs((p2.x - c.x) * uy - (p2.y - c.y) * ux);
+            const perp = Math.abs((e.ex - t.cx) * uy - (e.ey - t.cy) * ux);
             return perp <= CELL * 0.5;
           }).sort((a, b) => a.dist - b.dist);
           hits.forEach((e, i) => {
@@ -3207,9 +3632,8 @@
       if (t.cooldown > 0) return;
       const target = pickTarget(t, true);
       if (!target) return;
-      const p = map.posAt(target.path, target.dist);
-      t.aimX = p.x;
-      t.aimY = p.y;
+      t.aimX = target.ex;
+      t.aimY = target.ey;
       t.charging = true;
       t.chargeT = def.charge;
     }
@@ -3223,10 +3647,9 @@
       const target = pickTarget(t, false);
       if (!target) return;
       const lv = TOWERS[t.type].levels[t.level];
-      t.cooldown = 1 / lv.rate / rateMul();
-      const p = map.posAt(target.path, target.dist);
-      t.aimX = p.x;
-      t.aimY = p.y;
+      t.cooldown = 1 / lv.rate / rateMul() / (towerBuffActive(t) ? MINI_BOSS.rateMul : 1);
+      t.aimX = target.ex;
+      t.aimY = target.ey;
       if (t.type === "laser") fireLaser(t, target);
       else if (t.type === "missile") fireMissile(t, target);
       else if (t.type === "tesla") fireTesla(t, target);
@@ -3240,16 +3663,14 @@
       let anchorTarget = null;
       for (const e of state.enemies) {
         if (e.hp <= 0) continue;
-        const p2 = map.posAt(e.path, e.dist);
-        if (Math.hypot(p2.x - ax, p2.y - ay) > MECHA.leash * CELL) continue;
+        if (Math.hypot(e.ex - ax, e.ey - ay) > MECHA.leash * CELL) continue;
         if (!anchorTarget || e.dist > anchorTarget.dist) anchorTarget = e;
       }
       let dx0 = ax;
       let dy0 = ay;
       if (anchorTarget) {
-        const p2 = map.posAt(anchorTarget.path, anchorTarget.dist);
-        const ddx = p2.x - ax;
-        const ddy = p2.y - ay;
+        const ddx = anchorTarget.ex - ax;
+        const ddy = anchorTarget.ey - ay;
         const dA = Math.hypot(ddx, ddy) || 1;
         const stand = Math.min(Math.max(0, dA - lv.range * CELL * 0.8), MECHA.leash * CELL);
         dx0 = ax + ddx / dA * stand;
@@ -3264,7 +3685,7 @@
         m.y += my / md * step;
         m.walkT += dt;
         if (Math.random() <= particleScale * 0.6) {
-          state.particles.push({
+          const p = {
             id: uid++,
             x: m.x + (Math.random() - 0.5) * 8,
             y: m.y + 14,
@@ -3274,7 +3695,8 @@
             maxTtl: 0.25,
             color: "#9FD8FF",
             size: 1.5 + Math.random() * 1.5
-          });
+          };
+          if (state.particles.length < PARTICLE_MAX) state.particles.push(p);
         }
       }
       m.cooldown -= dt;
@@ -3282,18 +3704,16 @@
       let target = null;
       for (const e of state.enemies) {
         if (e.hp <= 0 || isInvisible(e)) continue;
-        const p2 = map.posAt(e.path, e.dist);
-        if (Math.hypot(p2.x - m.x, p2.y - m.y) > lv.range * CELL) continue;
+        if (Math.hypot(e.ex - m.x, e.ey - m.y) > lv.range * CELL) continue;
         if (!target || e.dist > target.dist) target = e;
       }
       if (!target) return;
-      const p = map.posAt(target.path, target.dist);
-      m.aimX = p.x;
-      m.aimY = p.y;
+      m.aimX = target.ex;
+      m.aimY = target.ey;
       if (m.cooldown <= 0) {
         m.cooldown = 1 / lv.rate;
         m.lastFireAt = state.clock;
-        addBeam(m.x, m.y - 8, p.x, p.y, "#9FD8FF", 2.5, 0.12);
+        addBeam(m.x, m.y - 8, target.ex, target.ey, "#9FD8FF", 2.5, 0.12);
         applyDamage(target, lv.damage, "mecha", m);
       }
       if (m.missileT <= 0) {
@@ -3305,8 +3725,8 @@
           fromY: m.y - 16,
           x: m.x - 10,
           y: m.y - 16,
-          tx: p.x,
-          ty: p.y,
+          tx: target.ex,
+          ty: target.ey,
           t: 0,
           dur: 0.4,
           damage: lv.missileDamage,
@@ -3329,9 +3749,9 @@
       const def = level.waves[state.wave - 1];
       const bonus = Math.max(10, Math.round(def.bonus * ECONOMY.bonusMul));
       if (state.golds) {
-        const half = Math.round(bonus / 2);
-        state.golds[0] += half;
-        state.golds[1] += bonus - half;
+        const share = Math.round(bonus / players);
+        for (let i = 0; i < players - 1; i++) state.golds[i] += share;
+        state.golds[players - 1] += bonus - share * (players - 1);
         state.gold = state.golds[0];
       } else {
         state.gold += bonus;
@@ -3363,6 +3783,7 @@
       state.clock += dt;
       state.timeSec += dt;
       state.shake = Math.max(0, state.shake - dtReal * 2.2);
+      refreshTechCache();
       if (state.phase === "prep") {
         state.prepT -= dt;
         if (state.prepT <= 0) startWave();
@@ -3395,6 +3816,11 @@
           }
         }
         state.enemies = state.enemies.filter((e) => e.hp > 0);
+        for (const e of state.enemies) {
+          const p = map.posAt(e.path, e.dist);
+          e.ex = p.x;
+          e.ey = p.y;
+        }
         if (state.lives <= 0) {
           state.lives = 0;
           state.phase = "lost";
@@ -3415,8 +3841,7 @@
               addRing(pr.tx, pr.ty, "#FF6B3D", 8, Math.max(30, pr.splash * CELL * 0.9), 0.5);
               for (const e of state.enemies) {
                 if (e.hp <= 0) continue;
-                const p = map.posAt(e.path, e.dist);
-                if (Math.hypot(p.x - pr.tx, p.y - pr.ty) <= pr.splash * CELL) {
+                if (Math.hypot(e.ex - pr.tx, e.ey - pr.ty) <= pr.splash * CELL) {
                   applyDamage(e, pr.damage, "plasma", tower);
                 }
               }
@@ -3430,14 +3855,26 @@
                 maxTtl: TOWERS.plasma.zoneDur ?? 2.5,
                 towerId: pr.towerId
               });
+            } else if (pr.kind === "frost") {
+              addExplosion(pr.tx, pr.ty, "#3DF08C", 12, 110);
+              addRing(pr.tx, pr.ty, "#3DF08C", 6, Math.max(26, pr.splash * CELL * 0.9), 0.45);
+              for (const e of state.enemies) {
+                if (e.hp <= 0) continue;
+                if (Math.hypot(e.ex - pr.tx, e.ey - pr.ty) > pr.splash * CELL) continue;
+                let factor = (pr.slowPct ?? 0.35) + 0.06 * techCount("slow");
+                if (factor > 0.8) factor = 0.8;
+                if (isElite(e)) factor *= 0.5;
+                if (e.type === "speeder") factor = Math.min(0.8, factor * 1.2);
+                e.slowPct = Math.max(e.slowPct, factor);
+                e.slowUntil = state.clock + (pr.slowDur ?? 1.5);
+                applyDamage(e, pr.damage, "frost", tower);
+              }
             } else {
-              addExplosion(pr.tx, pr.ty, "#FF9F43", 16, 150);
               addRing(pr.tx, pr.ty, "#FF9F43", 6, Math.max(26, pr.splash * CELL * 0.9), 0.45);
               for (const e of state.enemies) {
                 if (e.hp <= 0) continue;
-                const p = map.posAt(e.path, e.dist);
-                if (Math.hypot(p.x - pr.tx, p.y - pr.ty) <= pr.splash * CELL) {
-                  if (pr.stun > 0 && !e.isBoss) e.stunUntil = state.clock + pr.stun;
+                if (Math.hypot(e.ex - pr.tx, e.ey - pr.ty) <= pr.splash * CELL) {
+                  if (pr.stun > 0 && !isElite(e)) e.stunUntil = state.clock + pr.stun;
                   applyDamage(e, pr.damage, "missile", tower);
                 }
               }
@@ -3450,7 +3887,7 @@
             for (let i = 0; i < trailN; i++) {
               if (Math.random() > particleScale) continue;
               const ttl = 0.22 + Math.random() * 0.14;
-              state.particles.push({
+              const p = {
                 id: uid++,
                 x: pr.x + (Math.random() - 0.5) * 4,
                 y: pr.y + (Math.random() - 0.5) * 4,
@@ -3458,9 +3895,10 @@
                 vy: (Math.random() - 0.5) * 16,
                 ttl,
                 maxTtl: ttl,
-                color: pr.kind === "plasma" ? "#FF6B3D" : "#FF9F43",
+                color: pr.kind === "plasma" ? "#FF6B3D" : pr.kind === "frost" ? "#3DF08C" : "#FF9F43",
                 size: 1.5 + Math.random() * 1.5
-              });
+              };
+              if (state.particles.length < PARTICLE_MAX) state.particles.push(p);
             }
           }
         }
@@ -3469,8 +3907,7 @@
           const tower = state.towers.find((tw) => tw.id === z.towerId);
           for (const e of state.enemies) {
             if (e.hp <= 0) continue;
-            const p = map.posAt(e.path, e.dist);
-            if (Math.hypot(p.x - z.x, p.y - z.y) <= z.r) {
+            if (Math.hypot(e.ex - z.x, e.ey - z.y) <= z.r) {
               applyDamage(e, z.dps * dt, "plasma", tower);
             }
           }
@@ -3499,9 +3936,12 @@
         f.y -= 44 * dt;
       }
       state.floaters = state.floaters.filter((f) => f.ttl > 0);
+      for (const s of state.splits) s.ttl -= dt;
+      state.splits = state.splits.filter((s) => s.ttl > 0);
       notify();
     }
     function dispatchAs(player, cmd) {
+      if (player < 0 || player >= players) return false;
       if (state.phase === "tech") {
         if (cmd.type !== "PICK_TECH") return false;
         if (state.coop && player !== 0) return false;
@@ -3563,7 +4003,10 @@
           lastFireAt: -999,
           kills: 0,
           invested: cost,
-          owner: player
+          owner: player,
+          cx: c.x,
+          cy: c.y,
+          buffUntil: 0
         });
         if (!state.towerTypesBuilt.includes(cmd.tower)) state.towerTypesBuilt.push(cmd.tower);
         if (cmd.tower === "frost") state.usedFrost = true;
@@ -3581,9 +4024,8 @@
         t.level += 1;
         t.invested += cost;
         state.maxTowerLevel = Math.max(state.maxTowerLevel, t.level + 1);
-        const c = towerCenter(t);
-        addExplosion(c.x, c.y, TOWERS[t.type].color, 14, 110);
-        addFloater(c.x, c.y - 30, "LEVEL UP", "#3DF08C");
+        addExplosion(t.cx, t.cy, TOWERS[t.type].color, 14, 110);
+        addFloater(t.cx, t.cy - 30, "LEVEL UP", "#3DF08C");
         notify();
         return true;
       }
@@ -3659,9 +4101,8 @@
         if (state.coop && t.owner !== player) return false;
         const refund = Math.floor(t.invested * SELL_RATE);
         addGold(player, refund);
-        const c = towerCenter(t);
-        addFloater(c.x, c.y - 20, `+${refund}`, "#FFC94D");
-        addExplosion(c.x, c.y, "#7C8DB0", 8, 80);
+        addFloater(t.cx, t.cy - 20, `+${refund}`, "#FFC94D");
+        addExplosion(t.cx, t.cy, "#7C8DB0", 8, 80);
         state.towers.splice(i, 1);
         notify();
         return true;
@@ -3672,7 +4113,7 @@
       return dispatchAs(0, cmd);
     }
     function serializeNet() {
-      const { particles, beams, rings, floaters, spawnQueue, events, ...rest } = state;
+      const { particles, spawnQueue, events, ...rest } = state;
       return rest;
     }
     return {
@@ -3694,6 +4135,723 @@
         return ev;
       }
     };
+  }
+
+  // src/game/fx.ts
+  var import_meta = {};
+  var BLOOM_SCALE = 0.25;
+  var BLOOM_INTENSITY = 0.42;
+  var BLOOM_BLUR_PASSES = 2;
+  var BLOOM_MIN_CORES = 5;
+  var STAR_FAR_COUNT = 46;
+  var STAR_FAR_SPEED = 3;
+  var STAR_NEAR_COUNT = 22;
+  var STAR_NEAR_SPEED = 9;
+  var VIGNETTE_ALPHA = 0.52;
+  var BASE_GLOW_R = 130;
+  var BASE_GLOW_ALPHA = 0.1;
+  var SCORCH_TTL = 3;
+  var SCORCH_MAX = 24;
+  var KILL_FLASH_TTL = 0.1;
+  var KILL_FLASH_MAX = 16;
+  var BOSS_FLASH_TTL = 0.15;
+  var TRAIL_LEN = 10;
+  var DEBRIS_MAX = 90;
+  var DEBRIS_GRAVITY = 320;
+  var DEBRIS_DRAG = 2.4;
+  var SPARK_MAX = 70;
+  var SPARKS_PER_HIT = 4;
+  var FX_RING_MAX = 12;
+  var LEAK_MARGIN = 10;
+  var hash01 = (n) => {
+    const v = Math.sin(n * 12.9898) * 43758.5453;
+    return v - Math.floor(v);
+  };
+  var browserPlatform = {
+    createCanvas: () => document.createElement("canvas"),
+    createImage: () => typeof Image === "undefined" ? null : new Image(),
+    readQualityHigh: () => {
+      try {
+        const raw = localStorage.getItem("srd.settings");
+        if (raw) return (JSON.parse(raw).quality ?? "high") === "high";
+      } catch {
+      }
+      return true;
+    },
+    hardwareConcurrency: () => navigator.hardwareConcurrency ?? 8,
+    nebulaUrl: () => {
+      try {
+        const base = import_meta.env?.BASE_URL ?? "/";
+        return `${base}nebula-texture.png`;
+      } catch {
+        return "nebula-texture.png";
+      }
+    }
+  };
+  var platform = browserPlatform;
+  function setFxPlatform(p) {
+    platform = p;
+  }
+  var GLOW_SPRITE_SIZE = 64;
+  var glowSprites = /* @__PURE__ */ new Map();
+  function glowSprite(color) {
+    const hit2 = glowSprites.get(color);
+    if (hit2) return hit2;
+    const cvs = platform.createCanvas();
+    cvs.width = GLOW_SPRITE_SIZE;
+    cvs.height = GLOW_SPRITE_SIZE;
+    const g = cvs.getContext("2d");
+    const r = GLOW_SPRITE_SIZE / 2;
+    const grad = g.createRadialGradient(r, r, 0, r, r, r);
+    grad.addColorStop(0, "#FFFFFF");
+    grad.addColorStop(0.35, color);
+    grad.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, GLOW_SPRITE_SIZE, GLOW_SPRITE_SIZE);
+    glowSprites.set(color, cvs);
+    return cvs;
+  }
+  var NebulaBg = class {
+    constructor(url) {
+      __publicField(this, "img", null);
+      const im = platform.createImage();
+      if (!im) return;
+      im.onload = () => {
+        this.img = im;
+      };
+      im.src = url ?? platform.nebulaUrl();
+    }
+  };
+  function drawStarfield(ctx2, w, h, time) {
+    ctx2.save();
+    ctx2.fillStyle = "#8FA8E8";
+    for (let i = 0; i < STAR_FAR_COUNT; i++) {
+      const sx = (hash01(i * 7 + 11) * w + time * STAR_FAR_SPEED) % w;
+      const sy = (hash01(i * 13 + 5) * h + time * STAR_FAR_SPEED * 0.4) % h;
+      ctx2.globalAlpha = 0.1 + 0.14 * (0.5 + 0.5 * Math.sin(time * 0.5 + i * 1.9));
+      ctx2.fillRect(sx, sy, 1, 1);
+    }
+    for (let i = 0; i < STAR_NEAR_COUNT; i++) {
+      const sx = (hash01(i * 17 + 31) * w + time * STAR_NEAR_SPEED) % w;
+      const sy = (hash01(i * 23 + 47) * h + Math.sin(time * 0.1 + i) * 8 + time * STAR_NEAR_SPEED * 0.25 + h) % h;
+      const r = 0.8 + hash01(i * 29 + 3) * 1.1;
+      ctx2.fillStyle = i % 5 === 0 ? "#BDF3FF" : "#D8E4FF";
+      ctx2.globalAlpha = 0.16 + 0.22 * (0.5 + 0.5 * Math.sin(time * 0.8 + i * 2.7));
+      ctx2.beginPath();
+      ctx2.arc(sx, sy, r, 0, Math.PI * 2);
+      ctx2.fill();
+    }
+    ctx2.restore();
+    ctx2.globalAlpha = 1;
+  }
+  function drawVignette(ctx2, w, h) {
+    const g = ctx2.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.42, w / 2, h / 2, Math.hypot(w, h) * 0.62);
+    g.addColorStop(0, "rgba(3,5,12,0)");
+    g.addColorStop(1, `rgba(3,5,12,${VIGNETTE_ALPHA})`);
+    ctx2.fillStyle = g;
+    ctx2.fillRect(0, 0, w, h);
+  }
+  function drawBaseGlow(ctx2, x, y, time) {
+    const pulse = 0.75 + 0.25 * Math.sin(time * 1.6);
+    const g = ctx2.createRadialGradient(x, y, 0, x, y, BASE_GLOW_R);
+    g.addColorStop(0, `rgba(34,224,255,${BASE_GLOW_ALPHA * pulse})`);
+    g.addColorStop(1, "rgba(34,224,255,0)");
+    ctx2.fillStyle = g;
+    ctx2.beginPath();
+    ctx2.arc(x, y, BASE_GLOW_R, 0, Math.PI * 2);
+    ctx2.fill();
+  }
+  var BloomLayer = class {
+    constructor(w, h) {
+      __publicField(this, "glow");
+      __publicField(this, "tiny");
+      __publicField(this, "gctx");
+      __publicField(this, "tctx");
+      /** 硬件允许（核数足够或平台无法探测）；画质开关由调用方另行控制 */
+      __publicField(this, "hwOk");
+      this.glow = platform.createCanvas();
+      this.glow.width = Math.max(1, Math.round(w * BLOOM_SCALE));
+      this.glow.height = Math.max(1, Math.round(h * BLOOM_SCALE));
+      this.tiny = platform.createCanvas();
+      this.tiny.width = Math.max(1, this.glow.width >> 1);
+      this.tiny.height = Math.max(1, this.glow.height >> 1);
+      this.gctx = this.glow.getContext("2d");
+      this.tctx = this.tiny.getContext("2d");
+      const cores = platform.hardwareConcurrency();
+      this.hwOk = cores === null || cores >= BLOOM_MIN_CORES;
+    }
+    /** 清层并套用与主画布一致的坐标系（含震屏偏移），返回绘制上下文 */
+    begin(shakeX, shakeY) {
+      const g = this.gctx;
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.clearRect(0, 0, this.glow.width, this.glow.height);
+      g.setTransform(BLOOM_SCALE, 0, 0, BLOOM_SCALE, shakeX * BLOOM_SCALE, shakeY * BLOOM_SCALE);
+      return g;
+    }
+    /** 降采样-升采样近似高斯模糊，然后以 lighter 拉伸叠回主画布（调用后主画布变换被重置为单位矩阵）。
+     *  默认铺满 w*dpr × h*dpr；竖屏端可用 dx/dy/dw/dh 指定设备像素下的目标区域（地图偏移/缩放） */
+    composite(dst, w, h, dpr, dx = 0, dy = 0, dw = w * dpr, dh = h * dpr) {
+      const g = this.gctx;
+      for (let i = 0; i < BLOOM_BLUR_PASSES; i++) {
+        this.tctx.setTransform(1, 0, 0, 1, 0, 0);
+        this.tctx.clearRect(0, 0, this.tiny.width, this.tiny.height);
+        this.tctx.drawImage(this.glow, 0, 0, this.tiny.width, this.tiny.height);
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.drawImage(this.tiny, 0, 0, this.glow.width, this.glow.height);
+      }
+      dst.setTransform(1, 0, 0, 1, 0, 0);
+      dst.globalCompositeOperation = "lighter";
+      dst.globalAlpha = BLOOM_INTENSITY;
+      dst.drawImage(this.glow, dx, dy, dw, dh);
+      dst.globalAlpha = 1;
+      dst.globalCompositeOperation = "source-over";
+    }
+  };
+  var FxLayer = class {
+    constructor() {
+      /** BOSS 死亡全屏白闪剩余时间（秒），由 GameCanvas 读取绘制 */
+      __publicField(this, "bossFlash", 0);
+      __publicField(this, "prevEnemies", /* @__PURE__ */ new Map());
+      __publicField(this, "seenIds", /* @__PURE__ */ new Set());
+      __publicField(this, "lastClock", -1);
+      __publicField(this, "scorches", []);
+      __publicField(this, "flashes", []);
+      __publicField(this, "debris", []);
+      __publicField(this, "sparks", []);
+      __publicField(this, "rings", []);
+      __publicField(this, "trails", /* @__PURE__ */ new Map());
+      for (let i = 0; i < SCORCH_MAX; i++) this.scorches.push({ x: 0, y: 0, r: 1, rot: 0, ttl: 0 });
+      for (let i = 0; i < KILL_FLASH_MAX; i++) this.flashes.push({ x: 0, y: 0, r: 1, ttl: 0 });
+      for (let i = 0; i < DEBRIS_MAX; i++) this.debris.push({ x: 0, y: 0, vx: 0, vy: 0, size: 1, color: "#FFF", ttl: 0, maxTtl: 1 });
+      for (let i = 0; i < SPARK_MAX; i++) this.sparks.push({ x: 0, y: 0, vx: 0, vy: 0, size: 1, color: "#FFF", ttl: 0, maxTtl: 1 });
+      for (let i = 0; i < FX_RING_MAX; i++) this.rings.push({ x: 0, y: 0, color: "#FFF", r0: 0, r1: 1, ttl: 0, maxTtl: 1 });
+    }
+    /** 每帧调用：同步敌人/弹丸列表做死亡 diff，并按引擎时钟衰减所有短寿命特效 */
+    update(s, map) {
+      const dt = this.lastClock < 0 ? 0 : Math.min(0.1, Math.max(0, s.clock - this.lastClock));
+      this.lastClock = s.clock;
+      const seen = this.seenIds;
+      seen.clear();
+      for (const e of s.enemies) {
+        seen.add(e.id);
+        const pos = map.posAt(e.path, e.dist);
+        const prev = this.prevEnemies.get(e.id);
+        if (prev) {
+          prev.x = pos.x;
+          prev.y = pos.y;
+          prev.dist = e.dist;
+        } else {
+          this.prevEnemies.set(e.id, {
+            x: pos.x,
+            y: pos.y,
+            dist: e.dist,
+            path: e.path,
+            isBoss: e.isBoss,
+            size: ENEMIES[e.type].size,
+            color: ENEMIES[e.type].color
+          });
+        }
+      }
+      for (const [id, p] of this.prevEnemies) {
+        if (seen.has(id)) continue;
+        this.prevEnemies.delete(id);
+        if (p.dist >= (map.paths[p.path]?.length ?? 0) - LEAK_MARGIN) continue;
+        this.onEnemyDeath(p);
+      }
+      seen.clear();
+      for (const pr of s.projectiles) {
+        seen.add(pr.id);
+        let tr = this.trails.get(pr.id);
+        if (!tr) {
+          tr = { kind: pr.kind, pts: [] };
+          this.trails.set(pr.id, tr);
+        }
+        const last2 = tr.pts[tr.pts.length - 1];
+        if (!last2 || last2.x !== pr.x || last2.y !== pr.y) {
+          tr.pts.push({ x: pr.x, y: pr.y });
+          if (tr.pts.length > TRAIL_LEN) tr.pts.shift();
+        }
+      }
+      for (const [id, tr] of this.trails) {
+        if (seen.has(id)) continue;
+        this.trails.delete(id);
+        if (tr.kind === "missile" && tr.pts.length > 0) {
+          const end = tr.pts[tr.pts.length - 1];
+          this.burst(end.x, end.y, "#FFC978", 9, 220, 0.45);
+        }
+      }
+      if (dt > 0) {
+        for (const sc of this.scorches) if (sc.ttl > 0) sc.ttl -= dt;
+        for (const f of this.flashes) if (f.ttl > 0) f.ttl -= dt;
+        for (const r of this.rings) if (r.ttl > 0) r.ttl -= dt;
+        if (this.bossFlash > 0) this.bossFlash -= dt;
+        const dragK = 1 / (1 + DEBRIS_DRAG * dt);
+        for (const d of this.debris) {
+          if (d.ttl <= 0) continue;
+          d.ttl -= dt;
+          d.vy += DEBRIS_GRAVITY * dt;
+          d.vx *= dragK;
+          d.vy *= dragK;
+          d.x += d.vx * dt;
+          d.y += d.vy * dt;
+        }
+        for (const sp of this.sparks) {
+          if (sp.ttl <= 0) continue;
+          sp.ttl -= dt;
+          sp.vy += 200 * dt;
+          sp.x += sp.vx * dt;
+          sp.y += sp.vy * dt;
+        }
+      }
+    }
+    onEnemyDeath(p) {
+      this.spawnScorch(p.x, p.y, p.size * 1.7);
+      this.spawnFlash(p.x, p.y, p.size * 2.4);
+      const n = p.isBoss ? 16 : 7;
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const v = (p.isBoss ? 130 : 70) * (0.5 + Math.random());
+        this.spawnMote(this.debris, p.x, p.y, Math.cos(a) * v, Math.sin(a) * v - 50, 1.5 + Math.random() * 2.5, p.color, 0.5 + Math.random() * 0.4);
+      }
+      if (p.isBoss) {
+        this.bossFlash = BOSS_FLASH_TTL;
+        this.spawnRing(p.x, p.y, "#FFFFFF", 12, 170, 0.5);
+        this.spawnRing(p.x, p.y, "#FF3D81", 8, 250, 0.9);
+        this.spawnRing(p.x, p.y, "#FFC94D", 4, 330, 1.3);
+      }
+    }
+    /** 激光命中点火花溅射 */
+    spawnSparks(x, y, color, count) {
+      for (let i = 0; i < count; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const v = 40 + Math.random() * 90;
+        this.spawnMote(this.sparks, x, y, Math.cos(a) * v, Math.sin(a) * v - 30, 1 + Math.random() * 1.2, color, 0.16 + Math.random() * 0.14);
+      }
+    }
+    /** 亮火花喷发（导弹爆炸补花） */
+    burst(x, y, color, count, speed, ttl) {
+      for (let i = 0; i < count; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const v = speed * (0.35 + Math.random() * 0.65);
+        this.spawnMote(this.sparks, x, y, Math.cos(a) * v, Math.sin(a) * v - 40, 1.2 + Math.random() * 1.6, i % 3 === 0 ? "#FFFFFF" : color, ttl * (0.7 + Math.random() * 0.6));
+      }
+    }
+    spawnMote(pool, x, y, vx, vy, size, color, ttl) {
+      let slot = null;
+      for (const m of pool) {
+        if (m.ttl <= 0) {
+          slot = m;
+          break;
+        }
+      }
+      if (!slot) return;
+      slot.x = x;
+      slot.y = y;
+      slot.vx = vx;
+      slot.vy = vy;
+      slot.size = size;
+      slot.color = color;
+      slot.ttl = ttl;
+      slot.maxTtl = ttl;
+    }
+    spawnScorch(x, y, r) {
+      let slot = null;
+      for (const s of this.scorches) {
+        if (s.ttl <= 0) {
+          slot = s;
+          break;
+        }
+      }
+      if (!slot) {
+        slot = this.scorches[0];
+        for (const s of this.scorches) if (s.ttl < slot.ttl) slot = s;
+      }
+      slot.x = x;
+      slot.y = y;
+      slot.r = r;
+      slot.rot = Math.random() * Math.PI;
+      slot.ttl = SCORCH_TTL;
+    }
+    spawnFlash(x, y, r) {
+      for (const f of this.flashes) {
+        if (f.ttl > 0) continue;
+        f.x = x;
+        f.y = y;
+        f.r = r;
+        f.ttl = KILL_FLASH_TTL;
+        return;
+      }
+    }
+    spawnRing(x, y, color, r0, r1, ttl) {
+      for (const r of this.rings) {
+        if (r.ttl > 0) continue;
+        r.x = x;
+        r.y = y;
+        r.color = color;
+        r.r0 = r0;
+        r.r1 = r1;
+        r.ttl = ttl;
+        r.maxTtl = ttl;
+        return;
+      }
+    }
+    /** 地面灼痕：暗色椭圆焦痕贴地，3s 淡出（画在路径之上、塔之下） */
+    drawScorches(ctx2) {
+      for (const s of this.scorches) {
+        if (s.ttl <= 0) continue;
+        const a = s.ttl / SCORCH_TTL;
+        ctx2.save();
+        ctx2.translate(s.x, s.y);
+        ctx2.rotate(s.rot);
+        ctx2.scale(1, 0.55);
+        const g = ctx2.createRadialGradient(0, 0, 0, 0, 0, s.r);
+        g.addColorStop(0, `rgba(8,6,12,${0.6 * a})`);
+        g.addColorStop(0.6, `rgba(24,12,8,${0.35 * a})`);
+        g.addColorStop(1, "rgba(20,10,6,0)");
+        ctx2.fillStyle = g;
+        ctx2.beginPath();
+        ctx2.arc(0, 0, s.r, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.restore();
+      }
+    }
+    /** 导弹烟雾拖尾：历史位置渐隐圆点链（越旧越大越淡） */
+    drawTrails(ctx2) {
+      for (const tr of this.trails.values()) {
+        if (tr.kind !== "missile") continue;
+        const n = tr.pts.length;
+        for (let i = 0; i < n; i++) {
+          const f = (i + 1) / n;
+          const pt = tr.pts[i];
+          ctx2.globalAlpha = 0.04 + 0.15 * f;
+          ctx2.fillStyle = "#C9CEDA";
+          ctx2.beginPath();
+          ctx2.arc(pt.x, pt.y, 1.6 + (1 - f) * 3.2, 0, Math.PI * 2);
+          ctx2.fill();
+        }
+      }
+      ctx2.globalAlpha = 1;
+    }
+    /** 死亡碎片（方块，与引擎粒子同风格，带重力） */
+    drawDebris(ctx2) {
+      for (const d of this.debris) {
+        if (d.ttl <= 0) continue;
+        ctx2.globalAlpha = Math.max(0, d.ttl / d.maxTtl);
+        ctx2.fillStyle = d.color;
+        ctx2.fillRect(d.x - d.size / 2, d.y - d.size / 2, d.size, d.size);
+      }
+      ctx2.globalAlpha = 1;
+    }
+    /** 火花（激光命中 / 导弹爆炸，加色混合更亮） */
+    drawSparks(ctx2) {
+      ctx2.save();
+      ctx2.globalCompositeOperation = "lighter";
+      for (const sp of this.sparks) {
+        if (sp.ttl <= 0) continue;
+        ctx2.globalAlpha = Math.max(0, sp.ttl / sp.maxTtl);
+        ctx2.fillStyle = sp.color;
+        ctx2.beginPath();
+        ctx2.arc(sp.x, sp.y, sp.size, 0, Math.PI * 2);
+        ctx2.fill();
+      }
+      ctx2.restore();
+      ctx2.globalAlpha = 1;
+    }
+    /** 击杀瞬间白闪（径向渐变，0.1s） */
+    drawFlashes(ctx2) {
+      ctx2.save();
+      ctx2.globalCompositeOperation = "lighter";
+      for (const f of this.flashes) {
+        if (f.ttl <= 0) continue;
+        const a = f.ttl / KILL_FLASH_TTL;
+        const r = f.r * (1 + (1 - a) * 0.6);
+        const g = ctx2.createRadialGradient(f.x, f.y, 0, f.x, f.y, r);
+        g.addColorStop(0, `rgba(255,255,255,${0.85 * a})`);
+        g.addColorStop(0.5, `rgba(255,240,210,${0.4 * a})`);
+        g.addColorStop(1, "rgba(255,240,210,0)");
+        ctx2.fillStyle = g;
+        ctx2.beginPath();
+        ctx2.arc(f.x, f.y, r, 0, Math.PI * 2);
+        ctx2.fill();
+      }
+      ctx2.restore();
+    }
+    /** 渲染层补充冲击波环（BOSS 多层环），风格同引擎 rings */
+    drawRings(ctx2) {
+      for (const r of this.rings) {
+        if (r.ttl <= 0) continue;
+        const life = Math.max(0, r.ttl / r.maxTtl);
+        const k = 1 - life;
+        const rad = r.r0 + (r.r1 - r.r0) * (1 - (1 - k) * (1 - k));
+        ctx2.beginPath();
+        ctx2.arc(r.x, r.y, rad, 0, Math.PI * 2);
+        ctx2.globalAlpha = life * 0.26;
+        ctx2.strokeStyle = r.color;
+        ctx2.lineWidth = Math.max(1, 7 * life) * 2.6;
+        ctx2.stroke();
+        ctx2.globalAlpha = life * 0.8;
+        ctx2.lineWidth = Math.max(1, 7 * life);
+        ctx2.stroke();
+      }
+      ctx2.globalAlpha = 1;
+    }
+    /** BOSS 全屏白闪（在 Bloom 合成之后绘制，保持纯白） */
+    drawBossFlash(ctx2, w, h) {
+      if (this.bossFlash <= 0) return;
+      const a = Math.max(0, this.bossFlash / BOSS_FLASH_TTL);
+      ctx2.fillStyle = `rgba(255,255,255,${0.85 * a})`;
+      ctx2.fillRect(-24, -24, w + 48, h + 48);
+    }
+    /** 辉光层绘制：发光元素的简化加色形状（低分辨率，主画布已有清晰版） */
+    drawGlow(g, s, paths, exits) {
+      g.lineCap = "round";
+      g.lineJoin = "round";
+      g.strokeStyle = "rgba(34,224,255,0.15)";
+      g.lineWidth = 2.5;
+      for (const px of paths) {
+        g.beginPath();
+        px.forEach(([x, y], i) => i === 0 ? g.moveTo(x, y) : g.lineTo(x, y));
+        g.stroke();
+      }
+      for (const z of s.zones) {
+        g.globalAlpha = 0.5 * Math.max(0, z.ttl / z.maxTtl);
+        g.fillStyle = "#FF6B3D";
+        g.beginPath();
+        g.arc(z.x, z.y, z.r * 0.8, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.globalAlpha = 1;
+      for (const ex of exits) {
+        g.globalAlpha = 0.28;
+        g.fillStyle = "#22E0FF";
+        g.beginPath();
+        g.arc(ex.centerX, ex.centerY, 26, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.globalAlpha = 1;
+      for (const pr of s.projectiles) {
+        if (pr.kind === "plasma") {
+          g.globalAlpha = 0.8;
+          g.fillStyle = "#FF6B3D";
+          g.beginPath();
+          g.arc(pr.x, pr.y, 7, 0, Math.PI * 2);
+          g.fill();
+          g.fillStyle = "#FFF3D6";
+          g.beginPath();
+          g.arc(pr.x, pr.y, 3, 0, Math.PI * 2);
+          g.fill();
+        } else if (pr.kind === "frost") {
+          g.globalAlpha = 0.7;
+          g.fillStyle = "#3DF08C";
+          g.beginPath();
+          g.arc(pr.x, pr.y, 4.5, 0, Math.PI * 2);
+          g.fill();
+        } else {
+          g.globalAlpha = 0.7;
+          g.fillStyle = "#FF9F43";
+          g.beginPath();
+          g.arc(pr.x, pr.y, 4.5, 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+      g.globalAlpha = 1;
+      for (const b of s.beams) {
+        const a = b.ttl / b.maxTtl;
+        if (b.color === "#8B5CF6") {
+          g.globalAlpha = a * 0.6;
+          g.strokeStyle = b.color;
+          g.lineWidth = b.width * 2.4;
+          g.beginPath();
+          g.moveTo(b.x1, b.y1);
+          g.lineTo(b.x2, b.y2);
+          g.stroke();
+        }
+        g.globalAlpha = a;
+        g.strokeStyle = b.color;
+        g.lineWidth = b.width;
+        g.beginPath();
+        g.moveTo(b.x1, b.y1);
+        g.lineTo(b.x2, b.y2);
+        g.stroke();
+      }
+      g.globalAlpha = 1;
+      for (const pt of s.particles) {
+        g.globalAlpha = pt.ttl / pt.maxTtl * 0.8;
+        g.fillStyle = pt.color;
+        g.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
+      }
+      g.globalAlpha = 1;
+      for (const r of s.rings) {
+        g.globalAlpha = Math.max(0, r.ttl / r.maxTtl) * 0.7;
+        g.strokeStyle = r.color;
+        g.lineWidth = 3;
+        const k = 1 - Math.max(0, r.ttl / r.maxTtl);
+        const rad = r.r0 + (r.r1 - r.r0) * (1 - (1 - k) * (1 - k));
+        g.beginPath();
+        g.arc(r.x, r.y, rad, 0, Math.PI * 2);
+        g.stroke();
+      }
+      for (const r of this.rings) {
+        if (r.ttl <= 0) continue;
+        g.globalAlpha = Math.max(0, r.ttl / r.maxTtl) * 0.7;
+        g.strokeStyle = r.color;
+        g.lineWidth = 4;
+        const k = 1 - Math.max(0, r.ttl / r.maxTtl);
+        const rad = r.r0 + (r.r1 - r.r0) * (1 - (1 - k) * (1 - k));
+        g.beginPath();
+        g.arc(r.x, r.y, rad, 0, Math.PI * 2);
+        g.stroke();
+      }
+      g.globalAlpha = 1;
+      for (const f of this.flashes) {
+        if (f.ttl <= 0) continue;
+        g.globalAlpha = f.ttl / KILL_FLASH_TTL * 0.9;
+        g.fillStyle = "#FFF6E0";
+        g.beginPath();
+        g.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+        g.fill();
+      }
+      for (const sp of this.sparks) {
+        if (sp.ttl <= 0) continue;
+        g.globalAlpha = Math.max(0, sp.ttl / sp.maxTtl) * 0.8;
+        g.fillStyle = sp.color;
+        g.beginPath();
+        g.arc(sp.x, sp.y, sp.size, 0, Math.PI * 2);
+        g.fill();
+      }
+      for (const d of this.debris) {
+        if (d.ttl <= 0) continue;
+        g.globalAlpha = Math.max(0, d.ttl / d.maxTtl) * 0.5;
+        g.fillStyle = d.color;
+        g.fillRect(d.x - d.size / 2, d.y - d.size / 2, d.size, d.size);
+      }
+      g.globalAlpha = 1;
+    }
+  };
+
+  // src/game/turret3d.ts
+  var TURRET3D_DIRS = 24;
+  var TURRET3D_PHASES = 4;
+  var TURRET3D_FRAME = 192;
+  var TOWER_TYPES = ["laser", "missile", "frost", "railgun", "tesla", "plasma"];
+  var sheets = {};
+  var started = false;
+  var theme = "classic";
+  var loader = null;
+  function sheetSources(urlOf, rel) {
+    const urls = [];
+    if (theme === "horror") urls.push(urlOf(rel.replace("assets/turrets/", "assets/turrets-h/")));
+    urls.push(urlOf(rel));
+    urls.push(rel);
+    return urls;
+  }
+  function loadSheet(rel) {
+    if (!loader) return null;
+    const im = loader.createImage();
+    if (!im) return null;
+    const sources = sheetSources(loader.urlOf, rel);
+    const sheet = { img: im, ok: false, srcIdx: 0 };
+    im.onload = () => {
+      sheet.ok = true;
+    };
+    im.onerror = () => {
+      if (sheet.srcIdx >= sources.length - 1) return;
+      sheet.srcIdx += 1;
+      im.src = sources[sheet.srcIdx];
+    };
+    im.src = sources[0];
+    return sheet;
+  }
+  function loadAll() {
+    for (const type of TOWER_TYPES) {
+      const sheet = loadSheet(`assets/turrets/${type}/sheet.png`);
+      if (!sheet) return;
+      sheets[type] = sheet;
+    }
+  }
+  function initTurret3D(createImage, urlOf, initialTheme = "classic") {
+    if (started) return;
+    started = true;
+    theme = initialTheme;
+    loader = { createImage, urlOf };
+    loadAll();
+  }
+  function setUnitTheme(t) {
+    if (t === theme) return;
+    theme = t;
+    if (!loader) return;
+    for (const key of Object.keys(sheets)) delete sheets[key];
+    loadAll();
+  }
+  function turretSheet3D(type) {
+    const s = sheets[type];
+    return s && s.ok ? s : null;
+  }
+
+  // src/game/enemy3d.ts
+  var ENEMY3D_DIRS = 16;
+  var ENEMY3D_PHASES = 4;
+  var ENEMY3D_FRAME = 192;
+  var ENEMY3D_SPLIT_PHASES = 6;
+  var ENEMY_TYPES = ["crawler", "speeder", "tanker", "splitter", "lurker", "miniboss", "boss"];
+  var sheets2 = {};
+  var splitSheet = null;
+  var started2 = false;
+  var theme2 = "classic";
+  var loader2 = null;
+  function sheetSources2(urlOf, rel) {
+    const urls = [];
+    if (theme2 === "horror") urls.push(urlOf(rel.replace("assets/enemies/", "assets/enemies-h/")));
+    urls.push(urlOf(rel));
+    urls.push(rel);
+    return urls;
+  }
+  function loadSheet2(rel) {
+    if (!loader2) return null;
+    const im = loader2.createImage();
+    if (!im) return null;
+    const sources = sheetSources2(loader2.urlOf, rel);
+    const sheet = { img: im, ok: false, srcIdx: 0 };
+    im.onload = () => {
+      sheet.ok = true;
+    };
+    im.onerror = () => {
+      if (sheet.srcIdx >= sources.length - 1) return;
+      sheet.srcIdx += 1;
+      im.src = sources[sheet.srcIdx];
+    };
+    im.src = sources[0];
+    return sheet;
+  }
+  function loadAll2() {
+    for (const type of ENEMY_TYPES) {
+      const sheet = loadSheet2(`assets/enemies/${type}/sheet.png`);
+      if (!sheet) return;
+      sheets2[type] = sheet;
+    }
+    splitSheet = loadSheet2("assets/enemies/splitter/split.png");
+  }
+  function initEnemy3D(createImage, urlOf, initialTheme = "classic") {
+    if (started2) return;
+    started2 = true;
+    theme2 = initialTheme;
+    loader2 = { createImage, urlOf };
+    loadAll2();
+  }
+  function setUnitTheme2(t) {
+    if (t === theme2) return;
+    theme2 = t;
+    if (!loader2) return;
+    for (const key of Object.keys(sheets2)) delete sheets2[key];
+    splitSheet = null;
+    loadAll2();
+  }
+  function enemySheet3D(type) {
+    const s = sheets2[type];
+    return s && s.ok ? s : null;
+  }
+  function splitterSplitSheet() {
+    return splitSheet && splitSheet.ok ? splitSheet : null;
   }
 
   // src/game/render.ts
@@ -3724,6 +4882,58 @@
     const def = TOWERS[type];
     const r = size / 2;
     const lite = tint(def.color, 0.45);
+    const sheet = turretSheet3D(type);
+    if (sheet) {
+      ctx2.save();
+      ctx2.globalAlpha = 0.32;
+      ctx2.fillStyle = "#000000";
+      ctx2.beginPath();
+      ctx2.ellipse(0, r * 0.5, r * 0.76, r * 0.4, 0, 0, Math.PI * 2);
+      ctx2.fill();
+      ctx2.restore();
+      if (level >= 2) {
+        ctx2.beginPath();
+        ctx2.arc(0, 0, r * 0.87, 0, Math.PI * 2);
+        ctx2.strokeStyle = "rgba(255,201,77,0.45)";
+        ctx2.lineWidth = 1.5;
+        ctx2.setLineDash([10, 8]);
+        ctx2.lineDashOffset = -time * 14;
+        ctx2.stroke();
+        ctx2.setLineDash([]);
+      }
+      const AIMING = ["laser", "missile", "railgun", "plasma"];
+      const step = Math.PI * 2 / TURRET3D_DIRS;
+      const dir = AIMING.includes(type) ? (Math.round(aimAngle / step) % TURRET3D_DIRS + TURRET3D_DIRS) % TURRET3D_DIRS : 0;
+      const phase = Math.floor(time * 2.5) % TURRET3D_PHASES;
+      const ds = size * 1.28;
+      ctx2.drawImage(
+        sheet.img,
+        phase * TURRET3D_FRAME,
+        dir * TURRET3D_FRAME,
+        TURRET3D_FRAME,
+        TURRET3D_FRAME,
+        -ds / 2,
+        -ds / 2 - size * 0.05,
+        ds,
+        ds
+      );
+      if (type === "railgun" && charge2 > 0) {
+        ctx2.globalAlpha = 0.3 + 0.5 * charge2;
+        ctx2.strokeStyle = "#C4B0FF";
+        ctx2.lineWidth = 1.5 + 2 * charge2;
+        ctx2.beginPath();
+        ctx2.arc(0, 0, r * (0.5 + 0.3 * charge2), 0, Math.PI * 2);
+        ctx2.stroke();
+        ctx2.globalAlpha = 1;
+      }
+      for (let i = 0; i <= level; i++) {
+        ctx2.beginPath();
+        ctx2.arc(-r * 0.4 + i * r * 0.4, r * 0.62, 2.5, 0, Math.PI * 2);
+        ctx2.fillStyle = level >= 2 ? "#FFC94D" : def.color;
+        ctx2.fill();
+      }
+      return;
+    }
     ctx2.save();
     ctx2.globalAlpha = 0.32;
     ctx2.fillStyle = "#000000";
@@ -4049,10 +5259,77 @@
       ctx2.fill();
     }
   }
+  function drawSplitFx(ctx2, s, size) {
+    const sheet = splitterSplitSheet();
+    if (!sheet) return;
+    const progress = 1 - s.ttl / s.maxTtl;
+    const phase = Math.min(ENEMY3D_SPLIT_PHASES - 1, Math.floor(progress * ENEMY3D_SPLIT_PHASES));
+    const step = Math.PI * 2 / ENEMY3D_DIRS;
+    const dir = (Math.round(s.angle / step) % ENEMY3D_DIRS + ENEMY3D_DIRS) % ENEMY3D_DIRS;
+    const fade = Math.min(1, s.ttl / (s.maxTtl * 0.35));
+    ctx2.save();
+    ctx2.globalAlpha = Math.max(0, fade);
+    const ds = size * 2.9;
+    ctx2.drawImage(
+      sheet.img,
+      phase * ENEMY3D_FRAME,
+      dir * ENEMY3D_FRAME,
+      ENEMY3D_FRAME,
+      ENEMY3D_FRAME,
+      -ds / 2,
+      -ds / 2,
+      ds,
+      ds
+    );
+    ctx2.restore();
+  }
   function drawEnemy(ctx2, type, size, time, opts = {}) {
     const def = ENEMIES[type];
     const r = size;
     const alpha = opts.alpha ?? 1;
+    const sheet = enemySheet3D(type);
+    if (sheet) {
+      const WALK_HZ = { crawler: 7, speeder: 12, tanker: 4, splitter: 6, lurker: 8, miniboss: 5, boss: 3.5 };
+      const step = Math.PI * 2 / ENEMY3D_DIRS;
+      const dir = (Math.round((opts.angle ?? 0) / step) % ENEMY3D_DIRS + ENEMY3D_DIRS) % ENEMY3D_DIRS;
+      const phase = Math.floor(time * WALK_HZ[type]) % ENEMY3D_PHASES;
+      ctx2.save();
+      ctx2.globalAlpha = alpha * 0.3;
+      ctx2.fillStyle = "#000000";
+      ctx2.beginPath();
+      ctx2.ellipse(0, r * 0.45, r * 0.7, r * 0.32, 0, 0, Math.PI * 2);
+      ctx2.fill();
+      if (opts.enraged) {
+        ctx2.globalAlpha = alpha * (0.4 + 0.2 * Math.sin(time * 6));
+        ctx2.fillStyle = "#FF3D81";
+        ctx2.beginPath();
+        ctx2.arc(0, 0, r * 1.15, 0, Math.PI * 2);
+        ctx2.fill();
+      }
+      ctx2.globalAlpha = alpha;
+      const ds = r * 2.9;
+      ctx2.drawImage(
+        sheet.img,
+        phase * ENEMY3D_FRAME,
+        dir * ENEMY3D_FRAME,
+        ENEMY3D_FRAME,
+        ENEMY3D_FRAME,
+        -ds / 2,
+        -ds / 2,
+        ds,
+        ds
+      );
+      if (opts.slowed) {
+        ctx2.globalAlpha = alpha * 0.65;
+        ctx2.strokeStyle = "#BDF3FF";
+        ctx2.lineWidth = 1.5;
+        ctx2.beginPath();
+        ctx2.arc(0, 0, r * 1.05, 0, Math.PI * 2);
+        ctx2.stroke();
+      }
+      ctx2.restore();
+      return;
+    }
     ctx2.save();
     ctx2.globalAlpha = alpha;
     const body = opts.enraged ? "#FF3D81" : def.color;
@@ -4339,6 +5616,62 @@
       ctx2.beginPath();
       ctx2.ellipse(r * 0.42, 0, r * 0.14, r * 0.06, 0, 0, Math.PI * 2);
       ctx2.fill();
+    } else if (type === "miniboss") {
+      const pulse = 0.7 + 0.3 * Math.sin(time * 5);
+      ctx2.fillStyle = deep;
+      ctx2.strokeStyle = INK;
+      ctx2.lineWidth = 1.2;
+      for (let i = 0; i < 6; i++) {
+        const a = Math.PI * 2 * i / 6 + Math.PI / 6;
+        const len = r * (1.05 + 0.1 * Math.sin(time * 4 + i * 1.9));
+        ctx2.beginPath();
+        ctx2.moveTo(Math.cos(a - 0.17) * r * 0.7, Math.sin(a - 0.17) * r * 0.7);
+        ctx2.lineTo(Math.cos(a) * len, Math.sin(a) * len);
+        ctx2.lineTo(Math.cos(a + 0.17) * r * 0.7, Math.sin(a + 0.17) * r * 0.7);
+        ctx2.closePath();
+        ctx2.fill();
+        ctx2.stroke();
+      }
+      const sg = ctx2.createRadialGradient(-r * 0.3, -r * 0.35, r * 0.2, 0, 0, r);
+      sg.addColorStop(0, tint(body, 0.3));
+      sg.addColorStop(0.55, dark);
+      sg.addColorStop(1, deep);
+      hexPath(ctx2, r * 0.86);
+      ctx2.fillStyle = sg;
+      ctx2.fill();
+      ctx2.strokeStyle = body;
+      ctx2.lineWidth = 2.5;
+      ctx2.stroke();
+      hexPath(ctx2, r * 0.58);
+      ctx2.strokeStyle = tone(body, 0.2);
+      ctx2.lineWidth = 1.6;
+      ctx2.stroke();
+      ctx2.save();
+      ctx2.rotate(time * 1.6);
+      ctx2.strokeStyle = glow;
+      ctx2.globalAlpha = alpha * 0.65;
+      ctx2.lineWidth = 1.6;
+      ctx2.setLineDash([r * 0.26, r * 0.18]);
+      ctx2.beginPath();
+      ctx2.arc(0, 0, r * 0.4, 0, Math.PI * 2);
+      ctx2.stroke();
+      ctx2.setLineDash([]);
+      ctx2.restore();
+      ctx2.globalAlpha = alpha;
+      const cg = ctx2.createRadialGradient(0, 0, 0, 0, 0, r * 0.26);
+      cg.addColorStop(0, "#FFFFFF");
+      cg.addColorStop(0.5, glow);
+      cg.addColorStop(1, tone(glow, 0.6));
+      ctx2.beginPath();
+      ctx2.arc(0, 0, r * 0.24 * pulse, 0, Math.PI * 2);
+      ctx2.fillStyle = cg;
+      ctx2.fill();
+      ctx2.fillStyle = glow;
+      ctx2.beginPath();
+      ctx2.arc(r * 0.56, 0, r * 0.065, 0, Math.PI * 2);
+      ctx2.arc(r * 0.42, -r * 0.27, r * 0.05, 0, Math.PI * 2);
+      ctx2.arc(r * 0.42, r * 0.27, r * 0.05, 0, Math.PI * 2);
+      ctx2.fill();
     } else {
       const pulse = 0.7 + 0.3 * Math.sin(time * 4);
       ctx2.fillStyle = deep;
@@ -4458,9 +5791,9 @@
     }
     ctx2.stroke();
   }
-  function drawPath(ctx2, paths, time) {
-    ctx2.lineCap = "round";
-    ctx2.lineJoin = "round";
+  var pathSegsCache = null;
+  function pathSegs(paths) {
+    if (pathSegsCache?.paths === paths) return pathSegsCache.segs;
     let segs = null;
     if (paths.length > 1) {
       const seen = /* @__PURE__ */ new Set();
@@ -4476,18 +5809,25 @@
         }
       }
     }
-    const trace = () => {
-      ctx2.beginPath();
-      if (segs === null) {
-        paths[0].forEach(([x, y], i) => i === 0 ? ctx2.moveTo(x, y) : ctx2.lineTo(x, y));
-        return;
-      }
-      for (const [x1, y1, x2, y2] of segs) {
-        ctx2.moveTo(x1, y1);
-        ctx2.lineTo(x2, y2);
-      }
-    };
-    trace();
+    pathSegsCache = { paths, segs };
+    return segs;
+  }
+  function tracePath(ctx2, paths) {
+    const segs = pathSegs(paths);
+    ctx2.beginPath();
+    if (segs === null) {
+      paths[0].forEach(([x, y], i) => i === 0 ? ctx2.moveTo(x, y) : ctx2.lineTo(x, y));
+      return;
+    }
+    for (const [x1, y1, x2, y2] of segs) {
+      ctx2.moveTo(x1, y1);
+      ctx2.lineTo(x2, y2);
+    }
+  }
+  function drawPathBase(ctx2, paths) {
+    ctx2.lineCap = "round";
+    ctx2.lineJoin = "round";
+    tracePath(ctx2, paths);
     ctx2.strokeStyle = "#141B32";
     ctx2.lineWidth = CELL * 0.72;
     ctx2.stroke();
@@ -4496,16 +5836,17 @@
     ctx2.setLineDash([2, CELL * 0.72 - 2]);
     ctx2.stroke();
     ctx2.setLineDash([]);
-    trace();
+  }
+  function drawPath(ctx2, paths, time) {
+    ctx2.lineCap = "round";
+    ctx2.lineJoin = "round";
+    tracePath(ctx2, paths);
     ctx2.strokeStyle = "rgba(34,224,255,0.55)";
     ctx2.lineWidth = 2;
     ctx2.setLineDash([10, 18]);
     ctx2.lineDashOffset = -time * 60;
-    ctx2.shadowColor = "#22E0FF";
-    ctx2.shadowBlur = 6;
     ctx2.stroke();
     ctx2.setLineDash([]);
-    ctx2.shadowBlur = 0;
   }
   function drawBase(ctx2, time, livesRatio, baseX, baseY) {
     const x = baseX;
@@ -4513,12 +5854,14 @@
     const breathe = 1 + Math.sin(time * 2) * 0.05;
     ctx2.beginPath();
     ctx2.arc(x, y, 52 * breathe, Math.PI, 0);
+    ctx2.strokeStyle = livesRatio > 0.3 ? "rgba(34,224,255,0.2)" : "rgba(255,90,90,0.24)";
+    ctx2.lineWidth = 9;
+    ctx2.stroke();
+    ctx2.beginPath();
+    ctx2.arc(x, y, 52 * breathe, Math.PI, 0);
     ctx2.strokeStyle = livesRatio > 0.3 ? "rgba(34,224,255,0.7)" : "rgba(255,90,90,0.8)";
     ctx2.lineWidth = 3;
-    ctx2.shadowColor = livesRatio > 0.3 ? "#22E0FF" : "#FF5A5A";
-    ctx2.shadowBlur = 16;
     ctx2.stroke();
-    ctx2.shadowBlur = 0;
     ctx2.beginPath();
     ctx2.arc(x, y, 34, 0, Math.PI * 2);
     ctx2.fillStyle = "#162040";
@@ -4530,13 +5873,11 @@
     ctx2.arc(x, y, 20, Math.PI, 0);
     ctx2.fillStyle = "rgba(34,224,255,0.35)";
     ctx2.fill();
+    ctx2.drawImage(glowSprite("#22E0FF"), x - 14, y - 14, 28, 28);
     ctx2.beginPath();
     ctx2.arc(x, y, 7, 0, Math.PI * 2);
     ctx2.fillStyle = "#BDF3FF";
-    ctx2.shadowColor = "#22E0FF";
-    ctx2.shadowBlur = 12;
     ctx2.fill();
-    ctx2.shadowBlur = 0;
   }
   function drawMecha(ctx2, level, size, aimAngle, walk, time) {
     const r = size / 2;
@@ -4670,573 +6011,6 @@
     ctx2.fillRect(-r * 0.09, -r * 0.58, r * 0.18, r * 0.08);
     ctx2.restore();
   }
-
-  // src/game/fx.ts
-  var import_meta = {};
-  var BLOOM_SCALE = 0.25;
-  var BLOOM_INTENSITY = 0.42;
-  var BLOOM_BLUR_PASSES = 2;
-  var BLOOM_MIN_CORES = 5;
-  var STAR_FAR_COUNT = 46;
-  var STAR_FAR_SPEED = 3;
-  var STAR_NEAR_COUNT = 22;
-  var STAR_NEAR_SPEED = 9;
-  var VIGNETTE_ALPHA = 0.52;
-  var BASE_GLOW_R = 130;
-  var BASE_GLOW_ALPHA = 0.1;
-  var SCORCH_TTL = 3;
-  var SCORCH_MAX = 24;
-  var KILL_FLASH_TTL = 0.1;
-  var KILL_FLASH_MAX = 16;
-  var BOSS_FLASH_TTL = 0.15;
-  var TRAIL_LEN = 10;
-  var DEBRIS_MAX = 90;
-  var DEBRIS_GRAVITY = 320;
-  var DEBRIS_DRAG = 2.4;
-  var SPARK_MAX = 70;
-  var SPARKS_PER_HIT = 4;
-  var FX_RING_MAX = 12;
-  var LEAK_MARGIN = 10;
-  var hash01 = (n) => {
-    const v = Math.sin(n * 12.9898) * 43758.5453;
-    return v - Math.floor(v);
-  };
-  var browserPlatform = {
-    createCanvas: () => document.createElement("canvas"),
-    createImage: () => typeof Image === "undefined" ? null : new Image(),
-    readQualityHigh: () => {
-      try {
-        const raw = localStorage.getItem("srd.settings");
-        if (raw) return (JSON.parse(raw).quality ?? "high") === "high";
-      } catch {
-      }
-      return true;
-    },
-    hardwareConcurrency: () => navigator.hardwareConcurrency ?? 8,
-    nebulaUrl: () => {
-      try {
-        const base = import_meta.env?.BASE_URL ?? "/";
-        return `${base}nebula-texture.png`;
-      } catch {
-        return "nebula-texture.png";
-      }
-    }
-  };
-  var platform = browserPlatform;
-  function setFxPlatform(p) {
-    platform = p;
-  }
-  var NebulaBg = class {
-    constructor(url) {
-      __publicField(this, "img", null);
-      const im = platform.createImage();
-      if (!im) return;
-      im.onload = () => {
-        this.img = im;
-      };
-      im.src = url ?? platform.nebulaUrl();
-    }
-  };
-  function drawStarfield(ctx2, w, h, time) {
-    ctx2.save();
-    ctx2.fillStyle = "#8FA8E8";
-    for (let i = 0; i < STAR_FAR_COUNT; i++) {
-      const sx = (hash01(i * 7 + 11) * w + time * STAR_FAR_SPEED) % w;
-      const sy = (hash01(i * 13 + 5) * h + time * STAR_FAR_SPEED * 0.4) % h;
-      ctx2.globalAlpha = 0.1 + 0.14 * (0.5 + 0.5 * Math.sin(time * 0.5 + i * 1.9));
-      ctx2.fillRect(sx, sy, 1, 1);
-    }
-    for (let i = 0; i < STAR_NEAR_COUNT; i++) {
-      const sx = (hash01(i * 17 + 31) * w + time * STAR_NEAR_SPEED) % w;
-      const sy = (hash01(i * 23 + 47) * h + Math.sin(time * 0.1 + i) * 8 + time * STAR_NEAR_SPEED * 0.25 + h) % h;
-      const r = 0.8 + hash01(i * 29 + 3) * 1.1;
-      ctx2.fillStyle = i % 5 === 0 ? "#BDF3FF" : "#D8E4FF";
-      ctx2.globalAlpha = 0.16 + 0.22 * (0.5 + 0.5 * Math.sin(time * 0.8 + i * 2.7));
-      ctx2.beginPath();
-      ctx2.arc(sx, sy, r, 0, Math.PI * 2);
-      ctx2.fill();
-    }
-    ctx2.restore();
-    ctx2.globalAlpha = 1;
-  }
-  function drawVignette(ctx2, w, h) {
-    const g = ctx2.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.42, w / 2, h / 2, Math.hypot(w, h) * 0.62);
-    g.addColorStop(0, "rgba(3,5,12,0)");
-    g.addColorStop(1, `rgba(3,5,12,${VIGNETTE_ALPHA})`);
-    ctx2.fillStyle = g;
-    ctx2.fillRect(0, 0, w, h);
-  }
-  function drawBaseGlow(ctx2, x, y, time) {
-    const pulse = 0.75 + 0.25 * Math.sin(time * 1.6);
-    const g = ctx2.createRadialGradient(x, y, 0, x, y, BASE_GLOW_R);
-    g.addColorStop(0, `rgba(34,224,255,${BASE_GLOW_ALPHA * pulse})`);
-    g.addColorStop(1, "rgba(34,224,255,0)");
-    ctx2.fillStyle = g;
-    ctx2.beginPath();
-    ctx2.arc(x, y, BASE_GLOW_R, 0, Math.PI * 2);
-    ctx2.fill();
-  }
-  var BloomLayer = class {
-    constructor(w, h) {
-      __publicField(this, "glow");
-      __publicField(this, "tiny");
-      __publicField(this, "gctx");
-      __publicField(this, "tctx");
-      /** 硬件允许（核数足够或平台无法探测）；画质开关由调用方另行控制 */
-      __publicField(this, "hwOk");
-      this.glow = platform.createCanvas();
-      this.glow.width = Math.max(1, Math.round(w * BLOOM_SCALE));
-      this.glow.height = Math.max(1, Math.round(h * BLOOM_SCALE));
-      this.tiny = platform.createCanvas();
-      this.tiny.width = Math.max(1, this.glow.width >> 1);
-      this.tiny.height = Math.max(1, this.glow.height >> 1);
-      this.gctx = this.glow.getContext("2d");
-      this.tctx = this.tiny.getContext("2d");
-      const cores = platform.hardwareConcurrency();
-      this.hwOk = cores === null || cores >= BLOOM_MIN_CORES;
-    }
-    /** 清层并套用与主画布一致的坐标系（含震屏偏移），返回绘制上下文 */
-    begin(shakeX, shakeY) {
-      const g = this.gctx;
-      g.setTransform(1, 0, 0, 1, 0, 0);
-      g.clearRect(0, 0, this.glow.width, this.glow.height);
-      g.setTransform(BLOOM_SCALE, 0, 0, BLOOM_SCALE, shakeX * BLOOM_SCALE, shakeY * BLOOM_SCALE);
-      return g;
-    }
-    /** 降采样-升采样近似高斯模糊，然后以 lighter 拉伸叠回主画布（调用后主画布变换被重置为单位矩阵）。
-     *  默认铺满 w*dpr × h*dpr；竖屏端可用 dx/dy/dw/dh 指定设备像素下的目标区域（地图偏移/缩放） */
-    composite(dst, w, h, dpr, dx = 0, dy = 0, dw = w * dpr, dh = h * dpr) {
-      const g = this.gctx;
-      for (let i = 0; i < BLOOM_BLUR_PASSES; i++) {
-        this.tctx.setTransform(1, 0, 0, 1, 0, 0);
-        this.tctx.clearRect(0, 0, this.tiny.width, this.tiny.height);
-        this.tctx.drawImage(this.glow, 0, 0, this.tiny.width, this.tiny.height);
-        g.setTransform(1, 0, 0, 1, 0, 0);
-        g.drawImage(this.tiny, 0, 0, this.glow.width, this.glow.height);
-      }
-      dst.setTransform(1, 0, 0, 1, 0, 0);
-      dst.globalCompositeOperation = "lighter";
-      dst.globalAlpha = BLOOM_INTENSITY;
-      dst.drawImage(this.glow, dx, dy, dw, dh);
-      dst.globalAlpha = 1;
-      dst.globalCompositeOperation = "source-over";
-    }
-  };
-  var FxLayer = class {
-    constructor() {
-      /** BOSS 死亡全屏白闪剩余时间（秒），由 GameCanvas 读取绘制 */
-      __publicField(this, "bossFlash", 0);
-      __publicField(this, "prevEnemies", /* @__PURE__ */ new Map());
-      __publicField(this, "seenIds", /* @__PURE__ */ new Set());
-      __publicField(this, "lastClock", -1);
-      __publicField(this, "scorches", []);
-      __publicField(this, "flashes", []);
-      __publicField(this, "debris", []);
-      __publicField(this, "sparks", []);
-      __publicField(this, "rings", []);
-      __publicField(this, "trails", /* @__PURE__ */ new Map());
-      for (let i = 0; i < SCORCH_MAX; i++) this.scorches.push({ x: 0, y: 0, r: 1, rot: 0, ttl: 0 });
-      for (let i = 0; i < KILL_FLASH_MAX; i++) this.flashes.push({ x: 0, y: 0, r: 1, ttl: 0 });
-      for (let i = 0; i < DEBRIS_MAX; i++) this.debris.push({ x: 0, y: 0, vx: 0, vy: 0, size: 1, color: "#FFF", ttl: 0, maxTtl: 1 });
-      for (let i = 0; i < SPARK_MAX; i++) this.sparks.push({ x: 0, y: 0, vx: 0, vy: 0, size: 1, color: "#FFF", ttl: 0, maxTtl: 1 });
-      for (let i = 0; i < FX_RING_MAX; i++) this.rings.push({ x: 0, y: 0, color: "#FFF", r0: 0, r1: 1, ttl: 0, maxTtl: 1 });
-    }
-    /** 每帧调用：同步敌人/弹丸列表做死亡 diff，并按引擎时钟衰减所有短寿命特效 */
-    update(s, map) {
-      const dt = this.lastClock < 0 ? 0 : Math.min(0.1, Math.max(0, s.clock - this.lastClock));
-      this.lastClock = s.clock;
-      const seen = this.seenIds;
-      seen.clear();
-      for (const e of s.enemies) {
-        seen.add(e.id);
-        const pos = map.posAt(e.path, e.dist);
-        const prev = this.prevEnemies.get(e.id);
-        if (prev) {
-          prev.x = pos.x;
-          prev.y = pos.y;
-          prev.dist = e.dist;
-        } else {
-          this.prevEnemies.set(e.id, {
-            x: pos.x,
-            y: pos.y,
-            dist: e.dist,
-            path: e.path,
-            isBoss: e.isBoss,
-            size: ENEMIES[e.type].size,
-            color: ENEMIES[e.type].color
-          });
-        }
-      }
-      for (const [id, p] of this.prevEnemies) {
-        if (seen.has(id)) continue;
-        this.prevEnemies.delete(id);
-        if (p.dist >= map.paths[p.path].length - LEAK_MARGIN) continue;
-        this.onEnemyDeath(p);
-      }
-      seen.clear();
-      for (const pr of s.projectiles) {
-        seen.add(pr.id);
-        let tr = this.trails.get(pr.id);
-        if (!tr) {
-          tr = { kind: pr.kind, pts: [] };
-          this.trails.set(pr.id, tr);
-        }
-        const last2 = tr.pts[tr.pts.length - 1];
-        if (!last2 || last2.x !== pr.x || last2.y !== pr.y) {
-          tr.pts.push({ x: pr.x, y: pr.y });
-          if (tr.pts.length > TRAIL_LEN) tr.pts.shift();
-        }
-      }
-      for (const [id, tr] of this.trails) {
-        if (seen.has(id)) continue;
-        this.trails.delete(id);
-        if (tr.kind === "missile" && tr.pts.length > 0) {
-          const end = tr.pts[tr.pts.length - 1];
-          this.burst(end.x, end.y, "#FFC978", 9, 220, 0.45);
-        }
-      }
-      if (dt > 0) {
-        for (const sc of this.scorches) if (sc.ttl > 0) sc.ttl -= dt;
-        for (const f of this.flashes) if (f.ttl > 0) f.ttl -= dt;
-        for (const r of this.rings) if (r.ttl > 0) r.ttl -= dt;
-        if (this.bossFlash > 0) this.bossFlash -= dt;
-        const dragK = 1 / (1 + DEBRIS_DRAG * dt);
-        for (const d of this.debris) {
-          if (d.ttl <= 0) continue;
-          d.ttl -= dt;
-          d.vy += DEBRIS_GRAVITY * dt;
-          d.vx *= dragK;
-          d.vy *= dragK;
-          d.x += d.vx * dt;
-          d.y += d.vy * dt;
-        }
-        for (const sp of this.sparks) {
-          if (sp.ttl <= 0) continue;
-          sp.ttl -= dt;
-          sp.vy += 200 * dt;
-          sp.x += sp.vx * dt;
-          sp.y += sp.vy * dt;
-        }
-      }
-    }
-    onEnemyDeath(p) {
-      this.spawnScorch(p.x, p.y, p.size * 1.7);
-      this.spawnFlash(p.x, p.y, p.size * 2.4);
-      const n = p.isBoss ? 16 : 7;
-      for (let i = 0; i < n; i++) {
-        const a = Math.random() * Math.PI * 2;
-        const v = (p.isBoss ? 130 : 70) * (0.5 + Math.random());
-        this.spawnMote(this.debris, p.x, p.y, Math.cos(a) * v, Math.sin(a) * v - 50, 1.5 + Math.random() * 2.5, p.color, 0.5 + Math.random() * 0.4);
-      }
-      if (p.isBoss) {
-        this.bossFlash = BOSS_FLASH_TTL;
-        this.spawnRing(p.x, p.y, "#FFFFFF", 12, 170, 0.5);
-        this.spawnRing(p.x, p.y, "#FF3D81", 8, 250, 0.9);
-        this.spawnRing(p.x, p.y, "#FFC94D", 4, 330, 1.3);
-      }
-    }
-    /** 激光命中点火花溅射 */
-    spawnSparks(x, y, color, count) {
-      for (let i = 0; i < count; i++) {
-        const a = Math.random() * Math.PI * 2;
-        const v = 40 + Math.random() * 90;
-        this.spawnMote(this.sparks, x, y, Math.cos(a) * v, Math.sin(a) * v - 30, 1 + Math.random() * 1.2, color, 0.16 + Math.random() * 0.14);
-      }
-    }
-    /** 亮火花喷发（导弹爆炸补花） */
-    burst(x, y, color, count, speed, ttl) {
-      for (let i = 0; i < count; i++) {
-        const a = Math.random() * Math.PI * 2;
-        const v = speed * (0.35 + Math.random() * 0.65);
-        this.spawnMote(this.sparks, x, y, Math.cos(a) * v, Math.sin(a) * v - 40, 1.2 + Math.random() * 1.6, i % 3 === 0 ? "#FFFFFF" : color, ttl * (0.7 + Math.random() * 0.6));
-      }
-    }
-    spawnMote(pool, x, y, vx, vy, size, color, ttl) {
-      let slot = null;
-      for (const m of pool) {
-        if (m.ttl <= 0) {
-          slot = m;
-          break;
-        }
-      }
-      if (!slot) return;
-      slot.x = x;
-      slot.y = y;
-      slot.vx = vx;
-      slot.vy = vy;
-      slot.size = size;
-      slot.color = color;
-      slot.ttl = ttl;
-      slot.maxTtl = ttl;
-    }
-    spawnScorch(x, y, r) {
-      let slot = null;
-      for (const s of this.scorches) {
-        if (s.ttl <= 0) {
-          slot = s;
-          break;
-        }
-      }
-      if (!slot) {
-        slot = this.scorches[0];
-        for (const s of this.scorches) if (s.ttl < slot.ttl) slot = s;
-      }
-      slot.x = x;
-      slot.y = y;
-      slot.r = r;
-      slot.rot = Math.random() * Math.PI;
-      slot.ttl = SCORCH_TTL;
-    }
-    spawnFlash(x, y, r) {
-      for (const f of this.flashes) {
-        if (f.ttl > 0) continue;
-        f.x = x;
-        f.y = y;
-        f.r = r;
-        f.ttl = KILL_FLASH_TTL;
-        return;
-      }
-    }
-    spawnRing(x, y, color, r0, r1, ttl) {
-      for (const r of this.rings) {
-        if (r.ttl > 0) continue;
-        r.x = x;
-        r.y = y;
-        r.color = color;
-        r.r0 = r0;
-        r.r1 = r1;
-        r.ttl = ttl;
-        r.maxTtl = ttl;
-        return;
-      }
-    }
-    /** 地面灼痕：暗色椭圆焦痕贴地，3s 淡出（画在路径之上、塔之下） */
-    drawScorches(ctx2) {
-      for (const s of this.scorches) {
-        if (s.ttl <= 0) continue;
-        const a = s.ttl / SCORCH_TTL;
-        ctx2.save();
-        ctx2.translate(s.x, s.y);
-        ctx2.rotate(s.rot);
-        ctx2.scale(1, 0.55);
-        const g = ctx2.createRadialGradient(0, 0, 0, 0, 0, s.r);
-        g.addColorStop(0, `rgba(8,6,12,${0.6 * a})`);
-        g.addColorStop(0.6, `rgba(24,12,8,${0.35 * a})`);
-        g.addColorStop(1, "rgba(20,10,6,0)");
-        ctx2.fillStyle = g;
-        ctx2.beginPath();
-        ctx2.arc(0, 0, s.r, 0, Math.PI * 2);
-        ctx2.fill();
-        ctx2.restore();
-      }
-    }
-    /** 导弹烟雾拖尾：历史位置渐隐圆点链（越旧越大越淡） */
-    drawTrails(ctx2) {
-      for (const tr of this.trails.values()) {
-        if (tr.kind !== "missile") continue;
-        const n = tr.pts.length;
-        for (let i = 0; i < n; i++) {
-          const f = (i + 1) / n;
-          const pt = tr.pts[i];
-          ctx2.globalAlpha = 0.04 + 0.15 * f;
-          ctx2.fillStyle = "#C9CEDA";
-          ctx2.beginPath();
-          ctx2.arc(pt.x, pt.y, 1.6 + (1 - f) * 3.2, 0, Math.PI * 2);
-          ctx2.fill();
-        }
-      }
-      ctx2.globalAlpha = 1;
-    }
-    /** 死亡碎片（方块，与引擎粒子同风格，带重力） */
-    drawDebris(ctx2) {
-      for (const d of this.debris) {
-        if (d.ttl <= 0) continue;
-        ctx2.globalAlpha = Math.max(0, d.ttl / d.maxTtl);
-        ctx2.fillStyle = d.color;
-        ctx2.fillRect(d.x - d.size / 2, d.y - d.size / 2, d.size, d.size);
-      }
-      ctx2.globalAlpha = 1;
-    }
-    /** 火花（激光命中 / 导弹爆炸，加色混合更亮） */
-    drawSparks(ctx2) {
-      ctx2.save();
-      ctx2.globalCompositeOperation = "lighter";
-      for (const sp of this.sparks) {
-        if (sp.ttl <= 0) continue;
-        ctx2.globalAlpha = Math.max(0, sp.ttl / sp.maxTtl);
-        ctx2.fillStyle = sp.color;
-        ctx2.beginPath();
-        ctx2.arc(sp.x, sp.y, sp.size, 0, Math.PI * 2);
-        ctx2.fill();
-      }
-      ctx2.restore();
-      ctx2.globalAlpha = 1;
-    }
-    /** 击杀瞬间白闪（径向渐变，0.1s） */
-    drawFlashes(ctx2) {
-      ctx2.save();
-      ctx2.globalCompositeOperation = "lighter";
-      for (const f of this.flashes) {
-        if (f.ttl <= 0) continue;
-        const a = f.ttl / KILL_FLASH_TTL;
-        const r = f.r * (1 + (1 - a) * 0.6);
-        const g = ctx2.createRadialGradient(f.x, f.y, 0, f.x, f.y, r);
-        g.addColorStop(0, `rgba(255,255,255,${0.85 * a})`);
-        g.addColorStop(0.5, `rgba(255,240,210,${0.4 * a})`);
-        g.addColorStop(1, "rgba(255,240,210,0)");
-        ctx2.fillStyle = g;
-        ctx2.beginPath();
-        ctx2.arc(f.x, f.y, r, 0, Math.PI * 2);
-        ctx2.fill();
-      }
-      ctx2.restore();
-    }
-    /** 渲染层补充冲击波环（BOSS 多层环），风格同引擎 rings */
-    drawRings(ctx2) {
-      for (const r of this.rings) {
-        if (r.ttl <= 0) continue;
-        const life = Math.max(0, r.ttl / r.maxTtl);
-        const k = 1 - life;
-        const rad = r.r0 + (r.r1 - r.r0) * (1 - (1 - k) * (1 - k));
-        ctx2.beginPath();
-        ctx2.arc(r.x, r.y, rad, 0, Math.PI * 2);
-        ctx2.globalAlpha = life * 0.8;
-        ctx2.strokeStyle = r.color;
-        ctx2.lineWidth = Math.max(1, 7 * life);
-        ctx2.shadowColor = r.color;
-        ctx2.shadowBlur = 14;
-        ctx2.stroke();
-        ctx2.shadowBlur = 0;
-      }
-      ctx2.globalAlpha = 1;
-    }
-    /** BOSS 全屏白闪（在 Bloom 合成之后绘制，保持纯白） */
-    drawBossFlash(ctx2, w, h) {
-      if (this.bossFlash <= 0) return;
-      const a = Math.max(0, this.bossFlash / BOSS_FLASH_TTL);
-      ctx2.fillStyle = `rgba(255,255,255,${0.85 * a})`;
-      ctx2.fillRect(-24, -24, w + 48, h + 48);
-    }
-    /** 辉光层绘制：发光元素的简化加色形状（低分辨率，主画布已有清晰版） */
-    drawGlow(g, s, paths, exits) {
-      g.lineCap = "round";
-      g.lineJoin = "round";
-      g.strokeStyle = "rgba(34,224,255,0.15)";
-      g.lineWidth = 2.5;
-      for (const px of paths) {
-        g.beginPath();
-        px.forEach(([x, y], i) => i === 0 ? g.moveTo(x, y) : g.lineTo(x, y));
-        g.stroke();
-      }
-      for (const z of s.zones) {
-        g.globalAlpha = 0.5 * Math.max(0, z.ttl / z.maxTtl);
-        g.fillStyle = "#FF6B3D";
-        g.beginPath();
-        g.arc(z.x, z.y, z.r * 0.8, 0, Math.PI * 2);
-        g.fill();
-      }
-      g.globalAlpha = 1;
-      for (const ex of exits) {
-        g.globalAlpha = 0.28;
-        g.fillStyle = "#22E0FF";
-        g.beginPath();
-        g.arc(ex.centerX, ex.centerY, 26, 0, Math.PI * 2);
-        g.fill();
-      }
-      g.globalAlpha = 1;
-      for (const pr of s.projectiles) {
-        if (pr.kind === "plasma") {
-          g.globalAlpha = 0.8;
-          g.fillStyle = "#FF6B3D";
-          g.beginPath();
-          g.arc(pr.x, pr.y, 7, 0, Math.PI * 2);
-          g.fill();
-          g.fillStyle = "#FFF3D6";
-          g.beginPath();
-          g.arc(pr.x, pr.y, 3, 0, Math.PI * 2);
-          g.fill();
-        } else {
-          g.globalAlpha = 0.7;
-          g.fillStyle = "#FF9F43";
-          g.beginPath();
-          g.arc(pr.x, pr.y, 4.5, 0, Math.PI * 2);
-          g.fill();
-        }
-      }
-      g.globalAlpha = 1;
-      for (const b of s.beams) {
-        const a = b.ttl / b.maxTtl;
-        if (b.color === "#8B5CF6") {
-          g.globalAlpha = a * 0.6;
-          g.strokeStyle = b.color;
-          g.lineWidth = b.width * 2.4;
-          g.beginPath();
-          g.moveTo(b.x1, b.y1);
-          g.lineTo(b.x2, b.y2);
-          g.stroke();
-        }
-        g.globalAlpha = a;
-        g.strokeStyle = b.color;
-        g.lineWidth = b.width;
-        g.beginPath();
-        g.moveTo(b.x1, b.y1);
-        g.lineTo(b.x2, b.y2);
-        g.stroke();
-      }
-      g.globalAlpha = 1;
-      for (const pt of s.particles) {
-        g.globalAlpha = pt.ttl / pt.maxTtl * 0.8;
-        g.fillStyle = pt.color;
-        g.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
-      }
-      g.globalAlpha = 1;
-      for (const r of s.rings) {
-        g.globalAlpha = Math.max(0, r.ttl / r.maxTtl) * 0.7;
-        g.strokeStyle = r.color;
-        g.lineWidth = 3;
-        const k = 1 - Math.max(0, r.ttl / r.maxTtl);
-        const rad = r.r0 + (r.r1 - r.r0) * (1 - (1 - k) * (1 - k));
-        g.beginPath();
-        g.arc(r.x, r.y, rad, 0, Math.PI * 2);
-        g.stroke();
-      }
-      for (const r of this.rings) {
-        if (r.ttl <= 0) continue;
-        g.globalAlpha = Math.max(0, r.ttl / r.maxTtl) * 0.7;
-        g.strokeStyle = r.color;
-        g.lineWidth = 4;
-        const k = 1 - Math.max(0, r.ttl / r.maxTtl);
-        const rad = r.r0 + (r.r1 - r.r0) * (1 - (1 - k) * (1 - k));
-        g.beginPath();
-        g.arc(r.x, r.y, rad, 0, Math.PI * 2);
-        g.stroke();
-      }
-      g.globalAlpha = 1;
-      for (const f of this.flashes) {
-        if (f.ttl <= 0) continue;
-        g.globalAlpha = f.ttl / KILL_FLASH_TTL * 0.9;
-        g.fillStyle = "#FFF6E0";
-        g.beginPath();
-        g.arc(f.x, f.y, f.r, 0, Math.PI * 2);
-        g.fill();
-      }
-      for (const sp of this.sparks) {
-        if (sp.ttl <= 0) continue;
-        g.globalAlpha = Math.max(0, sp.ttl / sp.maxTtl) * 0.8;
-        g.fillStyle = sp.color;
-        g.beginPath();
-        g.arc(sp.x, sp.y, sp.size, 0, Math.PI * 2);
-        g.fill();
-      }
-      for (const d of this.debris) {
-        if (d.ttl <= 0) continue;
-        g.globalAlpha = Math.max(0, d.ttl / d.maxTtl) * 0.5;
-        g.fillStyle = d.color;
-        g.fillRect(d.x - d.size / 2, d.y - d.size / 2, d.size, d.size);
-      }
-      g.globalAlpha = 1;
-    }
-  };
 
   // src/audio.ts
   var SFX_VOL = {
@@ -5512,6 +6286,33 @@
   }
   var MAX_RECONNECT = 3;
   var PING_MS = 25e3;
+  function parseMembers(v) {
+    if (!Array.isArray(v)) return [];
+    const out = [];
+    for (const m of v) {
+      if (!m || typeof m !== "object") continue;
+      const mm = m;
+      if (typeof mm.slot !== "number") continue;
+      out.push({
+        slot: mm.slot,
+        nick: String(mm.nick ?? ""),
+        online: mm.online !== false,
+        ready: !!mm.ready
+      });
+    }
+    return out;
+  }
+  function parsePlayers(v) {
+    if (!Array.isArray(v)) return [];
+    const out = [];
+    for (const p of v) {
+      if (!p || typeof p !== "object") continue;
+      const pp = p;
+      if (typeof pp.slot !== "number") continue;
+      out.push({ slot: pp.slot, nick: String(pp.nick ?? "") });
+    }
+    return out;
+  }
   function connectCoop(wxImpl, opts, cb) {
     try {
       let stopPing = function() {
@@ -5558,7 +6359,15 @@
           const wasRetry = attempts > 0 || everOpened;
           attempts = 0;
           everOpened = true;
-          if (rejoin) sendRaw({ t: "join", roomId: rejoin.roomId, nick: opts.nick, rejoin: true });
+          if (rejoin) {
+            sendRaw({
+              t: "join",
+              roomId: rejoin.roomId,
+              nick: opts.nick,
+              rejoin: true,
+              ...rejoin.slot != null ? { slot: rejoin.slot } : {}
+            });
+          }
           stopPing();
           pingTimer = setInterval(() => sendRaw({ t: "ping" }), PING_MS);
           cb.onOpen?.(wasRetry);
@@ -5569,21 +6378,42 @@
             const msg = typeof r.data === "string" ? JSON.parse(r.data) : null;
             if (!msg || typeof msg.t !== "string") return;
             switch (msg.t) {
-              case "room":
+              case "room": {
+                const role = msg.role === "host" ? "host" : "guest";
+                const members = parseMembers(msg.members);
+                mySlot = typeof msg.slot === "number" ? msg.slot : role === "host" ? 0 : 1;
                 cb.onRoom?.({
                   roomId: String(msg.roomId ?? ""),
-                  role: msg.role === "host" ? "host" : "guest",
+                  role,
+                  slot: mySlot,
+                  maxPlayers: typeof msg.maxPlayers === "number" ? msg.maxPlayers : void 0,
+                  members: members.length ? members : void 0,
                   levelId: typeof msg.levelId === "number" ? msg.levelId : void 0,
                   difficulty: typeof msg.difficulty === "string" ? msg.difficulty : void 0,
                   hostNick: typeof msg.hostNick === "string" ? msg.hostNick : void 0
                 });
                 break;
-              case "peer":
+              }
+              case "peer": {
+                const st = msg.status;
+                const slot = typeof msg.slot === "number" ? msg.slot : mySlot === 0 ? 1 : 0;
                 cb.onPeer?.(
                   String(msg.nick ?? ""),
-                  msg.status === "lost" ? "lost" : msg.status === "back" ? "back" : "joined"
+                  st === "lost" ? "lost" : st === "back" ? "back" : st === "left" ? "left" : st === "ready" ? "ready" : "joined",
+                  slot
                 );
                 break;
+              }
+              case "members": {
+                const members = parseMembers(msg.members);
+                if (members.length) cb.onMembers?.(members);
+                break;
+              }
+              case "start": {
+                const players = parsePlayers(msg.players);
+                if (players.length) cb.onStart?.(players);
+                break;
+              }
               case "cmd":
                 if (msg.cmd && typeof msg.cmd === "object") cb.onCmd?.(Number(msg.player) || 0, msg.cmd);
                 break;
@@ -5615,6 +6445,7 @@
       let attempts = 0;
       let closed = false;
       let rejoin = null;
+      let mySlot = null;
       let pingTimer = null;
       let retryTimer = null;
       connect();
@@ -5647,8 +6478,8 @@
   var LERP_DT = SNAP_DT * 1.25;
   var EXTRAP_MAX = 1;
   var CLOCK_HARD_SYNC = 0.6;
-  function createGhostEngine(difficulty, levelId, sendCmd) {
-    const base = createEngine(difficulty, levelId, { coop: true });
+  function createGhostEngine(difficulty, levelId, sendCmd, viewSlot = 1, players) {
+    const base = createEngine(difficulty, levelId, { coop: true, players });
     const state = base.state;
     const evBuf = [];
     const lerp = /* @__PURE__ */ new Map();
@@ -5663,13 +6494,10 @@
       const prevMecha = /* @__PURE__ */ new Map();
       for (const m of state.mechas) prevMecha.set(m.id, { x: m.x, y: m.y });
       const localClock = state.clock;
-      const { particles, beams, rings, floaters } = state;
+      const { particles } = state;
       Object.assign(state, net);
       state.particles = particles;
-      state.beams = beams;
-      state.rings = rings;
-      state.floaters = floaters;
-      if (state.golds) state.gold = state.golds[1];
+      if (state.golds) state.gold = state.golds[viewSlot] ?? state.golds[0];
       const clockErr = net.clock - localClock;
       if (Math.abs(clockErr) > CLOCK_HARD_SYNC) {
         state.clock = net.clock;
@@ -5726,6 +6554,17 @@
           pr.x = pr.fromX + (pr.tx - pr.fromX) * pr.t;
           pr.y = pr.fromY + (pr.ty - pr.fromY) * pr.t - Math.sin(pr.t * Math.PI) * arcH;
         }
+        for (const b of state.beams) b.ttl -= dtSim;
+        state.beams = state.beams.filter((b) => b.ttl > 0);
+        for (const r of state.rings) r.ttl -= dtSim;
+        state.rings = state.rings.filter((r) => r.ttl > 0);
+        for (const f2 of state.floaters) {
+          f2.ttl -= dtSim;
+          f2.y -= 44 * dtSim;
+        }
+        state.floaters = state.floaters.filter((f2) => f2.ttl > 0);
+        for (const s of state.splits) s.ttl -= dtSim;
+        state.splits = state.splits.filter((s) => s.ttl > 0);
       }
       lerpT += dt;
       const f = Math.min(1, lerpT / LERP_DT);
@@ -5774,7 +6613,7 @@
         return true;
       },
       serializeNet() {
-        const { particles, beams, rings, floaters, spawnQueue, events, ...rest } = state;
+        const { particles, spawnQueue, events, ...rest } = state;
         return rest;
       },
       subscribe() {
@@ -5837,6 +6676,10 @@
     tg.addColorStop(1, env2.ac(0));
     ctx2.fillStyle = tg;
     ctx2.fillRect(x, y, w, Math.min(10, h));
+    ctx2.fillStyle = env2.ac(0.2);
+    ctx2.fillRect(x, y, w, 1);
+    ctx2.fillStyle = "rgba(0,0,0,0.14)";
+    ctx2.fillRect(x, y + h - 3, w, 3);
     ctx2.restore();
     ctx2.save();
     env2.rr(x, y, w, h, rad);
@@ -5896,6 +6739,12 @@
     ctx2.save();
     env2.rr(b.x, b.y, b.w, b.h, r);
     ctx2.clip();
+    if (b.primary && !b.disabled) {
+      ctx2.fillStyle = "rgba(255,255,255,0.10)";
+      ctx2.fillRect(b.x, b.y, b.w, b.h * 0.4);
+      ctx2.fillStyle = "rgba(255,255,255,0.28)";
+      ctx2.fillRect(b.x, b.y, b.w, 1);
+    }
     const sy = b.y + time * 30 % (b.h + 24) - 12;
     const sg = ctx2.createLinearGradient(0, sy - 6, 0, sy + 6);
     sg.addColorStop(0, "rgba(255,255,255,0)");
@@ -6104,11 +6953,22 @@
     const cleared = env2.loadProgress().cleared;
     const cardX = MARGIN2;
     const cardW = VW2 - MARGIN2 * 2;
+    const tutShift = env2.tutCardSlot();
+    if (tutShift) {
+      const p0 = enterP(env2, 0);
+      const ty = homeTop2 + 8 - env2.app.scroll + (1 - p0) * 18;
+      if (ty + CARD_H >= homeTop2 - 20 && ty <= homeBottom2 + 20) {
+        ctx2.save();
+        ctx2.globalAlpha = p0;
+        env2.drawTutorialCard(cardX, ty, cardW);
+        ctx2.restore();
+      }
+    }
     env2.LEVELS.forEach((lv, i) => {
       const unlock = i === 0 || cleared.includes(env2.LEVELS[i - 1].id);
       const done = cleared.includes(lv.id);
-      const p = enterP(env2, Math.min(i, 8));
-      const y = homeTop2 + 8 + i * (CARD_H + CARD_GAP) - env2.app.scroll + (1 - p) * 18;
+      const p = enterP(env2, Math.min(i + tutShift, 8));
+      const y = homeTop2 + 8 + (i + tutShift) * (CARD_H + CARD_GAP) - env2.app.scroll + (1 - p) * 18;
       if (y + CARD_H < homeTop2 - 20 || y > homeBottom2 + 20) return;
       ctx2.save();
       ctx2.globalAlpha = p;
@@ -6201,7 +7061,6 @@
       ctx2.fill();
       ctx2.restore();
     }
-    env2.fillText("\u5FAE\u4FE1\u5C0F\u6E38\u620F \xB7 \u8BD5\u8FD0\u8425\u5305", VW2 / 2, VH2 - 12, { size: 10, color: "rgba(124,141,176,0.7)", align: "center" });
     drawOverlays(env2, time);
   }
   function drawBriefing(env2, time) {
@@ -6209,7 +7068,7 @@
     const { ctx: ctx2, VW: VW2, MARGIN: MARGIN2 } = env2;
     env2.drawSpaceBg(time);
     holoAtmosphere(env2, time);
-    const lv = env2.LEVELS.find((l) => l.id === env2.app.levelId) ?? env2.LEVELS[0];
+    const lv = env2.getLevel(env2.app.levelId);
     holoHeader(env2, time, "\u4EFB\u52A1\u7B80\u62A5", () => {
       env2.stopNarration();
       env2.goto("home");
@@ -6244,7 +7103,7 @@
     ctx2.lineWidth = 1.2;
     ctx2.stroke();
     ctx2.restore();
-    env2.fillText(`\u7B2C ${lv.id} \u7AE0`, bx + 16, by + bannerH - 44, { size: 11, color: env2.C.cyan, weight: "600" });
+    env2.fillText(lv.id < 1 ? "\u6559\u5B66\u5173" : `\u7B2C ${lv.id} \u7AE0`, bx + 16, by + bannerH - 44, { size: 11, color: env2.C.cyan, weight: "600" });
     env2.fillText(lv.name, bx + 16, by + bannerH - 20, { size: 19 });
     env2.fillText(lv.sub, bx + bw - 16, by + bannerH - 20, { size: 11, color: env2.C.sub, align: "right", weight: "normal" });
     holoBtn(env2, {
@@ -6277,7 +7136,7 @@
     ctx2.globalAlpha = p2;
     ctx2.translate(0, (1 - p2) * 14);
     const afterY = boxY + boxH + 18;
-    const diffTxt = `\u6807\u51C6\u6218\u5F79 \xB7 \u5A01\u80C1\u7B49\u7EA7 ${"\u2605".repeat(threatStars(lv.id))}`;
+    const diffTxt = lv.id < 1 ? "\u6559\u5B66\u6F14\u7EC3 \xB7 \u6570\u503C\u5BBD\u677E" : `\u6807\u51C6\u6218\u5F79 \xB7 \u5A01\u80C1\u7B49\u7EA7 ${"\u2605".repeat(threatStars(lv.id))}`;
     ctx2.save();
     ctx2.font = "bold 11px sans-serif";
     const dw = ctx2.measureText(diffTxt).width + 24;
@@ -6313,7 +7172,7 @@
     const goldTxt = `\u25C8 ${st.gold}`;
     const waveTxt = `${st.wave}/${st.totalWaves}`;
     ctx2.save();
-    ctx2.font = `bold 12px ${resFont}`;
+    ctx2.font = `bold ${env2.F.sm}px ${resFont}`;
     const livesW = ctx2.measureText(livesTxt).width;
     const goldW = ctx2.measureText(goldTxt).width;
     const waveW = ctx2.measureText(waveTxt).width;
@@ -6332,16 +7191,16 @@
     let sx = barX + 14;
     ctx2.save();
     if (st.lives <= 5) ctx2.globalAlpha = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(time * 6));
-    env2.fillText(livesTxt, sx, midY, { size: 12, color: env2.C.red, font: resFont });
+    env2.fillText(livesTxt, sx, midY, { size: env2.F.sm, color: env2.C.red, font: resFont });
     ctx2.restore();
     sx += livesW + 10;
     divider(sx, false);
     sx += 10;
-    env2.fillText(goldTxt, sx, midY, { size: 12, color: env2.C.gold, font: resFont });
+    env2.fillText(goldTxt, sx, midY, { size: env2.F.sm, color: env2.C.gold, font: resFont });
     sx += goldW + 10;
     divider(sx, false);
     sx += 10;
-    env2.fillText(waveTxt, sx, midY - 2, { size: 12, color: env2.C.cyan, font: resFont });
+    env2.fillText(waveTxt, sx, midY - 2, { size: env2.F.sm, color: env2.C.cyan, font: resFont });
     const progY = midY + 8;
     ctx2.save();
     ctx2.fillStyle = env2.ac(0.15);
@@ -6369,7 +7228,7 @@
         ctx2.fill();
         ctx2.restore();
       }
-      env2.fillText(label, bx + cmdW / 2, midY, { size: 13, color, align: "center" });
+      env2.fillText(label, bx + cmdW / 2, midY, { size: env2.F.md, color, align: "center" });
       env2.hitBox({ x: bx, y: barY, w: cmdW, h: barH, label: "", cb });
     });
     if (st.phase === "prep") {
@@ -6384,17 +7243,17 @@
         ctx2.scale(s, s);
         ctx2.translate(-VW2 / 2, -(by2 + 15));
       }
-      env2.fillText(`\u7B2C ${st.wave} \u6CE2 \xB7 ${cd}s \u540E\u6765\u88AD`, VW2 / 2, by2 + 15, { size: 13, align: "center", color: urgent ? env2.C.gold : env2.C.text, font: env2.RES_FONT() });
+      env2.fillText(`\u7B2C ${st.wave} \u6CE2 \xB7 ${cd}s \u540E\u6765\u88AD`, VW2 / 2, by2 + 15, { size: env2.F.md, align: "center", color: urgent ? env2.C.gold : env2.C.text, font: env2.RES_FONT() });
       ctx2.restore();
       const groups = engine.level.waves[st.wave - 1]?.groups ?? [];
       const isBossWave = engine.level.waves[st.wave - 1]?.isBoss ?? false;
       const summary = [...new Set(groups.map((gsp) => `${env2.ENEMIES[gsp.type].name}\xD7${gsp.count}`))].join(" ");
-      env2.fillText(`${isBossWave ? "\u26A0 BOSS \u6CE2 \xB7 " : ""}${summary}`, VW2 / 2, by2 + 34, { size: 9, color: isBossWave ? env2.C.pink : "#FF9F43", align: "center", weight: "normal" });
+      env2.fillText(`${isBossWave ? "\u26A0 BOSS \u6CE2 \xB7 " : ""}${summary}`, VW2 / 2, by2 + 34, { size: env2.F.xs, color: isBossWave ? env2.C.pink : "#FF9F43", align: "center", weight: "normal" });
       env2.fillText(
         isBossWave ? "\u5EFA\u8BAE\u7559\u597D\u91D1\u5E01\u4E0E\u7A7F\u7532\u706B\u529B" : "\u636E\u6B64\u63D0\u524D\u8C03\u6574\u5E03\u9632",
         VW2 / 2,
         by2 + 47,
-        { size: 9, color: env2.C.sub, align: "center", weight: "normal" }
+        { size: env2.F.xs, color: env2.C.sub, align: "center", weight: "normal" }
       );
       holoBtn(env2, { x: VW2 / 2 - 62, y: by2 + 66, w: 124, h: 36, label: "\u25B6 \u7ACB\u5373\u5F00\u6218", color: env2.C.gold, primary: true, cb: () => env2.engineCmd({ type: "SKIP_PREP" }) }, time);
     }
@@ -6625,9 +7484,9 @@
     ctx2.fillStyle = "rgba(7,11,24,0.92)";
     ctx2.fillRect(0, 0, VW2, VH2);
     holoAtmosphere(env2, time);
-    env2.fillText("TACTICAL MODULE", VW2 / 2, env2.TOP_SAFE + 12, { size: 11, color: env2.C.cyan, align: "center", weight: "600" });
-    env2.fillText(`\u7B2C ${st.wave} \u6CE2\u524D \xB7 \u9009\u62E9\u6218\u672F\u6A21\u5757`, VW2 / 2, env2.TOP_SAFE + 42, { size: 19, align: "center" });
-    env2.fillText(`\u4E09\u9009\u4E00 \xB7 \u540C\u540D\u53EF\u53E0\u52A0 \xB7 \u5DF2\u88C5 ${st.techs.length}`, VW2 / 2, env2.TOP_SAFE + 66, { size: 11, color: env2.C.sub, align: "center", weight: "normal" });
+    env2.fillText("TACTICAL MODULE", VW2 / 2, env2.TOP_SAFE + 12, { size: env2.F.sm, color: env2.C.cyan, align: "center", weight: "600", spacing: 2.5 });
+    env2.fillText(`\u7B2C ${st.wave} \u6CE2\u524D \xB7 \u9009\u62E9\u6218\u672F\u6A21\u5757`, VW2 / 2, env2.TOP_SAFE + 42, { size: env2.F.xl, align: "center" });
+    env2.fillText(`\u4E09\u9009\u4E00 \xB7 \u540C\u540D\u53EF\u53E0\u52A0 \xB7 \u5DF2\u88C5 ${st.techs.length}`, VW2 / 2, env2.TOP_SAFE + 66, { size: env2.F.sm, color: env2.C.sub, align: "center", weight: "normal" });
     const taken = {};
     for (const t of st.techs) taken[t] = (taken[t] ?? 0) + 1;
     const cardH = 128;
@@ -6657,18 +7516,18 @@
       env2.fillText(def.glyph, MARGIN2 + 48, y + cardH / 2 + Math.sin(time * 2.4 + i * 1.7) * 2, { size: 30, color: def.color, align: "center" });
       const tx = MARGIN2 + 96;
       const textW = VW2 - MARGIN2 * 2 - 96 - 16;
-      const descLines = env2.wrapCount(def.desc, textW, 12);
-      const blockH = 24 + descLines * 12 * 1.65;
+      const descLines = env2.wrapCount(def.desc, textW, env2.F.sm);
+      const blockH = 24 + descLines * env2.F.sm * 1.65;
       const ty0 = y + cardH / 2 - blockH / 2;
-      env2.fillText(def.name, tx, ty0 + 10, { size: 16, color: def.color });
+      env2.fillText(def.name, tx, ty0 + 10, { size: env2.F.lg, color: def.color });
       if (taken[id]) env2.chip(MARGIN2 + (VW2 - MARGIN2 * 2) - 12, y + 22, `\u5DF2\u88C5\xD7${taken[id]}`, def.color);
-      env2.wrapBlock(def.desc, tx, ty0 + 34, textW, { color: "rgba(141,160,198,1)", size: 12 });
+      env2.wrapBlock(def.desc, tx, ty0 + 34, textW, { color: "rgba(141,160,198,1)", size: env2.F.sm });
       ctx2.restore();
       env2.hitBox({ x: MARGIN2, y, w: VW2 - MARGIN2 * 2, h: cardH, label: "", cb: () => {
         if (env2.engineCmd({ type: "PICK_TECH", id })) env2.sfx.play("tech");
       } });
     });
-    env2.fillText("\u70B9\u9009\u6A21\u5757\u5361 \xB7 \u88C5\u5165\u9632\u7EBF\u7CFB\u7EDF", VW2 / 2, top + 3 * (cardH + 16) + 8, { size: 10, color: env2.C.dim, align: "center", weight: "normal" });
+    env2.fillText("\u70B9\u9009\u6A21\u5757\u5361 \xB7 \u88C5\u5165\u9632\u7EBF\u7CFB\u7EDF", VW2 / 2, top + 3 * (cardH + 16) + 8, { size: env2.F.sm, color: env2.C.dim, align: "center", weight: "normal" });
   }
   function drawResult(env2, time) {
     syncOverlayFlags(env2);
@@ -6722,7 +7581,7 @@
     env2.fillText(won ? "\u2605 \u9632\u7EBF\u5B88\u4F4F\u4E86" : "\u2715 \u9632\u7EBF\u5931\u5B88", 0, 0, { size: 26, color: won ? env2.C.green : env2.C.pink, align: "center" });
     ctx2.restore();
     env2.fillText(
-      won ? oi ? "\u5728\u7EBF\u534F\u540C \xB7 \u53CC\u5B50\u661F\u95E8" : `\u7B2C ${env2.app.levelId} \u7AE0 \xB7 ${env2.LEVELS.find((l) => l.id === env2.app.levelId)?.name ?? ""}` : `\u6491\u5230\u4E86\u7B2C ${st.wave} / ${st.totalWaves} \u6CE2`,
+      won ? oi ? "\u5728\u7EBF\u534F\u540C \xB7 \u53CC\u5B50\u661F\u95E8" : env2.app.levelId < 1 ? `\u6559\u5B66\u5173 \xB7 ${env2.getLevel(env2.app.levelId).name}` : `\u7B2C ${env2.app.levelId} \u7AE0 \xB7 ${env2.getLevel(env2.app.levelId).name}` : `\u6491\u5230\u4E86\u7B2C ${st.wave} / ${st.totalWaves} \u6CE2`,
       VW2 / 2,
       y0 + 32,
       { size: 13, color: env2.C.sub, align: "center", weight: "normal" }
@@ -6801,7 +7660,7 @@
     ctx2.save();
     ctx2.globalAlpha = ge;
     env2.fillText(["\u5B8C\u7F8E\u9632\u7EBF", "\u9632\u5B88\u597D\u624B", "\u5B88\u4F4F\u9632\u7EBF", "\u9632\u7EBF\u5931\u5B88"][["S", "A", "B", "D"].indexOf(grade)], gxp + 46, gyp - 8, { size: 15, color: gradeColor });
-    env2.fillText(won ? oi ? "\u534F\u540C\u52A0\u6210 \xD71.2 \u5DF2\u5165\u8D26" : "\u4E0B\u4E00\u7AE0\u89E3\u9501\u5DF2\u8BB0\u5F55" : "\u518D\u6311\u6218\u4E00\u6B21\u5C31\u80FD\u901A\u8FC7", gxp + 46, gyp + 12, { size: 10, color: env2.C.sub, weight: "normal" });
+    env2.fillText(won ? oi ? "\u534F\u540C\u52A0\u6210 \xD71.2 \u5DF2\u5165\u8D26" : env2.app.levelId < 1 ? "\u6559\u5B66\u6F14\u7EC3\u5B8C\u6210 \xB7 \u6218\u5F79\u7B2C 1 \u7AE0\u5DF2\u5C31\u7EEA" : "\u4E0B\u4E00\u7AE0\u89E3\u9501\u5DF2\u8BB0\u5F55" : "\u518D\u6311\u6218\u4E00\u6B21\u5C31\u80FD\u901A\u8FC7", gxp + 46, gyp + 12, { size: 10, color: env2.C.sub, weight: "normal" });
     const rprog = env2.getRankProgress();
     env2.fillText(
       rprog.next === null ? `${rprog.name} \xB7 \u5DF2\u8FBE\u6700\u9AD8\u519B\u8854` : `${rprog.name} \xB7 \u8DDD\u300C${rprog.nextName}\u300D\u8FD8\u5DEE ${(rprog.next - rprog.points).toLocaleString("en-US")} \u5206`,
@@ -6811,7 +7670,7 @@
     );
     ctx2.restore();
     let y = gyp + 48;
-    const nextId = env2.app.levelId + 1;
+    const nextId = env2.app.levelId < 1 ? 1 : env2.app.levelId + 1;
     const hasNext = !oi && env2.LEVELS.some((l) => l.id === nextId);
     const bp = enterP(env2, 3);
     ctx2.save();
@@ -6835,7 +7694,7 @@
       cb: () => {
         env2.track("share_click", { channel: "result", result: won ? "win" : "lose", wave: st.wave });
         env2.shareAppMessage({
-          title: won ? `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u5B88\u4F4F\u4E86\u7B2C ${env2.app.levelId} \u5173 \xB7 \u5168 ${st.totalWaves} \u6CE2\uFF0C\u6F0F\u602A ${st.leaked}\uFF01` : `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u7B2C ${env2.app.levelId} \u5173\u6491\u5230\u4E86\u7B2C ${st.wave} \u6CE2\uFF0C\u6C42\u652F\u63F4\uFF01`,
+          title: won ? env2.app.levelId < 1 ? `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u5B8C\u6210\u4E86\u6559\u5B66\u6F14\u7EC3 \xB7 \u5168 ${st.totalWaves} \u6CE2\uFF0C\u6F0F\u602A ${st.leaked}\uFF01` : `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u5B88\u4F4F\u4E86\u7B2C ${env2.app.levelId} \u5173 \xB7 \u5168 ${st.totalWaves} \u6CE2\uFF0C\u6F0F\u602A ${st.leaked}\uFF01` : `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u7B2C ${env2.app.levelId} \u5173\u6491\u5230\u4E86\u7B2C ${st.wave} \u6CE2\uFF0C\u6C42\u652F\u63F4\uFF01`,
           imageUrl: env2.assetUrl("assets/share-cover.jpg")
         });
       }
@@ -6868,7 +7727,8 @@
       ["\u2728", "\u9AD8\u753B\u8D28", "Bloom \u8F89\u5149\u7279\u6548\uFF0C\u4F4E\u7AEF\u673A\u5EFA\u8BAE\u5173\u95ED", env2.readQualityHigh(), () => env2.setQualityHigh(!env2.readQualityHigh())]
     ];
     const skinH = 74;
-    const ph = 72 + rows.length * rowH + skinH + 68;
+    const unitH = 74;
+    const ph = 72 + rows.length * rowH + skinH + unitH + 68;
     const py = VH2 / 2 - ph / 2;
     ctx2.save();
     ctx2.globalAlpha = e;
@@ -6876,8 +7736,8 @@
     ctx2.scale(0.94 + 0.06 * e, 0.94 + 0.06 * e);
     ctx2.translate(-VW2 / 2, -VH2 / 2);
     holoPanel(env2, px, py, pw, ph, time, env2.C.panelLine);
-    env2.fillText("SETTINGS", VW2 / 2, py + 24, { size: 9, color: env2.ac(0.7), weight: "600", align: "center" });
-    env2.fillText("\u8BBE\u7F6E\u4E2D\u5FC3", VW2 / 2, py + 46, { size: 17, align: "center" });
+    env2.fillText("SETTINGS", VW2 / 2, py + 24, { size: env2.F.xs, color: env2.ac(0.7), weight: "600", align: "center", spacing: 2.5 });
+    env2.fillText("\u8BBE\u7F6E\u4E2D\u5FC3", VW2 / 2, py + 46, { size: env2.F.xl, align: "center" });
     rows.forEach(([icon, label, desc, on, cb], i) => {
       const y = py + 66 + i * rowH;
       if (i > 0) {
@@ -6890,9 +7750,9 @@
         ctx2.stroke();
         ctx2.restore();
       }
-      env2.fillText(icon, px + 34, y + rowH / 2, { size: 16, align: "center" });
-      env2.fillText(label, px + 56, y + 19, { size: 14 });
-      env2.fillText(desc, px + 56, y + 39, { size: 10, color: env2.C.sub, weight: "normal" });
+      env2.fillText(icon, px + 34, y + rowH / 2, { size: env2.F.lg, align: "center" });
+      env2.fillText(label, px + 56, y + 19, { size: env2.F.md });
+      env2.fillText(desc, px + 56, y + 39, { size: env2.F.sm, color: env2.C.sub, weight: "normal" });
       env2.drawSwitch(px + pw - 20 - 46, y + rowH / 2 - 13, on);
       env2.hitBox({ x: px + 16, y, w: pw - 32, h: rowH, label: "", cb: () => {
         cb();
@@ -6900,9 +7760,9 @@
       } });
     });
     const skY = py + 66 + rows.length * rowH;
-    env2.fillText("\u{1F3A8}", px + 34, skY + 15, { size: 16, align: "center" });
-    env2.fillText("\u754C\u9762\u76AE\u80A4", px + 56, skY + 10, { size: 14 });
-    env2.fillText(env2.skin.ref, px + 56, skY + 30, { size: 10, color: env2.C.sub, weight: "normal" });
+    env2.fillText("\u{1F3A8}", px + 34, skY + 15, { size: env2.F.lg, align: "center" });
+    env2.fillText("\u754C\u9762\u76AE\u80A4", px + 56, skY + 10, { size: env2.F.md });
+    env2.fillText(env2.skin.ref, px + 56, skY + 30, { size: env2.F.sm, color: env2.C.sub, weight: "normal" });
     const chipW = (pw - 40 - 12) / env2.SKINS.length;
     env2.SKINS.forEach((s, i) => {
       const cx0 = px + 20 + i * (chipW + 6);
@@ -6920,14 +7780,24 @@
       ctx2.arc(cx0 + 13, cy0 + 15, 4, 0, Math.PI * 2);
       ctx2.fill();
       ctx2.restore();
-      env2.fillText(s.name, cx0 + 23, cy0 + 15, { size: 11, color: on ? env2.C.text : env2.C.sub });
+      env2.fillText(s.name, cx0 + 23, cy0 + 15, { size: env2.F.sm, color: on ? env2.C.text : env2.C.sub });
       env2.hitBox({ x: cx0, y: cy0, w: chipW, h: 30, label: "", cb: () => {
         env2.applySkin(s.id);
         env2.buzz("light");
         env2.showToast(`\u5DF2\u5207\u6362\u300C${s.name}\u300D`);
       } });
     });
-    holoBtn(env2, { x: px + 24, y: py + 66 + rows.length * rowH + skinH + 12, w: pw - 48, h: 40, label: "\u5173\u95ED", cb: () => env2.setShowSettings(false) }, time);
+    const utY = skY + skinH;
+    env2.fillText("\u{1F47E}", px + 34, utY + 15, { size: env2.F.lg, align: "center" });
+    env2.fillText("\u602A\u7269\u70AE\u5854\u98CE\u683C", px + 56, utY + 10, { size: env2.F.md });
+    env2.fillText("\u6050\u6016\u7248\u4E3A\u5168\u65B0\u602A\u7269\u70AE\u5854\u7F8E\u672F\uFF0C\u7F3A\u7D20\u6750\u81EA\u52A8\u56DE\u9000\u539F\u7248", px + 56, utY + 30, { size: env2.F.sm, color: env2.C.sub, weight: "normal" });
+    env2.segControl(px + 20, utY + 38, pw - 40, ["\u539F\u7248", "\u6050\u6016\u7248"], env2.unitTheme() === "horror" ? 1 : 0, "unit-theme", (i) => {
+      const t = i === 1 ? "horror" : "classic";
+      env2.setUnitTheme(t);
+      env2.track("unit_theme", { theme: t });
+      env2.showToast(`\u5DF2\u5207\u6362\u300C${i === 1 ? "\u6050\u6016\u7248" : "\u539F\u7248"}\u300D\u7F8E\u672F`);
+    });
+    holoBtn(env2, { x: px + 24, y: py + 66 + rows.length * rowH + skinH + unitH + 12, w: pw - 48, h: 40, label: "\u5173\u95ED", cb: () => env2.setShowSettings(false) }, time);
     ctx2.restore();
   }
   function drawProfile(env2, time = Date.now() / 1e3) {
@@ -7362,6 +8232,8 @@
     g.addColorStop(1, "#130E08");
     ctx2.fillStyle = g;
     ctx2.fillRect(0, top - 6, VW2, TOP_SAFE2 - top + 6);
+    ctx2.fillStyle = env2.ac(0.2);
+    ctx2.fillRect(0, top - 6, VW2, 1);
     ctx2.fillStyle = env2.ac(0.5);
     ctx2.fillRect(0, TOP_SAFE2 - 2, VW2, 2);
     ctx2.fillStyle = env2.C.cyan;
@@ -7455,6 +8327,8 @@
         ctx2.fillStyle = g;
         ctx2.fill();
         stripes(env2, x0 + 6, y + 3, w0 - 12, 4, "rgba(8,6,2,0.35)", 7, 4, time * 10);
+        ctx2.fillStyle = "rgba(255,255,255,0.22)";
+        ctx2.fillRect(x0 + 8, y, w0 - 16, 1);
       } else {
         env2.panel(x0, y, w0, barH, `${color}55`, 10);
       }
@@ -7549,10 +8423,37 @@
     const cleared = env2.loadProgress().cleared;
     const cardX = MARGIN2 + 44;
     const cardW = VW2 - cardX - MARGIN2;
+    const tutShift = env2.tutCardSlot();
+    if (tutShift) {
+      const ty = top + 8 - env2.app.scroll;
+      if (ty + E_CARD_H >= top && ty <= bottom) {
+        const midY = ty + E_CARD_H / 2;
+        ctx2.save();
+        ctx2.strokeStyle = env2.C.gold;
+        ctx2.lineWidth = 1.6;
+        ctx2.beginPath();
+        ctx2.arc(trackX, midY, 5, 0, Math.PI * 2);
+        ctx2.stroke();
+        ctx2.fillStyle = env2.C.gold;
+        ctx2.globalAlpha = 0.5 + 0.5 * Math.sin(time * 3);
+        ctx2.beginPath();
+        ctx2.arc(trackX, midY, 2.2, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.globalAlpha = 1;
+        ctx2.strokeStyle = env2.ac(0.25);
+        ctx2.lineWidth = 1;
+        ctx2.beginPath();
+        ctx2.moveTo(trackX + 5, midY);
+        ctx2.lineTo(cardX, midY);
+        ctx2.stroke();
+        ctx2.restore();
+        env2.drawTutorialCard(cardX, ty, cardW);
+      }
+    }
     env2.LEVELS.forEach((lv, i) => {
       const unlock = i === 0 || cleared.includes(env2.LEVELS[i - 1].id);
       const done = cleared.includes(lv.id);
-      const y = top + 8 + i * (E_CARD_H + E_CARD_GAP) - env2.app.scroll;
+      const y = top + 8 + (i + tutShift) * (E_CARD_H + E_CARD_GAP) - env2.app.scroll;
       if (y + E_CARD_H < top || y > bottom) return;
       const nodeColor = done ? env2.C.green : unlock ? env2.C.cyan : env2.C.dim;
       const midY = y + E_CARD_H / 2;
@@ -7666,14 +8567,13 @@
       ctx2.fill();
       ctx2.restore();
     }
-    env2.fillText("\u5FAE\u4FE1\u5C0F\u6E38\u620F \xB7 \u8BD5\u8FD0\u8425\u5305", VW2 / 2, VH2 - 12, { size: 10, color: "rgba(192,169,138,0.6)", align: "center" });
     if (env2.showProfile()) drawProfileImpl(env2);
     if (env2.showSettings()) drawSettingsImpl(env2);
   }
   function drawBriefing2(env2, time) {
     const { ctx: ctx2, VW: VW2, VH: VH2, MARGIN: MARGIN2 } = env2;
     emberBg(env2, time);
-    const lv = env2.LEVELS.find((l) => l.id === env2.app.levelId) ?? env2.LEVELS[0];
+    const lv = env2.getLevel(env2.app.levelId);
     emberHeader(env2, "\u4F5C\u6218\u547D\u4EE4", "OPERATION ORDER", () => {
       env2.stopNarration();
       env2.goto("home");
@@ -7695,7 +8595,7 @@
       weight: "600",
       font: env2.RES_FONT()
     });
-    env2.fillText(`\u7B2C ${lv.id} \u7AE0 \xB7 \u673A\u5BC6`, VW2 / 2, bandY + 25, { size: 9, color: "rgba(255,217,168,0.7)", align: "center", weight: "normal" });
+    env2.fillText(lv.id < 1 ? "\u6559\u5B66\u5173 \xB7 \u6F14\u7EC3" : `\u7B2C ${lv.id} \u7AE0 \xB7 \u673A\u5BC6`, VW2 / 2, bandY + 25, { size: 9, color: "rgba(255,217,168,0.7)", align: "center", weight: "normal" });
     const docY = bandY + 44;
     const bannerH = Math.min(150, Math.round(VW2 * 0.4), Math.max(96, (VH2 - docY - 260) * 0.45));
     const textSize = 12;
@@ -7706,7 +8606,7 @@
     const docH = 40 + bannerH + 10 + Math.ceil(totalLines * lineH) + 44;
     env2.panel(bx, docY, bw, docH, env2.C.panelLine);
     rivets(env2, bx, docY, bw, docH);
-    env2.fillText(`NO. SRD-${String(lv.id).padStart(3, "0")}`, bx + 16, docY + 16, {
+    env2.fillText(`NO. SRD-${lv.id < 1 ? "TRN" : String(lv.id).padStart(3, "0")}`, bx + 16, docY + 16, {
       size: 10,
       color: env2.C.cyan,
       weight: "600",
@@ -7727,7 +8627,7 @@
     let ty = docY + 44 + bannerH + 22;
     for (const para of lv.briefing) ty = env2.wrapBlock(para, bx + 16, ty, textW, { size: textSize, color: "rgba(255,243,226,0.85)" }) + lineH * 0.6;
     env2.fillText(
-      `\u6807\u51C6\u6218\u5F79 \xB7 \u5A01\u80C1\u7B49\u7EA7 ${"\u2605".repeat(threatStars(lv.id))}`,
+      lv.id < 1 ? "\u6559\u5B66\u6F14\u7EC3 \xB7 \u6570\u503C\u5BBD\u677E" : `\u6807\u51C6\u6218\u5F79 \xB7 \u5A01\u80C1\u7B49\u7EA7 ${"\u2605".repeat(threatStars(lv.id))}`,
       bx + 16,
       docY + docH - 26,
       { size: 10, color: env2.C.gold, weight: "normal" }
@@ -7786,7 +8686,7 @@
     stripes(env2, barX + 9, barY + 3, barW - 18, 3, env2.ac(0.3), 8, 5, st.clock * 10);
     const measure = (txt) => {
       ctx2.save();
-      ctx2.font = `bold 12px ${font}`;
+      ctx2.font = `bold ${env2.F.sm}px ${font}`;
       const w = ctx2.measureText(txt).width;
       ctx2.restore();
       return w;
@@ -7801,19 +8701,19 @@
     const livesTxt = `\u2764 ${st.lives}`;
     ctx2.save();
     if (st.lives <= 5) ctx2.globalAlpha = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(st.clock * 6));
-    env2.fillText(livesTxt, cx, midY, { size: 12, color: env2.C.red, font });
+    env2.fillText(livesTxt, cx, midY, { size: env2.F.sm, color: env2.C.red, font });
     ctx2.restore();
     cx += measure(livesTxt) + 8;
     divider(cx);
     cx += 9;
     const goldTxt = `\u25C8 ${st.gold}`;
-    env2.fillText(goldTxt, cx, midY, { size: 12, color: env2.C.gold, font });
+    env2.fillText(goldTxt, cx, midY, { size: env2.F.sm, color: env2.C.gold, font });
     cx += measure(goldTxt) + 8;
     divider(cx);
     cx += 9;
     const waveTxt = `${st.wave}/${st.totalWaves}`;
     const waveW = measure(waveTxt);
-    env2.fillText(waveTxt, cx, midY - 2, { size: 12, color: env2.C.cyan, font });
+    env2.fillText(waveTxt, cx, midY - 2, { size: env2.F.sm, color: env2.C.cyan, font });
     ctx2.save();
     ctx2.fillStyle = env2.ac(0.2);
     ctx2.fillRect(cx, midY + 9, waveW, 2);
@@ -7836,7 +8736,7 @@
     ];
     cmdSegs.forEach(([label, color, cb], i) => {
       const sx = btnsX + i * btnW;
-      env2.fillText(label, sx + btnW / 2, midY, { size: 12, color, align: "center", font });
+      env2.fillText(label, sx + btnW / 2, midY, { size: env2.F.sm, color, align: "center", font });
       env2.hitBox({ x: sx, y: barY, w: btnW, h: barH, label: "", cb });
     });
     if (st.phase === "prep") {
@@ -7846,7 +8746,7 @@
       env2.panel(px, py, pw, 74, `${env2.C.gold}66`, 10);
       stripes(env2, px + 4, py + 4, pw - 8, 6, env2.ac(0.5), 8, 6, st.clock * 12);
       env2.fillText(`\u7B2C ${st.wave} \u6CE2 \xB7 ${Math.max(0, Math.ceil(st.prepT))}s \u540E\u6765\u88AD`, env2.VW / 2, py + 22, {
-        size: 13,
+        size: env2.F.md,
         align: "center",
         font: env2.RES_FONT()
       });
@@ -7855,7 +8755,7 @@
       const isBossWave = wave?.isBoss ?? false;
       const summary = [...new Set(groups.map((g) => `${env2.ENEMIES[g.type].name}\xD7${g.count}`))].join(" ");
       env2.fillText(`${isBossWave ? "\u26A0 BOSS \u6CE2 \xB7 " : ""}${summary}`, env2.VW / 2, py + 42, {
-        size: 9,
+        size: env2.F.xs,
         color: isBossWave ? env2.C.pink : env2.C.gold,
         align: "center",
         weight: "normal"
@@ -7865,7 +8765,7 @@
         env2.VW / 2,
         py + 58,
         {
-          size: 9,
+          size: env2.F.xs,
           color: env2.C.sub,
           align: "center",
           weight: "normal"
@@ -8009,15 +8909,16 @@
     ctx2.fillRect(0, 0, VW2, env2.VH);
     stripes(env2, MARGIN2, env2.TOP_SAFE + 6, VW2 - MARGIN2 * 2, 5, env2.ac(0.4), 8, 5, 0);
     env2.fillText("TACTICAL SUPPLY", VW2 / 2, env2.TOP_SAFE + 22, {
-      size: 11,
+      size: env2.F.sm,
       color: env2.C.cyan,
       align: "center",
       weight: "600",
-      font: env2.RES_FONT()
+      font: env2.RES_FONT(),
+      spacing: 2.5
     });
-    env2.fillText(`\u7B2C ${st.wave} \u6CE2\u524D \xB7 \u9009\u62E9\u6218\u672F\u8865\u7ED9`, VW2 / 2, env2.TOP_SAFE + 48, { size: 19, align: "center" });
+    env2.fillText(`\u7B2C ${st.wave} \u6CE2\u524D \xB7 \u9009\u62E9\u6218\u672F\u8865\u7ED9`, VW2 / 2, env2.TOP_SAFE + 48, { size: env2.F.xl, align: "center" });
     env2.fillText(`\u4E09\u9009\u4E00 \xB7 \u540C\u540D\u53EF\u53E0\u52A0 \xB7 \u5DF2\u88C5 ${st.techs.length}`, VW2 / 2, env2.TOP_SAFE + 72, {
-      size: 11,
+      size: env2.F.sm,
       color: env2.C.sub,
       align: "center",
       weight: "normal"
@@ -8049,21 +8950,21 @@
       ctx2.restore();
       stripes(env2, ix + 3, iy + 3, ib - 6, ib - 6, `${def.color}22`, 9, 5, st.clock * 6);
       env2.fillText(def.glyph, ix + ib / 2, iy + ib / 2, { size: 30, color: def.color, align: "center" });
-      env2.fillText(`SUPPLY-0${i + 1}`, ix, iy - 10, { size: 8, color: env2.C.dim, weight: "600", font: env2.RES_FONT() });
+      env2.fillText(`SUPPLY-0${i + 1}`, ix, iy - 10, { size: env2.F.xs, color: env2.C.dim, weight: "600", font: env2.RES_FONT() });
       const tx = ix + ib + 14;
       const textW = VW2 - MARGIN2 * 2 - (tx - MARGIN2) - 14;
-      const descLines = env2.wrapCount(def.desc, textW, 12);
-      const blockH = 24 + descLines * 12 * 1.65;
+      const descLines = env2.wrapCount(def.desc, textW, env2.F.sm);
+      const blockH = 24 + descLines * env2.F.sm * 1.65;
       const ty0 = y + cardH / 2 - blockH / 2;
-      env2.fillText(def.name, tx, ty0 + 10, { size: 16, color: def.color });
+      env2.fillText(def.name, tx, ty0 + 10, { size: env2.F.lg, color: def.color });
       env2.fillText(def.nameEn, tx + 4 + ctx2.measureText(def.name).width, ty0 + 12, {
-        size: 8,
+        size: env2.F.xs,
         color: env2.C.dim,
         weight: "600",
         font: env2.RES_FONT()
       });
       if (taken[id]) env2.chip(MARGIN2 + (VW2 - MARGIN2 * 2) - 12, y + 22, `\u5DF2\u88C5\xD7${taken[id]}`, def.color);
-      env2.wrapBlock(def.desc, tx, ty0 + 34, textW, { color: "rgba(192,169,138,1)", size: 12 });
+      env2.wrapBlock(def.desc, tx, ty0 + 34, textW, { color: "rgba(192,169,138,1)", size: env2.F.sm });
       ctx2.restore();
       env2.hitBox({
         x: MARGIN2,
@@ -8114,7 +9015,7 @@
       align: "center"
     });
     env2.fillText(
-      won ? oi ? "\u5728\u7EBF\u534F\u540C \xB7 \u53CC\u5B50\u661F\u95E8" : `\u7B2C ${env2.app.levelId} \u7AE0 \xB7 ${env2.LEVELS.find((l) => l.id === env2.app.levelId)?.name ?? ""}` : `\u6491\u5230\u4E86\u7B2C ${st.wave} / ${st.totalWaves} \u6CE2`,
+      won ? oi ? "\u5728\u7EBF\u534F\u540C \xB7 \u53CC\u5B50\u661F\u95E8" : env2.app.levelId < 1 ? `\u6559\u5B66\u5173 \xB7 ${env2.getLevel(env2.app.levelId).name}` : `\u7B2C ${env2.app.levelId} \u7AE0 \xB7 ${env2.getLevel(env2.app.levelId).name}` : `\u6491\u5230\u4E86\u7B2C ${st.wave} / ${st.totalWaves} \u6CE2`,
       VW2 / 2,
       bandY + 50,
       { size: 12, color: env2.C.sub, align: "center", weight: "normal" }
@@ -8196,7 +9097,7 @@
       size: 12,
       color: gradeColor
     });
-    env2.fillText(won ? oi ? "\u534F\u540C\u52A0\u6210 \xD71.2 \u5DF2\u5165\u8D26" : "\u4E0B\u4E00\u7AE0\u89E3\u9501\u5DF2\u8BB0\u5F55" : "\u518D\u6311\u6218\u4E00\u6B21\u5C31\u80FD\u901A\u8FC7", px + pw - 120, py + docH - 16, {
+    env2.fillText(won ? oi ? "\u534F\u540C\u52A0\u6210 \xD71.2 \u5DF2\u5165\u8D26" : env2.app.levelId < 1 ? "\u6559\u5B66\u6F14\u7EC3\u5B8C\u6210 \xB7 \u6218\u5F79\u7B2C 1 \u7AE0\u5DF2\u5C31\u7EEA" : "\u4E0B\u4E00\u7AE0\u89E3\u9501\u5DF2\u8BB0\u5F55" : "\u518D\u6311\u6218\u4E00\u6B21\u5C31\u80FD\u901A\u8FC7", px + pw - 120, py + docH - 16, {
       size: 9,
       color: env2.C.sub,
       align: "center",
@@ -8210,7 +9111,7 @@
       { size: 10, color: env2.C.gold, align: "center", weight: "normal" }
     );
     let y = py + docH + 40;
-    const nextId = env2.app.levelId + 1;
+    const nextId = env2.app.levelId < 1 ? 1 : env2.app.levelId + 1;
     const hasNext = !oi && env2.LEVELS.some((l) => l.id === nextId);
     if (won) {
       env2.btn({ x: px, y, w: pw, h: 44, label: "\u25C8 \u53CC\u500D\u6218\u5229 \xB7 \u89C2\u770B\u89C6\u9891", color: env2.C.gold, cb: () => env2.showToast("\u5E7F\u544A\u6A21\u5757\u5F00\u53D1\u4E2D") });
@@ -8239,7 +9140,7 @@
       cb: () => {
         env2.track("share_click", { channel: "result", result: won ? "win" : "lose", wave: st.wave });
         env2.shareAppMessage({
-          title: won ? `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u5B88\u4F4F\u4E86\u7B2C ${env2.app.levelId} \u5173 \xB7 \u5168 ${st.totalWaves} \u6CE2\uFF0C\u6F0F\u602A ${st.leaked}\uFF01` : `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u7B2C ${env2.app.levelId} \u5173\u6491\u5230\u4E86\u7B2C ${st.wave} \u6CE2\uFF0C\u6C42\u652F\u63F4\uFF01`,
+          title: won ? env2.app.levelId < 1 ? `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u5B8C\u6210\u4E86\u6559\u5B66\u6F14\u7EC3 \xB7 \u5168 ${st.totalWaves} \u6CE2\uFF0C\u6F0F\u602A ${st.leaked}\uFF01` : `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u5B88\u4F4F\u4E86\u7B2C ${env2.app.levelId} \u5173 \xB7 \u5168 ${st.totalWaves} \u6CE2\uFF0C\u6F0F\u602A ${st.leaked}\uFF01` : `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u7B2C ${env2.app.levelId} \u5173\u6491\u5230\u4E86\u7B2C ${st.wave} \u6CE2\uFF0C\u6C42\u652F\u63F4\uFF01`,
           imageUrl: env2.assetUrl("assets/share-cover.jpg")
         });
       }
@@ -8492,18 +9393,19 @@
       ["\u9AD8\u753B\u8D28", "Bloom \u8F89\u5149\u7279\u6548\uFF0C\u4F4E\u7AEF\u673A\u5EFA\u8BAE\u5173\u95ED", env2.readQualityHigh(), () => env2.setQualityHigh(!env2.readQualityHigh())]
     ];
     const skinH = 78;
-    const ph = 74 + rows.length * rowH + skinH + 64;
+    const unitH = 82;
+    const ph = 74 + rows.length * rowH + skinH + unitH + 64;
     const py = VH2 / 2 - ph / 2;
     env2.panel(px, py, pw, ph, env2.C.panelLine);
     rivets(env2, px, py, pw, ph);
     stripes(env2, px + 8, py + 6, pw - 16, 5, env2.ac(0.4), 8, 5, 0);
-    env2.fillText("SYSTEM CONFIG", VW2 / 2, py + 26, { size: 9, color: env2.ac(0.75), weight: "600", align: "center", font: env2.RES_FONT() });
-    env2.fillText("\u8BBE\u7F6E\u4E2D\u5FC3", VW2 / 2, py + 48, { size: 17, align: "center" });
+    env2.fillText("SYSTEM CONFIG", VW2 / 2, py + 26, { size: env2.F.xs, color: env2.ac(0.75), weight: "600", align: "center", font: env2.RES_FONT(), spacing: 2.5 });
+    env2.fillText("\u8BBE\u7F6E\u4E2D\u5FC3", VW2 / 2, py + 48, { size: env2.F.xl, align: "center" });
     rows.forEach(([label, desc, on, cb], i) => {
       const y = py + 68 + i * rowH;
       if (i > 0) {
         ctx2.save();
-        ctx2.strokeStyle = env2.ac(0.12);
+        ctx2.strokeStyle = env2.ac(0.1);
         ctx2.lineWidth = 1;
         ctx2.beginPath();
         ctx2.moveTo(px + 20, y + 0.5);
@@ -8513,8 +9415,8 @@
       }
       ctx2.fillStyle = on ? env2.C.cyan : env2.C.dim;
       ctx2.fillRect(px + 16, y + rowH / 2 - 10, 4, 20);
-      env2.fillText(label, px + 30, y + 18, { size: 14 });
-      env2.fillText(desc, px + 30, y + 38, { size: 10, color: env2.C.sub, weight: "normal" });
+      env2.fillText(label, px + 30, y + 18, { size: env2.F.md });
+      env2.fillText(desc, px + 30, y + 38, { size: env2.F.sm, color: env2.C.sub, weight: "normal" });
       env2.drawSwitch(px + pw - 20 - 46, y + rowH / 2 - 13, on);
       env2.hitBox({ x: px + 16, y, w: pw - 32, h: rowH, label: "", cb: () => {
         cb();
@@ -8522,8 +9424,8 @@
       } });
     });
     const skY = py + 68 + rows.length * rowH;
-    env2.fillText("\u754C\u9762\u76AE\u80A4", px + 30, skY + 12, { size: 14 });
-    env2.fillText("INTERFACE SKIN", px + 30, skY + 30, { size: 8, color: env2.C.dim, weight: "600", font: env2.RES_FONT() });
+    env2.fillText("\u754C\u9762\u76AE\u80A4", px + 30, skY + 12, { size: env2.F.md });
+    env2.fillText("INTERFACE SKIN", px + 30, skY + 30, { size: env2.F.xs, color: env2.C.dim, weight: "600", font: env2.RES_FONT(), spacing: 1.5 });
     const chipW = (pw - 40 - 12) / env2.SKINS.length;
     env2.SKINS.forEach((s, i) => {
       const cx0 = px + 20 + i * (chipW + 6);
@@ -8541,7 +9443,7 @@
       ctx2.arc(cx0 + 13, cy0 + 15, 4, 0, Math.PI * 2);
       ctx2.fill();
       ctx2.restore();
-      env2.fillText(s.name, cx0 + 23, cy0 + 15, { size: 11, color: on ? env2.C.text : env2.C.sub });
+      env2.fillText(s.name, cx0 + 23, cy0 + 15, { size: env2.F.sm, color: on ? env2.C.text : env2.C.sub });
       env2.hitBox({
         x: cx0,
         y: cy0,
@@ -8555,9 +9457,18 @@
         }
       });
     });
+    const utY = skY + skinH;
+    env2.fillText("\u602A\u7269\u70AE\u5854\u98CE\u683C", px + 30, utY + 12, { size: env2.F.md });
+    env2.fillText("UNIT ART THEME", px + 30, utY + 30, { size: env2.F.xs, color: env2.C.dim, weight: "600", font: env2.RES_FONT(), spacing: 1.5 });
+    env2.segControl(px + 20, utY + 40, pw - 40, ["\u539F\u7248", "\u6050\u6016\u7248"], env2.unitTheme() === "horror" ? 1 : 0, "unit-theme", (i) => {
+      const t = i === 1 ? "horror" : "classic";
+      env2.setUnitTheme(t);
+      env2.track("unit_theme", { theme: t });
+      env2.showToast(`\u5DF2\u5207\u6362\u300C${i === 1 ? "\u6050\u6016\u7248" : "\u539F\u7248"}\u300D\u7F8E\u672F`);
+    });
     env2.btn({
       x: px + 24,
-      y: py + 68 + rows.length * rowH + skinH + 8,
+      y: py + 68 + rows.length * rowH + skinH + unitH + 8,
       w: pw - 48,
       h: 40,
       label: "\u5173\u95ED",
@@ -8916,6 +9827,12 @@
     env2.rr(x, y, w, h, 12);
     ctx2.fillStyle = env2.skin.panelSolid;
     ctx2.fill();
+    ctx2.save();
+    env2.rr(x, y, w, h, 12);
+    ctx2.clip();
+    ctx2.fillStyle = env2.ac(0.22);
+    ctx2.fillRect(x, y, w, 1);
+    ctx2.restore();
     if (prog > 0) {
       ctx2.save();
       env2.rr(x, y, w, h, 12);
@@ -9190,7 +10107,6 @@
       ctx2.restore();
     }
     env2.fillText("\u25C0 \u5DE6\u53F3\u6ED1\u52A8\u5207\u6362\u7AE0\u8282 \u25B6", VW2 / 2, VH2 - 30, { size: 9, color: env2.C.dim, align: "center", weight: "normal" });
-    env2.fillText("\u5FAE\u4FE1\u5C0F\u6E38\u620F \xB7 \u8BD5\u8FD0\u8425\u5305", VW2 / 2, VH2 - 12, { size: 10, color: "rgba(110,92,142,0.7)", align: "center" });
     drawOverlays2(env2);
   }
   function briefLines(env2, lv, textW, size) {
@@ -9199,7 +10115,7 @@
     const per = Math.max(6, Math.floor(textW / size));
     const body = "rgba(164,143,200,0.95)";
     const lines = [
-      [`> OPERATION BRIEFING // CH-${String(lv.id).padStart(2, "0")}`, env2.C.cyan],
+      [`> OPERATION BRIEFING // ${lv.id < 1 ? "TRAINING" : `CH-${String(lv.id).padStart(2, "0")}`}`, env2.C.cyan],
       [`> \u76EE\u6807\u533A\u57DF\uFF1A${lv.name} \xB7 ${lv.sub}`, env2.C.text],
       ["", body]
     ];
@@ -9209,14 +10125,14 @@
     }
     const bossTxt = lv.waves.filter((w) => w.isBoss).map((w) => `W${w.wave}`).join(" ");
     lines.push([`> \u6CE2\u6B21 ${lv.waves.length} \xB7 BOSS ${bossTxt || "\u2014"}`, "#FF9F43"]);
-    lines.push([`> \u6807\u51C6\u6218\u5F79 \xB7 \u5A01\u80C1\u7B49\u7EA7 ${"\u2605".repeat(threatStars(lv.id))}`, env2.C.gold]);
+    lines.push([lv.id < 1 ? "> \u6559\u5B66\u6F14\u7EC3 \xB7 \u6570\u503C\u5BBD\u677E" : `> \u6807\u51C6\u6218\u5F79 \xB7 \u5A01\u80C1\u7B49\u7EA7 ${"\u2605".repeat(threatStars(lv.id))}`, env2.C.gold]);
     briefCache = { key, lines };
     return lines;
   }
   function drawBriefing3(env2, time) {
     const { ctx: ctx2, VW: VW2, VH: VH2, MARGIN: MARGIN2, TOP_SAFE: TOP_SAFE2 } = env2;
     matrixBg(env2, time);
-    const lv = env2.LEVELS.find((l) => l.id === env2.app.levelId) ?? env2.LEVELS[0];
+    const lv = env2.getLevel(env2.app.levelId);
     drawMxHeader(env2, "\u4EFB\u52A1\u7B80\u62A5", () => {
       env2.stopNarration();
       env2.goto("home");
@@ -9247,7 +10163,7 @@
     ctx2.fillStyle = tg;
     ctx2.fillRect(bx, by, bw, bannerH);
     ctx2.restore();
-    env2.fillText(`CH-${String(lv.id).padStart(2, "0")}`, bx + 14, by + bannerH - 34, { size: 10, color: env2.C.cyan, weight: "600" });
+    env2.fillText(lv.id < 1 ? "TRAINING" : `CH-${String(lv.id).padStart(2, "0")}`, bx + 14, by + bannerH - 34, { size: 10, color: env2.C.cyan, weight: "600" });
     env2.fillText(lv.name, bx + 14, by + bannerH - 14, { size: 17 });
     env2.btn({
       x: bx + bw - 88,
@@ -9333,7 +10249,7 @@
     const cy = hudY + barH / 2;
     const measure = (s) => {
       ctx2.save();
-      ctx2.font = `bold 12px ${numFont}`;
+      ctx2.font = `bold ${env2.F.sm}px ${numFont}`;
       const w = ctx2.measureText(s).width;
       ctx2.restore();
       return w;
@@ -9346,18 +10262,18 @@
     const lifeTxt = `\u2764 ${st.lives}`;
     ctx2.save();
     if (st.lives <= 5) ctx2.globalAlpha = 0.45 + 0.55 * Math.abs(Math.sin(Date.now() / 180));
-    env2.fillText(lifeTxt, tx, cy, { size: 12, color: env2.C.red, font: numFont });
+    env2.fillText(lifeTxt, tx, cy, { size: env2.F.sm, color: env2.C.red, font: numFont });
     ctx2.restore();
     tx += measure(lifeTxt) + 10;
     hairline(tx);
     tx += 10;
     const goldTxt = `\u25C8 ${st.gold}`;
-    env2.fillText(goldTxt, tx, cy, { size: 12, color: env2.C.gold, font: numFont });
+    env2.fillText(goldTxt, tx, cy, { size: env2.F.sm, color: env2.C.gold, font: numFont });
     tx += measure(goldTxt) + 10;
     hairline(tx);
     tx += 10;
     const waveTxt = `${st.wave}/${st.totalWaves}`;
-    env2.fillText(waveTxt, tx, cy - 2, { size: 12, color: env2.C.cyan, font: numFont });
+    env2.fillText(waveTxt, tx, cy - 2, { size: env2.F.sm, color: env2.C.cyan, font: numFont });
     const waveW = Math.max(measure(waveTxt), 26);
     ctx2.fillStyle = env2.ac(0.25);
     ctx2.fillRect(tx, hudY + barH - 8, waveW, 2);
@@ -9387,7 +10303,7 @@
         ctx2.fillRect(bx, hudY + 2, btnW, barH - 4);
       }
       env2.fillText(label, bx + btnW / 2, cy, {
-        size: 12,
+        size: env2.F.sm,
         color: active ? env2.C.cyan : env2.C.text,
         align: "center",
         font: numFont
@@ -9397,13 +10313,13 @@
     if (st.phase === "prep") {
       const py = hudY + barH + 8;
       neonPanel(env2, VW2 / 2 - 128, py, 256, 74, 14);
-      env2.fillText(`\u7B2C ${st.wave} \u6CE2 \xB7 ${Math.max(0, Math.ceil(st.prepT))}s \u540E\u6765\u88AD`, VW2 / 2, py + 17, { size: 13, align: "center", font: env2.RES_FONT() });
+      env2.fillText(`\u7B2C ${st.wave} \u6CE2 \xB7 ${Math.max(0, Math.ceil(st.prepT))}s \u540E\u6765\u88AD`, VW2 / 2, py + 17, { size: env2.F.md, align: "center", font: env2.RES_FONT() });
       const wave = engine.level.waves[st.wave - 1];
       const groups = wave?.groups ?? [];
       const isBossWave = wave?.isBoss ?? false;
       const summary = [...new Set(groups.map((g) => `${env2.ENEMIES[g.type].name}\xD7${g.count}`))].join(" ");
       env2.fillText(`${isBossWave ? "\u26A0 BOSS \u6CE2 \xB7 " : ""}${summary}`, VW2 / 2, py + 38, {
-        size: 9,
+        size: env2.F.xs,
         color: isBossWave ? env2.C.pink : "#FF9F43",
         align: "center",
         weight: "normal"
@@ -9412,7 +10328,7 @@
         isBossWave ? "\u5EFA\u8BAE\u7559\u597D\u91D1\u5E01\u4E0E\u7A7F\u7532\u706B\u529B" : "\u636E\u6B64\u63D0\u524D\u8C03\u6574\u5E03\u9632",
         VW2 / 2,
         py + 54,
-        { size: 9, color: env2.C.sub, align: "center", weight: "normal" }
+        { size: env2.F.xs, color: env2.C.sub, align: "center", weight: "normal" }
       );
       chargeButton(env2, VW2 / 2 - 85, py + 84, 170, 42, "\u25B6 \u957F\u6309\u5F00\u6218", () => env2.engineCmd({ type: "SKIP_PREP" }));
     }
@@ -9550,9 +10466,9 @@
     const st = engine.state;
     ctx2.fillStyle = "rgba(8,4,16,0.94)";
     ctx2.fillRect(0, 0, VW2, VH2);
-    env2.fillText("TACTICAL MODULE", VW2 / 2, TOP_SAFE2 + 12, { size: 11, color: env2.C.cyan, align: "center", weight: "600" });
-    env2.fillText(`\u7B2C ${st.wave} \u6CE2\u524D \xB7 \u9009\u62E9\u6218\u672F\u6A21\u5757`, VW2 / 2, TOP_SAFE2 + 42, { size: 19, align: "center" });
-    env2.fillText(`\u4E09\u9009\u4E00 \xB7 \u540C\u540D\u53EF\u53E0\u52A0 \xB7 \u5DF2\u88C5 ${st.techs.length}`, VW2 / 2, TOP_SAFE2 + 66, { size: 11, color: env2.C.sub, align: "center", weight: "normal" });
+    env2.fillText("TACTICAL MODULE", VW2 / 2, TOP_SAFE2 + 12, { size: env2.F.sm, color: env2.C.cyan, align: "center", weight: "600", spacing: 2.5 });
+    env2.fillText(`\u7B2C ${st.wave} \u6CE2\u524D \xB7 \u9009\u62E9\u6218\u672F\u6A21\u5757`, VW2 / 2, TOP_SAFE2 + 42, { size: env2.F.xl, align: "center" });
+    env2.fillText(`\u4E09\u9009\u4E00 \xB7 \u540C\u540D\u53EF\u53E0\u52A0 \xB7 \u5DF2\u88C5 ${st.techs.length}`, VW2 / 2, TOP_SAFE2 + 66, { size: env2.F.sm, color: env2.C.sub, align: "center", weight: "normal" });
     const taken = {};
     for (const t of st.techs) taken[t] = (taken[t] ?? 0) + 1;
     const cardH = 128;
@@ -9581,16 +10497,16 @@
       env2.fillText(def.glyph, igx, igy, { size: 26, color: def.color, align: "center" });
       const tx = MARGIN2 + 96;
       const textW = VW2 - MARGIN2 * 2 - 96 - 16;
-      const descLines = env2.wrapCount(def.desc, textW, 12);
-      const blockH = 24 + descLines * 12 * 1.65;
+      const descLines = env2.wrapCount(def.desc, textW, env2.F.sm);
+      const blockH = 24 + descLines * env2.F.sm * 1.65;
       const ty0 = y + cardH / 2 - blockH / 2;
       if (k < 0.7) {
-        env2.fillText(def.name, tx - 2, ty0 + 10, { size: 16, color: "rgba(255,61,129,0.55)" });
-        env2.fillText(def.name, tx + 2, ty0 + 10, { size: 16, color: env2.ac(0.55) });
+        env2.fillText(def.name, tx - 2, ty0 + 10, { size: env2.F.lg, color: "rgba(255,61,129,0.55)" });
+        env2.fillText(def.name, tx + 2, ty0 + 10, { size: env2.F.lg, color: env2.ac(0.55) });
       }
-      env2.fillText(def.name, tx, ty0 + 10, { size: 16, color: def.color });
+      env2.fillText(def.name, tx, ty0 + 10, { size: env2.F.lg, color: def.color });
       if (taken[id]) env2.chip(MARGIN2 + (VW2 - MARGIN2 * 2) - 12, y + 22, `\u5DF2\u88C5\xD7${taken[id]}`, def.color);
-      env2.wrapBlock(def.desc, tx, ty0 + 34, textW, { color: "rgba(164,143,200,1)", size: 12 });
+      env2.wrapBlock(def.desc, tx, ty0 + 34, textW, { color: "rgba(164,143,200,1)", size: env2.F.sm });
       ctx2.restore();
       env2.hitBox({ x: MARGIN2, y, w: VW2 - MARGIN2 * 2, h: cardH, label: `tech-${id}`, cb: () => {
         if (env2.engineCmd({ type: "PICK_TECH", id })) env2.sfx.play("tech");
@@ -9606,8 +10522,9 @@
     const oi = env2.getOnlineInfo();
     const t = (Date.now() - env2.getScreenAt()) / 1e3;
     drawMxHeader(env2, oi ? "\u534F\u540C\u4F5C\u6218\u7ED3\u7B97 // CO-OP" : "\u6218\u6597\u7ED3\u7B97", () => env2.goto("home"));
-    const lvName = env2.LEVELS.find((l) => l.id === env2.app.levelId)?.name ?? "";
-    const head = won ? [[`> MISSION ${oi ? "CO-OP" : env2.app.levelId} // ${oi ? "\u53CC\u5B50\u661F\u95E8" : lvName}`, env2.C.cyan], ["> STATUS: \u9632\u7EBF\u5B88\u4F4F\u4E86 \u2713", env2.C.green]] : [[`> MISSION ${oi ? "CO-OP" : env2.app.levelId} // ${oi ? "\u53CC\u5B50\u661F\u95E8" : lvName}`, env2.C.cyan], [`> STATUS: \u9632\u7EBF\u5931\u5B88 \xB7 \u6491\u5230\u7B2C ${st.wave}/${st.totalWaves} \u6CE2`, env2.C.pink]];
+    const lvName = env2.getLevel(env2.app.levelId).name;
+    const missionTag = env2.app.levelId < 1 ? "TRAINING" : String(env2.app.levelId);
+    const head = won ? [[`> MISSION ${oi ? "CO-OP" : missionTag} // ${oi ? "\u53CC\u5B50\u661F\u95E8" : lvName}`, env2.C.cyan], ["> STATUS: \u9632\u7EBF\u5B88\u4F4F\u4E86 \u2713", env2.C.green]] : [[`> MISSION ${oi ? "CO-OP" : missionTag} // ${oi ? "\u53CC\u5B50\u661F\u95E8" : lvName}`, env2.C.cyan], [`> STATUS: \u9632\u7EBF\u5931\u5B88 \xB7 \u6491\u5230\u7B2C ${st.wave}/${st.totalWaves} \u6CE2`, env2.C.pink]];
     const myKills = oi ? st.killsBy?.[oi.player] ?? st.kills : st.kills;
     const stats = [
       ["\u51FB\u6740", myKills],
@@ -9681,7 +10598,7 @@
       ctx2.stroke();
       ctx2.restore();
       env2.fillText(["\u5B8C\u7F8E\u9632\u7EBF", "\u9632\u5B88\u597D\u624B", "\u5B88\u4F4F\u9632\u7EBF", "\u9632\u7EBF\u5931\u5B88"][["S", "A", "B", "D"].indexOf(grade)], gx + 52, gy - 8, { size: 15, color: gradeColor });
-      env2.fillText(won ? oi ? "\u534F\u540C\u52A0\u6210 \xD71.2 \u5DF2\u5165\u8D26" : "\u4E0B\u4E00\u7AE0\u89E3\u9501\u5DF2\u8BB0\u5F55" : "\u518D\u6311\u6218\u4E00\u6B21\u5C31\u80FD\u901A\u8FC7", gx + 52, gy + 14, { size: 10, color: env2.C.sub, weight: "normal" });
+      env2.fillText(won ? oi ? "\u534F\u540C\u52A0\u6210 \xD71.2 \u5DF2\u5165\u8D26" : env2.app.levelId < 1 ? "\u6559\u5B66\u6F14\u7EC3\u5B8C\u6210 \xB7 \u6218\u5F79\u7B2C 1 \u7AE0\u5DF2\u5C31\u7EEA" : "\u4E0B\u4E00\u7AE0\u89E3\u9501\u5DF2\u8BB0\u5F55" : "\u518D\u6311\u6218\u4E00\u6B21\u5C31\u80FD\u901A\u8FC7", gx + 52, gy + 14, { size: 10, color: env2.C.sub, weight: "normal" });
       const rprog = env2.getRankProgress();
       env2.fillText(
         rprog.next === null ? `> RANK: ${rprog.name} \xB7 \u5DF2\u8FBE\u6700\u9AD8\u519B\u8854` : `> RANK: ${rprog.name} \xB7 \u8DDD\u300C${rprog.nextName}\u300D\u8FD8\u5DEE ${(rprog.next - rprog.points).toLocaleString("en-US")} \u5206`,
@@ -9691,7 +10608,7 @@
       );
     }
     let y = py + panelH + 108;
-    const nextId = env2.app.levelId + 1;
+    const nextId = env2.app.levelId < 1 ? 1 : env2.app.levelId + 1;
     const hasNext = !oi && env2.LEVELS.some((l) => l.id === nextId);
     if (won) {
       env2.btn({ x: px, y, w: pw, h: 48, label: "\u25C8 \u53CC\u500D\u6218\u5229 \xB7 \u89C2\u770B\u89C6\u9891", color: env2.C.gold, cb: () => env2.showToast("\u5E7F\u544A\u6A21\u5757\u5F00\u53D1\u4E2D") });
@@ -9711,7 +10628,7 @@
       cb: () => {
         env2.track("share_click", { channel: "result", result: won ? "win" : "lose", wave: st.wave });
         env2.shareAppMessage({
-          title: won ? `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u5B88\u4F4F\u4E86\u7B2C ${env2.app.levelId} \u5173 \xB7 \u5168 ${st.totalWaves} \u6CE2\uFF0C\u6F0F\u602A ${st.leaked}\uFF01` : `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u7B2C ${env2.app.levelId} \u5173\u6491\u5230\u4E86\u7B2C ${st.wave} \u6CE2\uFF0C\u6C42\u652F\u63F4\uFF01`,
+          title: won ? env2.app.levelId < 1 ? `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u5B8C\u6210\u4E86\u6559\u5B66\u6F14\u7EC3 \xB7 \u5168 ${st.totalWaves} \u6CE2\uFF0C\u6F0F\u602A ${st.leaked}\uFF01` : `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u5B88\u4F4F\u4E86\u7B2C ${env2.app.levelId} \u5173 \xB7 \u5168 ${st.totalWaves} \u6CE2\uFF0C\u6F0F\u602A ${st.leaked}\uFF01` : `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u7B2C ${env2.app.levelId} \u5173\u6491\u5230\u4E86\u7B2C ${st.wave} \u6CE2\uFF0C\u6C42\u652F\u63F4\uFF01`,
           imageUrl: env2.assetUrl("assets/share-cover.jpg")
         });
       }
@@ -9738,16 +10655,17 @@
       ["\u2728", "\u9AD8\u753B\u8D28", "Bloom \u8F89\u5149\u7279\u6548\uFF0C\u4F4E\u7AEF\u673A\u5EFA\u8BAE\u5173\u95ED", env2.readQualityHigh(), () => env2.setQualityHigh(!env2.readQualityHigh())]
     ];
     const skinH = 74;
-    const ph = 72 + rows.length * rowH + skinH + 68;
+    const unitH = 74;
+    const ph = 72 + rows.length * rowH + skinH + unitH + 68;
     const py = VH2 / 2 - ph / 2;
     neonPanel(env2, px, py, pw, ph, 16);
-    env2.fillText("SETTINGS", VW2 / 2, py + 24, { size: 9, color: env2.ac(0.7), weight: "600", align: "center" });
-    env2.fillText("\u8BBE\u7F6E\u4E2D\u5FC3", VW2 / 2, py + 46, { size: 17, align: "center" });
+    env2.fillText("SETTINGS", VW2 / 2, py + 24, { size: env2.F.xs, color: env2.ac(0.7), weight: "600", align: "center", spacing: 2.5 });
+    env2.fillText("\u8BBE\u7F6E\u4E2D\u5FC3", VW2 / 2, py + 46, { size: env2.F.xl, align: "center" });
     rows.forEach(([icon, label, desc, on, cb], i) => {
       const y = py + 66 + i * rowH;
       if (i > 0) {
         ctx2.save();
-        ctx2.strokeStyle = env2.ac(0.12);
+        ctx2.strokeStyle = env2.ac(0.1);
         ctx2.lineWidth = 1;
         ctx2.beginPath();
         ctx2.moveTo(px + 20, y + 0.5);
@@ -9755,9 +10673,9 @@
         ctx2.stroke();
         ctx2.restore();
       }
-      env2.fillText(icon, px + 34, y + rowH / 2, { size: 16, align: "center" });
-      env2.fillText(label, px + 56, y + 19, { size: 14 });
-      env2.fillText(desc, px + 56, y + 39, { size: 10, color: env2.C.sub, weight: "normal" });
+      env2.fillText(icon, px + 34, y + rowH / 2, { size: env2.F.lg, align: "center" });
+      env2.fillText(label, px + 56, y + 19, { size: env2.F.md });
+      env2.fillText(desc, px + 56, y + 39, { size: env2.F.sm, color: env2.C.sub, weight: "normal" });
       env2.drawSwitch(px + pw - 20 - 46, y + rowH / 2 - 13, on);
       env2.hitBox({ x: px + 16, y, w: pw - 32, h: rowH, label: `set-${label}`, cb: () => {
         cb();
@@ -9765,9 +10683,9 @@
       } });
     });
     const skY = py + 66 + rows.length * rowH;
-    env2.fillText("\u{1F3A8}", px + 34, skY + 15, { size: 16, align: "center" });
-    env2.fillText("\u754C\u9762\u76AE\u80A4", px + 56, skY + 10, { size: 14 });
-    env2.fillText(env2.skin.ref, px + 56, skY + 30, { size: 10, color: env2.C.sub, weight: "normal" });
+    env2.fillText("\u{1F3A8}", px + 34, skY + 15, { size: env2.F.lg, align: "center" });
+    env2.fillText("\u754C\u9762\u76AE\u80A4", px + 56, skY + 10, { size: env2.F.md });
+    env2.fillText(env2.skin.ref, px + 56, skY + 30, { size: env2.F.sm, color: env2.C.sub, weight: "normal" });
     const chipW = (pw - 40 - 12) / env2.SKINS.length;
     env2.SKINS.forEach((s, i) => {
       const cx0 = px + 20 + i * (chipW + 6);
@@ -9789,7 +10707,7 @@
       ctx2.arc(cx0 + 13, cy0 + 15, 4, 0, Math.PI * 2);
       ctx2.fill();
       ctx2.restore();
-      env2.fillText(s.name, cx0 + 23, cy0 + 15, { size: 11, color: on ? env2.C.text : env2.C.sub });
+      env2.fillText(s.name, cx0 + 23, cy0 + 15, { size: env2.F.sm, color: on ? env2.C.text : env2.C.sub });
       env2.hitBox({
         x: cx0,
         y: cy0,
@@ -9803,7 +10721,17 @@
         }
       });
     });
-    env2.btn({ x: px + 24, y: py + 66 + rows.length * rowH + skinH + 12, w: pw - 48, h: 40, label: "\u5173\u95ED", cb: () => env2.setShowSettings(false) });
+    const utY = skY + skinH;
+    env2.fillText("\u{1F47E}", px + 34, utY + 15, { size: env2.F.lg, align: "center" });
+    env2.fillText("\u602A\u7269\u70AE\u5854\u98CE\u683C", px + 56, utY + 10, { size: env2.F.md });
+    env2.fillText("\u6050\u6016\u7248\u4E3A\u5168\u65B0\u602A\u7269\u70AE\u5854\u7F8E\u672F\uFF0C\u7F3A\u7D20\u6750\u81EA\u52A8\u56DE\u9000\u539F\u7248", px + 56, utY + 30, { size: env2.F.sm, color: env2.C.sub, weight: "normal" });
+    env2.segControl(px + 20, utY + 38, pw - 40, ["\u539F\u7248", "\u6050\u6016\u7248"], env2.unitTheme() === "horror" ? 1 : 0, "unit-theme", (i) => {
+      const t = i === 1 ? "horror" : "classic";
+      env2.setUnitTheme(t);
+      env2.track("unit_theme", { theme: t });
+      env2.showToast(`\u5DF2\u5207\u6362\u300C${i === 1 ? "\u6050\u6016\u7248" : "\u539F\u7248"}\u300D\u7F8E\u672F`);
+    });
+    env2.btn({ x: px + 24, y: py + 66 + rows.length * rowH + skinH + unitH + 12, w: pw - 48, h: 40, label: "\u5173\u95ED", cb: () => env2.setShowSettings(false) });
   }
   function drawProfile2(env2) {
     const { ctx: ctx2, VW: VW2, VH: VH2 } = env2;
@@ -10079,7 +11007,7 @@
     const screen = env2.app.screen;
     if (screen !== "home") homeDrag = null;
     if (screen !== "codex") codexDrag3 = null;
-    if (env2.showSettings() || env2.showProfile()) return false;
+    if (env2.showSettings() || env2.showProfile() || env2.guideActive()) return false;
     if (screen === "home") {
       if (phase === "start") {
         homeDrag = { startX: p.x, startY: p.y, startPos: carPos, lastX: p.x, lastT: Date.now(), vx: 0, moved: false };
@@ -10253,6 +11181,7 @@
     return { cleared: Array.isArray(raw?.cleared) ? raw.cleared : [] };
   }
   function recordLevelClear(levelId) {
+    if (levelId < 1) return;
     const p = loadProgress();
     if (p.cleared.includes(levelId)) return;
     p.cleared.push(levelId);
@@ -10273,6 +11202,15 @@
     // 微信无核数 API：不硬关 Bloom，交由画质开关控制（默认低画质=关）
     nebulaUrl: () => assetUrl("assets/nebula-texture.jpg")
   });
+  var unitTheme = String(store.get("srd.unitTheme") || "classic") === "horror" ? "horror" : "classic";
+  function applyUnitTheme(t) {
+    unitTheme = t;
+    store.set("srd.unitTheme", t);
+    setUnitTheme2(t);
+    setUnitTheme(t);
+  }
+  initTurret3D(() => wx.createImage(), assetUrl, unitTheme);
+  initEnemy3D(() => wx.createImage(), assetUrl, unitTheme);
   var session = (() => {
     try {
       const raw = store.get("srd.user");
@@ -10435,7 +11373,7 @@
                   configureAnalytics({
                     endpoint: API_BASE,
                     getOpenid: () => session?.openid ?? "",
-                    getBuildId: () => true ? "b1008-1556" : "dev"
+                    getBuildId: () => true ? "b1020-0854" : "dev"
                   });
                   track("login_ok", { level: 1 });
                   mergeScoreWithCloud();
@@ -10568,6 +11506,7 @@
   };
   var MARGIN = 16;
   var RADIUS = 14;
+  var F = { xs: 9, sm: 11, md: 13, lg: 16, xl: 19, xxl: 26 };
   var SKINS = [
     {
       id: "abyss",
@@ -10693,7 +11632,21 @@
     ctx.textAlign = o.align ?? "left";
     ctx.textBaseline = o.baseline ?? "middle";
     ctx.font = `${o.weight ?? "bold"} ${o.size ?? 14}px ${o.font ?? "sans-serif"}`;
-    ctx.fillText(str, x, y);
+    if (o.spacing && str.length > 1) {
+      const chars = [...str];
+      const widths = chars.map((ch) => ctx.measureText(ch).width);
+      const total = widths.reduce((a, b) => a + b, 0) + o.spacing * (chars.length - 1);
+      let cx = x;
+      if (ctx.textAlign === "center") cx = x - total / 2;
+      else if (ctx.textAlign === "right" || ctx.textAlign === "end") cx = x - total;
+      ctx.textAlign = "left";
+      chars.forEach((ch, i) => {
+        ctx.fillText(ch, cx, y);
+        cx += widths[i] + o.spacing;
+      });
+    } else {
+      ctx.fillText(str, x, y);
+    }
     ctx.restore();
   }
   function rr(x, y, w, h, r) {
@@ -10738,6 +11691,19 @@
     rr(x, y, w, h, r);
     ctx.fillStyle = g;
     ctx.fill();
+    ctx.save();
+    rr(x, y, w, h, r);
+    ctx.clip();
+    ctx.fillStyle = ac(0.14);
+    ctx.fillRect(x, y, w, 1);
+    ctx.fillStyle = "rgba(0,0,0,0.16)";
+    ctx.fillRect(x, y + h - 3, w, 3);
+    ctx.restore();
+    rr(x, y, w, h, r);
+    ctx.strokeStyle = "rgba(0,0,0,0.45)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    rr(x, y, w, h, r);
     ctx.strokeStyle = stroke;
     ctx.lineWidth = 1.2;
     ctx.stroke();
@@ -10749,21 +11715,11 @@
     const pressed = pressedBtn !== null && pressedBtn.x === b.x && pressedBtn.y === b.y && pressedBtn.w === b.w && pressedBtn.label === b.label;
     if (pressed) {
       ctx.save();
-      if (skin.pressFx === "stamp") {
-        ctx.translate(0, 2);
-        ctx.globalAlpha = 0.72;
-      } else if (skin.pressFx === "glitch") {
-        ctx.translate((hash01(Math.floor(Date.now() / 60)) - 0.5) * 4, 0);
-        ctx.globalAlpha = 0.9;
-      } else {
-        ctx.translate(b.x + b.w / 2, b.y + b.h / 2);
-        ctx.scale(0.93, 0.93);
-        ctx.translate(-(b.x + b.w / 2), -(b.y + b.h / 2));
-        ctx.globalAlpha = 0.82;
-      }
+      ctx.translate(0, 1);
+      ctx.globalAlpha = 0.85;
     }
     ctx.save();
-    ctx.globalAlpha = b.disabled ? 0.38 : 1;
+    ctx.globalAlpha *= b.disabled ? 0.38 : 1;
     rr(b.x, b.y, b.w, b.h, r);
     if (b.primary && !b.disabled) {
       const g = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
@@ -10771,9 +11727,21 @@
       g.addColorStop(1, shade(c));
       ctx.fillStyle = g;
       ctx.fill();
+      ctx.save();
+      rr(b.x, b.y, b.w, b.h, r);
+      ctx.clip();
+      ctx.fillStyle = "rgba(255,255,255,0.10)";
+      ctx.fillRect(b.x, b.y, b.w, b.h * 0.4);
+      ctx.fillStyle = "rgba(255,255,255,0.28)";
+      ctx.fillRect(b.x, b.y, b.w, 1);
+      ctx.restore();
     } else {
       ctx.fillStyle = b.active ? `${c}30` : skin.panelSolid;
       ctx.fill();
+      if (pressed && !b.active) {
+        ctx.fillStyle = `${c}14`;
+        ctx.fill();
+      }
       ctx.strokeStyle = b.active ? c : `${c}77`;
       ctx.lineWidth = 1.2;
       ctx.stroke();
@@ -10782,10 +11750,6 @@
     if (b.label) {
       const labelColor = b.primary && !b.disabled ? "#081226" : b.active ? c : b.disabled ? "#9AA7C2" : C.text;
       const labelY = b.y + (b.sub ? b.h / 2 - 9 : b.h / 2);
-      if (pressed && skin.pressFx === "glitch") {
-        fillText(b.label, b.x + b.w / 2 - 2, labelY, { size: 14, color: "rgba(255,61,129,0.7)", align: "center" });
-        fillText(b.label, b.x + b.w / 2 + 2, labelY, { size: 14, color: ac(0.7), align: "center" });
-      }
       fillText(b.label, b.x + b.w / 2, labelY, {
         size: 14,
         color: labelColor,
@@ -10802,7 +11766,7 @@
   }
   var segAnim2 = {};
   function segControl(x, y, w, items, activeIdx, key, onPick) {
-    panel(x, y, w, 34, "rgba(255,201,77,0.25)", 17);
+    panel(x, y, w, 34, ac(0.3), 17);
     const sw = w / items.length;
     const cur = segAnim2[key] ?? activeIdx;
     const next = cur + (activeIdx - cur) * 0.28;
@@ -10814,9 +11778,13 @@
     g.addColorStop(1, shade(C.gold));
     ctx.fillStyle = g;
     ctx.fill();
+    rr(x + segAnim2[key] * sw + 3, y + 3, sw - 6, 28, 14);
+    ctx.clip();
+    ctx.fillStyle = "rgba(255,255,255,0.25)";
+    ctx.fillRect(x + segAnim2[key] * sw + 3, y + 3, sw - 6, 1);
     ctx.restore();
     items.forEach((label, i) => {
-      fillText(label, x + i * sw + sw / 2, y + 17, { size: 13, color: i === activeIdx ? "#081226" : C.sub, align: "center" });
+      fillText(label, x + i * sw + sw / 2, y + 17, { size: F.md, color: i === activeIdx ? "#081226" : C.sub, align: "center" });
       hitBox({ x: x + i * sw, y, w: sw, h: 34, label: "", cb: () => {
         if (i !== activeIdx) {
           onPick(i);
@@ -10832,7 +11800,7 @@
     rr(x - w, y - 9, w, 18, 9);
     ctx.fillStyle = `${color}22`;
     ctx.fill();
-    ctx.strokeStyle = `${color}88`;
+    ctx.strokeStyle = `${color}77`;
     ctx.lineWidth = 1;
     ctx.stroke();
     ctx.restore();
@@ -10840,6 +11808,83 @@
   }
   var showProfile = false;
   var showSettings = false;
+  var guideStep = null;
+  function finishGuide(startTutorial) {
+    guideStep = null;
+    store.set("srd.guideDone", "1");
+    track(startTutorial ? "guide_done" : "guide_skip");
+    if (startTutorial) {
+      if (app.mode !== "single") setMode("single");
+      gotoBriefing(TUTORIAL_LEVEL.id);
+    }
+  }
+  function drawGuideOverlay() {
+    ctx.fillStyle = "rgba(7,11,24,0.78)";
+    ctx.fillRect(0, 0, VW, VH);
+    hitBox({ x: 0, y: 0, w: VW, h: VH, label: "", cb: () => {
+    } });
+    const pw = VW - 72;
+    const px = 36;
+    if (guideStep === 0) {
+      const ph = 250;
+      const py = VH / 2 - ph / 2;
+      panel(px, py, pw, ph, C.panelLine);
+      fillText("WELCOME, COMMANDER", VW / 2, py + 26, { size: 9, color: ac(0.7), weight: "600", align: "center" });
+      fillText("\u6B22\u8FCE\uFF0C\u6307\u6325\u5B98", VW / 2, py + 50, { size: 18, align: "center" });
+      wrapBlock(
+        "\u6E6E\u706D\u866B\u7FA4\u6B63\u6251\u5411\u661F\u73AF\u6B96\u6C11\u5730\u3002\u5728\u8DEF\u5F84\u4E24\u4FA7\u5EFA\u9020\u70AE\u5854\u3001\u5347\u7EA7\u706B\u529B\u3001\u8C03\u5EA6\u673A\u7532\uFF0C\u5B88\u4F4F\u5168\u90E8\u8FDB\u653B\u6CE2\u6B21\u2014\u2014\u5341\u4E09\u7AE0\u6218\u5F79\uFF0C\u4ECE\u4F60\u5F00\u59CB\u3002",
+        px + 20,
+        py + 82,
+        pw - 40,
+        { size: 12, color: C.sub }
+      );
+      btn({
+        x: VW / 2 - 90,
+        y: py + ph - 62,
+        w: 180,
+        h: 46,
+        label: "\u4E0B\u4E00\u6B65",
+        primary: true,
+        cb: () => {
+          guideStep = 1;
+          track("guide_step", { step: 2 });
+          buzz("light");
+        }
+      });
+    } else if (guideStep === 1) {
+      const ph = 280;
+      const py = VH / 2 - ph / 2;
+      panel(px, py, pw, ph, "rgba(255,201,77,0.45)");
+      fillText("TRAINING GROUND", VW / 2, py + 26, { size: 9, color: ac(0.7), weight: "600", align: "center" });
+      fillText("\u5148\u6765\u4E00\u5C40\u70ED\u8EAB\uFF1F", VW / 2, py + 50, { size: 18, align: "center" });
+      wrapBlock(
+        "\u6559\u5B66\u5173\u300C\u8BAD\u7EC3\u54E8\u7AD9\u300D\uFF1A5 \u6CE2\u8F7B\u91CF\u6F14\u7EC3\uFF0C\u5E26\u4F60\u719F\u6089\u5EFA\u5854\u3001\u5347\u7EA7\u3001\u51FA\u552E\u4E0E\u673A\u7532\u3002\u4E5F\u53EF\u4EE5\u8DF3\u8FC7\uFF0C\u76F4\u63A5\u5F00\u59CB\u6218\u5F79\u3002",
+        px + 20,
+        py + 82,
+        pw - 40,
+        { size: 12, color: C.sub }
+      );
+      btn({
+        x: VW / 2 - 90,
+        y: py + ph - 116,
+        w: 180,
+        h: 46,
+        label: "\u{1F393} \u5F00\u59CB\u6559\u5B66",
+        color: C.gold,
+        primary: true,
+        cb: () => finishGuide(true)
+      });
+      btn({
+        x: VW / 2 - 90,
+        y: py + ph - 58,
+        w: 180,
+        h: 40,
+        label: "\u8DF3\u8FC7\uFF0C\u76F4\u63A5\u6218\u5F79",
+        color: C.sub,
+        cb: () => finishGuide(false)
+      });
+    }
+  }
   function drawHeader(title, opts = {}) {
     const btnS = 36;
     const top = CAP_MID - btnS / 2;
@@ -10979,17 +12024,32 @@
       showProfile = false;
     } });
   }
+  var switchAnim = {};
   function drawSwitch(x, y, on) {
+    const key = `${x},${y}`;
+    const target = on ? 1 : 0;
+    const cur = switchAnim[key] ?? target;
+    const next = cur + (target - cur) * 0.28;
+    switchAnim[key] = Math.abs(target - next) < 0.01 ? target : next;
+    const t = switchAnim[key];
     ctx.save();
     rr(x, y, 46, 26, 13);
-    ctx.fillStyle = on ? ac(0.85) : "rgba(90,107,140,0.45)";
+    ctx.fillStyle = "rgba(90,107,140,0.45)";
     ctx.fill();
-    ctx.strokeStyle = on ? C.cyan : "rgba(124,141,176,0.4)";
+    if (t > 0) {
+      ctx.fillStyle = ac(0.85 * t);
+      ctx.fill();
+    }
+    ctx.strokeStyle = t > 0.5 ? C.cyan : "rgba(124,141,176,0.45)";
     ctx.lineWidth = 1.2;
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(x + (on ? 32 : 14), y + 13, 9.5, 0, Math.PI * 2);
-    ctx.fillStyle = on ? "#081226" : "#C7D2EA";
+    ctx.arc(x + 14 + 18 * t, y + 13, 9.5, 0, Math.PI * 2);
+    ctx.fillStyle = t > 0.5 ? "#081226" : "#C7D2EA";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x + 14 + 18 * t - 2.5, y + 10.5, 2.2, 0, Math.PI * 2);
+    ctx.fillStyle = t > 0.5 ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.5)";
     ctx.fill();
     ctx.restore();
   }
@@ -11018,11 +12078,12 @@
       }]
     ];
     const skinH = 74;
-    const ph = 72 + rows.length * rowH + skinH + 68;
+    const unitH = 74;
+    const ph = 72 + rows.length * rowH + skinH + unitH + 68;
     const py = VH / 2 - ph / 2;
     panel(px, py, pw, ph, C.panelLine);
-    fillText("SETTINGS", VW / 2, py + 24, { size: 9, color: ac(0.7), weight: "600", align: "center" });
-    fillText("\u8BBE\u7F6E\u4E2D\u5FC3", VW / 2, py + 46, { size: 17, align: "center" });
+    fillText("SETTINGS", VW / 2, py + 24, { size: F.xs, color: ac(0.7), weight: "600", align: "center", spacing: 2.5 });
+    fillText("\u8BBE\u7F6E\u4E2D\u5FC3", VW / 2, py + 46, { size: F.xl, align: "center" });
     rows.forEach(([icon, label, desc, on, cb], i) => {
       const y = py + 66 + i * rowH;
       if (i > 0) {
@@ -11035,9 +12096,9 @@
         ctx.stroke();
         ctx.restore();
       }
-      fillText(icon, px + 34, y + rowH / 2, { size: 16, align: "center" });
-      fillText(label, px + 56, y + 19, { size: 14 });
-      fillText(desc, px + 56, y + 39, { size: 10, color: C.sub, weight: "normal" });
+      fillText(icon, px + 34, y + rowH / 2, { size: F.lg, align: "center" });
+      fillText(label, px + 56, y + 19, { size: F.md });
+      fillText(desc, px + 56, y + 39, { size: F.sm, color: C.sub, weight: "normal" });
       drawSwitch(px + pw - 20 - 46, y + rowH / 2 - 13, on);
       hitBox({ x: px + 16, y, w: pw - 32, h: rowH, label: "", cb: () => {
         cb();
@@ -11045,9 +12106,9 @@
       } });
     });
     const skY = py + 66 + rows.length * rowH;
-    fillText("\u{1F3A8}", px + 34, skY + 15, { size: 16, align: "center" });
-    fillText("\u754C\u9762\u76AE\u80A4", px + 56, skY + 10, { size: 14 });
-    fillText(SKINS.find((s) => s.id === skin.id)?.ref ?? "", px + 56, skY + 30, { size: 10, color: C.sub, weight: "normal" });
+    fillText("\u{1F3A8}", px + 34, skY + 15, { size: F.lg, align: "center" });
+    fillText("\u754C\u9762\u76AE\u80A4", px + 56, skY + 10, { size: F.md });
+    fillText(SKINS.find((s) => s.id === skin.id)?.ref ?? "", px + 56, skY + 30, { size: F.sm, color: C.sub, weight: "normal" });
     const chipW = (pw - 40 - 12) / SKINS.length;
     SKINS.forEach((s, i) => {
       const cx0 = px + 20 + i * (chipW + 6);
@@ -11065,14 +12126,24 @@
       ctx.arc(cx0 + 13, cy0 + 15, 4, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
-      fillText(s.name, cx0 + 23, cy0 + 15, { size: 11, color: on ? C.text : C.sub });
+      fillText(s.name, cx0 + 23, cy0 + 15, { size: F.sm, color: on ? C.text : C.sub });
       hitBox({ x: cx0, y: cy0, w: chipW, h: 30, label: "", cb: () => {
         applySkin(s.id);
         buzz("light");
         showToast(`\u5DF2\u5207\u6362\u300C${s.name}\u300D`);
       } });
     });
-    btn({ x: px + 24, y: py + 66 + rows.length * rowH + skinH + 12, w: pw - 48, h: 40, label: "\u5173\u95ED", cb: () => {
+    const utY = skY + skinH;
+    fillText("\u{1F47E}", px + 34, utY + 15, { size: F.lg, align: "center" });
+    fillText("\u602A\u7269\u70AE\u5854\u98CE\u683C", px + 56, utY + 10, { size: F.md });
+    fillText("\u6050\u6016\u7248\u4E3A\u5168\u65B0\u602A\u7269\u70AE\u5854\u7F8E\u672F\uFF0C\u7F3A\u7D20\u6750\u81EA\u52A8\u56DE\u9000\u539F\u7248", px + 56, utY + 30, { size: F.sm, color: C.sub, weight: "normal" });
+    segControl(px + 20, utY + 38, pw - 40, ["\u539F\u7248", "\u6050\u6016\u7248"], unitTheme === "horror" ? 1 : 0, "unit-theme", (i) => {
+      const t = i === 1 ? "horror" : "classic";
+      applyUnitTheme(t);
+      track("unit_theme", { theme: t });
+      showToast(`\u5DF2\u5207\u6362\u300C${i === 1 ? "\u6050\u6016\u7248" : "\u539F\u7248"}\u300D\u7F8E\u672F`);
+    });
+    btn({ x: px + 24, y: py + 66 + rows.length * rowH + skinH + unitH + 12, w: pw - 48, h: 40, label: "\u5173\u95ED", cb: () => {
       showSettings = false;
     } });
   }
@@ -11187,8 +12258,8 @@
     { hue1: "#0B0B2E", hue2: "#141440", enemy: "boss", planet: "#FFC94D", ring: "#FF3D81" }
   ];
   function drawCardArt(x, y, w, h, chapter, time, r = 10) {
-    const art = artwork(chapter);
-    if (art.ok) {
+    const art = chapter >= 1 ? artwork(chapter) : null;
+    if (art?.ok) {
       const iw = art.img.width > 0 ? art.img.width : 512;
       const ih = art.img.height > 0 ? art.img.height : 768;
       const s = Math.max(w / iw, h / ih) * (1.03 + 0.035 * Math.sin(time * 0.12));
@@ -11209,7 +12280,7 @@
     drawCardArtProcedural(x, y, w, h, chapter, time, r);
   }
   function drawCardArtProcedural(x, y, w, h, chapter, time, r = 10) {
-    const th = CHAPTER_THEME[(chapter - 1) % CHAPTER_THEME.length];
+    const th = CHAPTER_THEME[((chapter - 1) % CHAPTER_THEME.length + CHAPTER_THEME.length) % CHAPTER_THEME.length];
     ctx.save();
     rr(x, y, w, h, r);
     ctx.clip();
@@ -11294,6 +12365,10 @@
     if (app.screen === "result" && s !== "result") onlineResultInfo = null;
     app.screen = s;
     screenAt = Date.now();
+    if (s === "home" && guideStep == null && !store.get("srd.guideDone")) {
+      guideStep = 0;
+      track("guide_show");
+    }
   }
   var TOWER_ORDER = TOWER_LIST.map((t) => t.type);
   var TOWER_UNLOCK = {
@@ -11328,6 +12403,8 @@
   var battleMoved = 0;
   var techShownAt = 0;
   var leakFlashAt = -9999;
+  var commMsg = null;
+  var tutStep = -1;
   var SLOT_W = 64;
   var SLOT_GAP = 8;
   var stripContentW = (TOWER_ORDER.length + 1) * (SLOT_W + SLOT_GAP) - SLOT_GAP;
@@ -11437,6 +12514,7 @@
   function startNarration(levelId) {
     stopNarration();
     if (narrationMuted || narration) return;
+    if (levelId < 1) return;
     try {
       const ac2 = wx.createInnerAudioContext();
       ac2.autoplay = true;
@@ -11690,7 +12768,7 @@
     const dim = 0.4 + 0.3 * Math.sin(t * 1.1);
     fillText("\u6DF1\u7A7A\u76D1\u542C\u7AD9 \xB7 \u7B2C 41 \u8F68\u9053\u5468\u671F", VW / 2, VH - 46, { size: 9, color: `rgba(124,141,176,${dim})`, align: "center", weight: "normal" });
     fillText("SIGNAL FADING", VW / 2, VH - 30, { size: 8, color: `rgba(255,61,129,${dim * 0.8})`, align: "center", weight: "600" });
-    fillText(true ? "b1008-1556" : "dev", VW - 10, VH - 10, { size: 8, color: "rgba(124,141,176,0.4)", align: "right", weight: "normal" });
+    fillText(true ? "b1020-0854" : "dev", VW - 10, VH - 10, { size: 8, color: "rgba(124,141,176,0.4)", align: "right", weight: "normal" });
     const menuA = Math.min(1, Math.max(0, (t - 1) / 0.5));
     if (menuA <= 0) {
       if (t > 0.2) hitBox({ x: 0, y: 0, w: VW, h: VH, label: "", cb: () => {
@@ -11787,12 +12865,48 @@
   var CARD_GAP2 = 12;
   var homeTop = TOP_SAFE + 48;
   var homeBottom = VH - 26;
-  var totalScrollMax = () => Math.max(0, LEVELS.length * (CARD_H2 + CARD_GAP2) - (homeBottom - homeTop) + 8);
+  var tutCardSlot = () => app.mode === "single" ? 1 : 0;
+  var totalScrollMax = () => Math.max(0, (LEVELS.length + tutCardSlot()) * (CARD_H2 + CARD_GAP2) - (homeBottom - homeTop) + 8);
+  function drawTutorialCard(x, y, w) {
+    const h = CARD_H2;
+    panel(x, y, w, h, "rgba(255,201,77,0.45)");
+    const artX = x + 8;
+    const artY = y + 8;
+    const artW = 82;
+    const artH = h - 16;
+    ctx.save();
+    rr(artX, artY, artW, artH, 10);
+    ctx.fillStyle = "rgba(255,201,77,0.10)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,201,77,0.4)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+    fillText("\u{1F393}", artX + artW / 2, artY + artH / 2, { size: 30, align: "center" });
+    const tx = artX + artW + 12;
+    fillText("TRAINING // \u65B0\u5175\u6F14\u7EC3", tx, y + 20, { size: 10, color: C.gold, weight: "600" });
+    fillText(TUTORIAL_LEVEL.name, tx, y + 44, { size: 17 });
+    fillText(TUTORIAL_LEVEL.sub, tx, y + 66, { size: 11, color: C.sub, weight: "normal" });
+    fillText(`${TUTORIAL_LEVEL.waves.length} \u6CE2 \xB7 \u5B66\u4F1A\u5EFA\u5854 / \u5347\u7EA7 / \u673A\u7532`, tx, y + 88, { size: 10, color: C.dim, weight: "normal" });
+    if (!store.get("srd.guideDone")) chip(x + w - 12, y + 18, "\u63A8\u8350", C.gold);
+    btn({
+      x: x + w - 92,
+      y: y + h - 50,
+      w: 80,
+      h: 38,
+      label: "\u5F00\u59CB",
+      color: C.gold,
+      primary: true,
+      cb: () => gotoBriefing(TUTORIAL_LEVEL.id)
+    });
+    hitBox({ x, y, w: w - 104, h, label: "", cb: () => gotoBriefing(TUTORIAL_LEVEL.id) });
+  }
   function drawHome4(time) {
     hooks = [];
     const m = SKIN_MODULES[skin.id];
     if (m?.drawHome) {
       m.drawHome(env, time);
+      if (guideStep != null) drawGuideOverlay();
       return;
     }
     drawSpaceBg(time);
@@ -11807,10 +12921,15 @@
     const cleared = loadProgress().cleared;
     const cardX = MARGIN;
     const cardW = VW - MARGIN * 2;
+    const tutShift = tutCardSlot();
+    if (tutShift) {
+      const ty = homeTop + 8 - app.scroll;
+      if (ty + CARD_H2 >= homeTop && ty <= homeBottom) drawTutorialCard(cardX, ty, cardW);
+    }
     LEVELS.forEach((lv, i) => {
       const unlock = i === 0 || cleared.includes(LEVELS[i - 1].id);
       const done = cleared.includes(lv.id);
-      const y = homeTop + 8 + i * (CARD_H2 + CARD_GAP2) - app.scroll;
+      const y = homeTop + 8 + (i + tutShift) * (CARD_H2 + CARD_GAP2) - app.scroll;
       if (y + CARD_H2 < homeTop || y > homeBottom) return;
       panel(cardX, y, cardW, CARD_H2, unlock ? C.panelLine : "rgba(124,141,176,0.15)");
       const artX = cardX + 8;
@@ -11897,9 +13016,9 @@
       ctx.fill();
       ctx.restore();
     }
-    fillText("\u5FAE\u4FE1\u5C0F\u6E38\u620F \xB7 \u8BD5\u8FD0\u8425\u5305", VW / 2, VH - 12, { size: 10, color: "rgba(124,141,176,0.7)", align: "center" });
     if (showProfile) drawProfileOverlay();
     if (showSettings) drawSettingsOverlay();
+    if (guideStep != null) drawGuideOverlay();
   }
   function drawBriefing4(time) {
     hooks = [];
@@ -11909,7 +13028,7 @@
       return;
     }
     drawSpaceBg(time);
-    const lv = LEVELS.find((l) => l.id === app.levelId) ?? LEVELS[0];
+    const lv = getLevel(app.levelId);
     drawHeader("\u4EFB\u52A1\u7B80\u62A5", { back: () => {
       stopNarration();
       goto("home");
@@ -11932,7 +13051,7 @@
     ctx.fillStyle = g;
     ctx.fillRect(bx, by, bw, bannerH);
     ctx.restore();
-    fillText(`\u7B2C ${lv.id} \u7AE0`, bx + 16, by + bannerH - 44, { size: 11, color: C.cyan, weight: "600" });
+    fillText(lv.id < 1 ? "\u6559\u5B66\u5173" : `\u7B2C ${lv.id} \u7AE0`, bx + 16, by + bannerH - 44, { size: 11, color: C.cyan, weight: "600" });
     fillText(lv.name, bx + 16, by + bannerH - 20, { size: 19 });
     fillText(lv.sub, bx + bw - 16, by + bannerH - 20, { size: 11, color: C.sub, align: "right", weight: "normal" });
     btn({
@@ -11955,7 +13074,7 @@
     let ty = boxY + 24;
     for (const para of lv.briefing) ty = wrapBlock(para, MARGIN + 16, ty, textW, { size: textSize }) + lineH * 0.6;
     const afterY = boxY + boxH + 18;
-    const diffTxt = `\u6807\u51C6\u6218\u5F79 \xB7 \u5A01\u80C1\u7B49\u7EA7 ${"\u2605".repeat(threatStars(lv.id))}`;
+    const diffTxt = lv.id < 1 ? "\u6559\u5B66\u6F14\u7EC3 \xB7 \u6570\u503C\u5BBD\u677E" : `\u6807\u51C6\u6218\u5F79 \xB7 \u5A01\u80C1\u7B49\u7EA7 ${"\u2605".repeat(threatStars(lv.id))}`;
     ctx.save();
     ctx.font = "bold 11px sans-serif";
     const dw = ctx.measureText(diffTxt).width + 24;
@@ -11980,6 +13099,40 @@
   var pathPixels = [];
   var qualityHigh = readWxQualityHigh();
   var fxFrame = 0;
+  var staticMap = null;
+  function drawStaticMapContent(c, engine) {
+    drawMapBackground(c, W, H, nebulaBg.img);
+    c.lineJoin = "round";
+    c.lineCap = "round";
+    for (const pts of engine.level.paths) {
+      c.beginPath();
+      pts.forEach(([col, row], i) => {
+        const x = (col + 0.5) * CELL;
+        const y = (row + 0.5) * CELL;
+        if (i === 0) c.moveTo(x, y);
+        else c.lineTo(x, y);
+      });
+      c.strokeStyle = "rgba(34,224,255,0.10)";
+      c.lineWidth = CELL * 0.92;
+      c.stroke();
+    }
+    drawPathBase(c, pathPixels);
+  }
+  function bakeStaticMap() {
+    const engine = app.engine;
+    if (!engine) {
+      staticMap = null;
+      return;
+    }
+    const s = mapScale * DPR;
+    const cvs = wx.createCanvas();
+    cvs.width = Math.max(1, Math.round(W * s));
+    cvs.height = Math.max(1, Math.round(H * s));
+    const c = cvs.getContext("2d");
+    c.scale(s, s);
+    drawStaticMapContent(c, engine);
+    staticMap = { cvs, withNebula: !!nebulaBg.img };
+  }
   var battleStartAt = 0;
   var lastSettlement = null;
   function initBattleView() {
@@ -11993,21 +13146,53 @@
     fx = new FxLayer();
     bloom = new BloomLayer(W, H);
     pathPixels = app.engine.map.paths.map((p) => p.pixels);
+    bakeStaticMap();
     battleStartAt = Date.now();
   }
   function startBattle() {
     stopNarration();
     app.engine = createEngine(app.difficulty, app.levelId);
     initBattleView();
-    track("game_start", { level_id: app.levelId, difficulty: app.difficulty, coop: 0 });
+    tutStep = app.levelId === TUTORIAL_LEVEL.id ? 0 : -1;
+    const tutorial = app.levelId === TUTORIAL_LEVEL.id ? 1 : 0;
+    track("game_start", { level_id: app.levelId, difficulty: app.difficulty, coop: 0, tutorial });
     goto("battle");
   }
   var online = null;
   var snapEvents = [];
   var onlineResultInfo = null;
   function getOnlineInfo() {
-    if (online) return { peerNick: online.peerNick, player: online.player };
+    if (online) {
+      return {
+        peerNick: online.peerNick,
+        player: online.player,
+        players: online.startPlayers ?? online.members.map((m) => ({ slot: m.slot, nick: m.nick }))
+      };
+    }
     return onlineResultInfo;
+  }
+  function enginePlayers(st) {
+    return st.players ?? (st.coop ? 2 : 1);
+  }
+  var COOP_SCORE_MUL = { 2: 1.2, 3: 1.3, 4: 1.4 };
+  var coopScoreMul = (n) => COOP_SCORE_MUL[n] ?? 1.2;
+  var SLOT_COLORS = [C.gold, C.green, C.cyan, C.pink];
+  function slotNick(sess, slot) {
+    const p = sess.startPlayers?.find((m2) => m2.slot === slot);
+    if (p) return p.nick;
+    const m = sess.members.find((mm) => mm.slot === slot);
+    if (m) return m.nick;
+    if (slot === sess.player) return displayNick();
+    return sess.peerNick || `P${slot + 1}`;
+  }
+  function sessPlayerCount(sess) {
+    return sess.startPlayers?.length ?? (app.engine ? enginePlayers(app.engine.state) : 2);
+  }
+  function hostCanStart(sess) {
+    if (!sess.roomId || sess.connecting || sess.started) return false;
+    if (!sess.members.length) return sess.peerReady;
+    const on = sess.members.filter((m) => m.online);
+    return on.length >= 2 && on.every((m) => m.slot === sess.player || m.ready);
   }
   function roomHash(roomId) {
     let h = 0;
@@ -12031,10 +13216,16 @@
     app.result = { won };
     if (sess.player === 0 && !sess.ended) sess.conn?.send({ t: "end", won });
     sess.ended = true;
-    onlineResultInfo = { peerNick: sess.peerNick, player: sess.player };
     const st0 = app.engine.state;
+    const nPlayers = sessPlayerCount(sess);
+    const mul = coopScoreMul(nPlayers);
+    onlineResultInfo = {
+      peerNick: sess.peerNick,
+      player: sess.player,
+      players: sess.startPlayers ?? sess.members.map((m) => ({ slot: m.slot, nick: m.nick }))
+    };
     const myKills = st0.killsBy?.[sess.player] ?? st0.kills;
-    const gained = Math.round(calcScore({ ...st0, kills: myKills }, 0, won) * 1.2);
+    const gained = Math.round(calcScore({ ...st0, kills: myKills }, 0, won) * mul);
     const grade = battleGrade(st0, won);
     lastSettlement = { score: gained, grade };
     const rankBefore = commanderRank();
@@ -12044,7 +13235,7 @@
     scoreProfile.updatedAt = Date.now();
     saveScore();
     syncScoreToCloud();
-    track("score_gain", { score: gained, grade, level_id: 0, coop: 2 });
+    track("score_gain", { score: gained, grade, level_id: 0, coop: nPlayers });
     track("game_end", {
       level_id: 0,
       difficulty: app.difficulty,
@@ -12055,9 +13246,9 @@
       leaks: st0.leaked,
       score: gained,
       grade,
-      coop: 2
+      coop: nPlayers
     });
-    track("room_finish", { room_id: roomHash(sess.roomId), result: won ? "win" : "lose", wave: st0.wave });
+    track("room_finish", { room_id: roomHash(sess.roomId), result: won ? "win" : "lose", wave: st0.wave, players: nPlayers });
     const rankAfter = commanderRank();
     if (rankAfter !== rankBefore) showToast(`\u664B\u5347 \xB7 ${rankAfter}`);
     goto("result");
@@ -12072,7 +13263,13 @@
           return;
         }
         if (sess.intent.action === "create") {
-          sess.conn?.send({ t: "create", nick: displayNick(), levelId: 0, difficulty: app.difficulty });
+          sess.conn?.send({
+            t: "create",
+            nick: displayNick(),
+            levelId: 0,
+            difficulty: app.difficulty,
+            maxPlayers: sess.intent.maxPlayers
+          });
         } else {
           sess.conn?.send({ t: "join", roomId: sess.intent.roomId, nick: displayNick() });
         }
@@ -12081,55 +13278,84 @@
         if (online !== sess) return;
         if (sess.roomId) return;
         sess.roomId = info2.roomId;
-        sess.conn?.setRejoinInfo({ roomId: info2.roomId });
+        sess.player = info2.slot;
+        sess.maxPlayers = info2.maxPlayers ?? 2;
+        sess.members = info2.members ?? [];
+        sess.conn?.setRejoinInfo({ roomId: info2.roomId, slot: info2.slot });
         if (info2.role === "host") {
-          sess.player = 0;
-          track("room_create", { room_id: roomHash(info2.roomId) });
+          track("room_create", { room_id: roomHash(info2.roomId), max_players: sess.maxPlayers });
         } else {
-          sess.player = 1;
           sess.peerNick = info2.hostNick ?? "";
           sess.peerReady = true;
           if (info2.difficulty === "normal") {
             app.difficulty = info2.difficulty;
           }
-          track("room_join", { room_id: roomHash(info2.roomId) });
+          track("room_join", { room_id: roomHash(info2.roomId), max_players: sess.maxPlayers });
           showToast(`\u5DF2\u52A0\u5165 ${sess.peerNick || "\u597D\u53CB"} \u7684\u623F\u95F4`);
         }
       },
-      onPeer: (nick, status) => {
+      onPeer: (nick, status, slot) => {
         if (online !== sess) return;
         if (status === "joined") {
-          sess.peerNick = nick;
+          if (!sess.peerNick) sess.peerNick = nick;
           sess.peerReady = true;
-          sess.peerLost = false;
+          sess.lostSlots = sess.lostSlots.filter((s) => s !== slot);
           showToast(`${nick} \u52A0\u5165\u4E86\u623F\u95F4`);
           buzz("light");
         } else if (status === "lost") {
-          sess.peerLost = true;
-          showToast("\u5BF9\u624B\u65AD\u7EBF\uFF0C\u7B49\u5F85\u91CD\u8FDE\u2026");
+          if (!sess.lostSlots.includes(slot)) sess.lostSlots.push(slot);
+          if (slot === 0 && sess.player !== 0) showToast("\u4E3B\u673A\u65AD\u7EBF\uFF0C\u7B49\u5F85\u91CD\u8FDE\u2026");
+        } else if (status === "back") {
+          sess.lostSlots = sess.lostSlots.filter((s) => s !== slot);
+          showToast(slot === 0 && sess.player !== 0 ? "\u4E3B\u673A\u5DF2\u91CD\u8FDE" : `${nick || "\u961F\u53CB"} \u5DF2\u91CD\u8FDE`);
+        } else if (status === "left") {
+          sess.lostSlots = sess.lostSlots.filter((s) => s !== slot);
+          showToast(`${nick || "\u961F\u53CB"} \u79BB\u5F00\u4E86\u623F\u95F4`);
         } else {
-          sess.peerLost = false;
-          showToast("\u5BF9\u624B\u5DF2\u91CD\u8FDE");
+          if (!sess.members.length && slot !== sess.player) sess.peerReady = true;
         }
+      },
+      onMembers: (members) => {
+        if (online !== sess) return;
+        sess.members = members;
+        for (const m of members) {
+          if (m.online) sess.lostSlots = sess.lostSlots.filter((s) => s !== m.slot);
+          else if (!sess.lostSlots.includes(m.slot)) sess.lostSlots.push(m.slot);
+        }
+      },
+      onStart: (players) => {
+        if (online !== sess) return;
+        sess.startPlayers = players;
+        if (sess.player === 0 && !sess.started) startOnlineBattle();
       },
       onCmd: (player, cmd) => {
         if (online !== sess) return;
         if (sess.player === 0 && app.engine && app.screen === "battle") app.engine.dispatchAs(player, cmd);
       },
       onSnap: (netState, events) => {
-        if (online !== sess || sess.player !== 1) return;
+        if (online !== sess || sess.player === 0) return;
+        const nPlayers = sess.startPlayers?.length ?? (sess.members.filter((m) => m.online).length || 2);
         if (!app.engine) {
           app.levelId = 0;
           const conn = sess.conn;
+          const mySlot = sess.player;
           app.engine = createGhostEngine(app.difficulty, 0, (cmd) => {
-            conn?.send({ t: "cmd", player: 1, cmd });
-          });
+            conn?.send({ t: "cmd", player: mySlot, cmd });
+          }, mySlot, nPlayers);
           initBattleView();
           sess.started = true;
-          track("game_start", { level_id: 0, difficulty: app.difficulty, coop: 2 });
+          track("game_start", { level_id: 0, difficulty: app.difficulty, coop: sessPlayerCount(sess) });
           goto("battle");
         }
-        app.engine.applySnap(netState, events);
+        const ghost = app.engine;
+        if (netState.players >= 2 && ghost.level !== getCoopLevel(netState.players)) {
+          const fixed = createEngine(app.difficulty, 0, { coop: true, players: netState.players });
+          ghost.map = fixed.map;
+          ghost.level = fixed.level;
+          pathPixels = ghost.map.paths.map((p) => p.pixels);
+          bakeStaticMap();
+        }
+        ghost.applySnap(netState, events);
       },
       onEnd: (won, reason) => {
         if (online !== sess) return;
@@ -12138,7 +13364,7 @@
         if (app.screen === "battle" && app.engine) {
           settleOnline(won);
         } else {
-          showToast(reason === "peer_left" ? "\u5BF9\u624B\u79BB\u5F00\u4E86\u623F\u95F4" : "\u623F\u95F4\u5DF2\u89E3\u6563");
+          showToast(reason === "peer_left" ? "\u6709\u961F\u53CB\u79BB\u5F00\u4E86\u623F\u95F4" : "\u623F\u95F4\u5DF2\u89E3\u6563");
           teardownOnline(false);
           goto("home");
         }
@@ -12180,9 +13406,12 @@
       intent,
       roomId: "",
       player: intent.action === "create" ? 0 : 1,
+      maxPlayers: intent.action === "create" ? intent.maxPlayers : 2,
+      members: [],
+      startPlayers: null,
+      lostSlots: [],
       peerNick: "",
       peerReady: false,
-      peerLost: false,
       started: false,
       ended: false,
       connecting: true,
@@ -12198,8 +13427,9 @@
     sess.conn = conn;
     return true;
   }
+  var lobbyMaxPlayers = 4;
   function hostCreateRoom() {
-    openOnlineSession({ action: "create" });
+    openOnlineSession({ action: "create", maxPlayers: lobbyMaxPlayers });
   }
   function joinRoom(code) {
     app.pendingRoom = null;
@@ -12221,12 +13451,22 @@
     }
     showToast("\u5206\u4EAB\u540E\u597D\u53CB\u70B9\u5F00\u5361\u7247\u5373\u53EF\u52A0\u5165");
   }
-  function startOnlineBattle() {
+  function startOnlineBattle(manual = false) {
     const sess = online;
-    if (!sess || sess.player !== 0 || !sess.peerReady || sess.started) return;
+    if (!sess || sess.player !== 0 || sess.started) return;
+    if (manual) {
+      if (!hostCanStart(sess)) return;
+      sess.conn?.send({ t: "start" });
+    }
+    if (!sess.startPlayers) {
+      sess.startPlayers = sess.members.length ? sess.members.filter((m) => m.online).map((m) => ({ slot: m.slot, nick: m.nick })) : [{ slot: 0, nick: displayNick() }, { slot: 1, nick: sess.peerNick || "\u961F\u53CB" }];
+      if (!sess.startPlayers.some((p) => p.slot === 0)) sess.startPlayers.unshift({ slot: 0, nick: displayNick() });
+    }
+    const nPlayers = Math.max(2, sess.startPlayers.length);
     stopNarration();
     app.levelId = 0;
-    app.engine = createEngine(app.difficulty, 0, { coop: true });
+    const engineOpts = { coop: true, players: nPlayers };
+    app.engine = createEngine(app.difficulty, 0, engineOpts);
     initBattleView();
     sess.started = true;
     snapEvents.length = 0;
@@ -12235,8 +13475,37 @@
       if (online !== sess || !eng || !sess.conn?.connected) return;
       sess.conn.send({ t: "snap", state: eng.serializeNet(), events: snapEvents.splice(0) });
     }, 200);
-    track("game_start", { level_id: 0, difficulty: app.difficulty, coop: 2 });
+    track("game_start", { level_id: 0, difficulty: app.difficulty, coop: nPlayers });
     goto("battle");
+  }
+  function drawLobbySlot(sess, slot, y) {
+    const px = MARGIN;
+    const pw = VW - MARGIN * 2;
+    const m = sess.members.find((mm) => mm.slot === slot) ?? (slot === sess.player && sess.roomId ? { slot, nick: displayNick(), online: !sess.connecting, ready: true } : slot !== sess.player && sess.peerReady && sess.peerNick ? { slot, nick: sess.peerNick, online: !sess.lostSlots.includes(slot), ready: true } : void 0);
+    if (!m) {
+      panel(px, y, pw, 44, "rgba(90,107,140,0.18)");
+      const dots = ".".repeat(1 + Math.floor(Date.now() / 500) % 3);
+      fillText(`\u7B49\u5F85\u52A0\u5165${dots}`, VW / 2, y + 22, { size: 12, color: C.dim, align: "center", weight: "normal" });
+      return;
+    }
+    const isSelf = slot === sess.player;
+    const lost = sess.lostSlots.includes(slot) || !m.online;
+    panel(px, y, pw, 44, isSelf ? `${C.gold}66` : lost ? "rgba(90,107,140,0.25)" : C.panelLine);
+    const col = SLOT_COLORS[slot % SLOT_COLORS.length];
+    fillText(`P${slot + 1}`, px + 14, y + 22, { size: 12, color: lost ? C.dim : col });
+    fillText(
+      `${m.nick}${isSelf ? "\uFF08\u6211\uFF09" : ""}`,
+      px + 46,
+      y + 22,
+      { size: 13, color: lost ? C.dim : C.text, weight: isSelf ? "bold" : "normal" }
+    );
+    let cxr = px + pw - 12;
+    if (slot === 0) {
+      chip(cxr, y + 22, "\u4E3B\u673A", C.gold);
+      cxr -= 58;
+    }
+    if (lost) chip(cxr, y + 22, "\u65AD\u7EBF", C.red);
+    else if (slot !== 0) chip(cxr, y + 22, m.ready ? "\u5C31\u7EEA" : "\u672A\u5C31\u7EEA", m.ready ? C.green : C.sub);
   }
   function drawLobby() {
     hooks = [];
@@ -12251,8 +13520,8 @@
     let y = TOP_SAFE + 24;
     panel(px, y, pw, 96, C.panelLine);
     fillText("CO-OP ONLINE", px + 16, y + 20, { size: 10, color: C.cyan, weight: "600" });
-    fillText("\u4E0E\u597D\u53CB\u5404\u5B88\u4E00\u6761\u9632\u7EBF", px + 16, y + 42, { size: 15 });
-    fillText("\u5171\u4EAB\u751F\u547D \xB7 \u7ECF\u6D4E\u72EC\u7ACB \xB7 \u51FB\u6740\u5404\u8BA1 \xB7 \u7ED3\u7B97 \xD71.2", px + 16, y + 66, { size: 11, color: C.sub, weight: "normal" });
+    fillText("2\u20134 \u4EBA\u534F\u540C\u9632\u5B88\uFF0C\u5404\u5B88\u4E00\u6761\u9632\u7EBF", px + 16, y + 42, { size: 15 });
+    fillText("\u5171\u4EAB\u751F\u547D \xB7 \u7ECF\u6D4E\u72EC\u7ACB \xB7 \u51FB\u6740\u5404\u8BA1 \xB7 \u7ED3\u7B97\u52A0\u6210 \xD71.2\u20131.4", px + 16, y + 66, { size: 11, color: C.sub, weight: "normal" });
     y += 116;
     if (!sess) {
       if (app.pendingRoom) {
@@ -12268,24 +13537,33 @@
         });
         y += 66;
       }
+      fillText("\u4EBA\u6570\u4E0A\u9650", px + 4, y + 10, { size: 11, color: C.sub, weight: "normal" });
+      y += 22;
+      segControl(px, y, pw, ["2 \u4EBA", "3 \u4EBA", "4 \u4EBA"], lobbyMaxPlayers - 2, "lobby-max", (i) => {
+        lobbyMaxPlayers = i + 2;
+      });
+      y += 48;
       btn({ x: px, y, w: pw, h: 52, label: "\u271A \u521B\u5EFA\u623F\u95F4", color: C.cyan, primary: !app.pendingRoom, cb: hostCreateRoom });
       y += 66;
       fillText("\u5EFA\u623F\u540E\u9080\u8BF7\u597D\u53CB\uFF0C\u597D\u53CB\u70B9\u5F00\u5206\u4EAB\u5361\u7247\u5373\u53EF\u52A0\u5165", VW / 2, y + 10, { size: 11, color: C.dim, align: "center", weight: "normal" });
       return;
     }
+    const onlineCount = sess.members.length ? sess.members.filter((m) => m.online).length : sess.peerReady ? 2 : 1;
+    panel(px, y, pw, 108, C.panelLine);
+    fillText(`\u623F\u95F4\u7801 \xB7 ${sess.maxPlayers} \u4EBA\u623F\uFF08\u5DF2\u5230 ${onlineCount} \u4EBA\uFF09`, px + 16, y + 22, { size: 11, color: C.sub, weight: "normal" });
+    fillText(sess.roomId || "\xB7\xB7\xB7\xB7\xB7\xB7", VW / 2, y + 58, { size: 34, color: C.gold, align: "center", font: RES_FONT() });
+    if (sess.connecting) {
+      fillText("\u8FDE\u63A5\u670D\u52A1\u5668\u4E2D\u2026", VW / 2, y + 88, { size: 12, color: C.sub, align: "center", weight: "normal" });
+    }
+    y += 124;
+    for (let i = 0; i < sess.maxPlayers; i++) {
+      drawLobbySlot(sess, i, y);
+      y += 54;
+    }
+    y += 6;
+    btn({ x: px, y, w: pw, h: 46, label: "\u{1F4E3} \u9080\u8BF7\u597D\u53CB", color: C.pink, disabled: !sess.roomId, cb: () => shareInvite(sess.roomId) });
+    y += 60;
     if (sess.player === 0) {
-      panel(px, y, pw, 132, C.panelLine);
-      fillText("\u623F\u95F4\u7801", px + 16, y + 22, { size: 11, color: C.sub, weight: "normal" });
-      fillText(sess.roomId || "\xB7\xB7\xB7\xB7\xB7\xB7", VW / 2, y + 62, { size: 34, color: C.gold, align: "center", font: RES_FONT() });
-      fillText(
-        sess.connecting ? "\u8FDE\u63A5\u670D\u52A1\u5668\u4E2D\u2026" : sess.peerReady ? `${sess.peerNick} \u5DF2\u5C31\u4F4D` : "\u7B49\u5F85\u597D\u53CB\u52A0\u5165\u2026",
-        VW / 2,
-        y + 102,
-        { size: 12, color: sess.peerReady ? C.green : C.sub, align: "center", weight: "normal" }
-      );
-      y += 150;
-      btn({ x: px, y, w: pw, h: 46, label: "\u{1F4E3} \u9080\u8BF7\u597D\u53CB", color: C.pink, disabled: !sess.roomId, cb: () => shareInvite(sess.roomId) });
-      y += 60;
       btn({
         x: px,
         y,
@@ -12294,21 +13572,42 @@
         label: "\u25B6 \u5F00\u59CB\u6218\u6597",
         color: C.green,
         primary: true,
-        disabled: !sess.peerReady || sess.connecting,
-        cb: startOnlineBattle
+        disabled: !hostCanStart(sess),
+        cb: () => startOnlineBattle(true)
       });
       y += 68;
-      fillText("\u6807\u51C6\u6218\u5F79 \xB7 \u53CC\u8DEF\u538B\u529B\u76F8\u5F53\uFF08\u96BE\u5EA6\u968F\u5173\u5361\u9636\u68AF\u751F\u6548\uFF09", VW / 2, y + 8, { size: 11, color: C.dim, align: "center", weight: "normal" });
+      fillText("\u6807\u51C6\u6218\u5F79 \xB7 \u591A\u8DEF\u538B\u529B\u76F8\u5F53\uFF08\u4EBA\u6570\u8D8A\u591A\u866B\u7FA4\u8D8A\u5F3A\uFF09", VW / 2, y + 8, { size: 11, color: C.dim, align: "center", weight: "normal" });
     } else {
-      panel(px, y, pw, 120, C.panelLine);
-      fillText(`\u5DF2\u52A0\u5165 ${sess.peerNick || "\u597D\u53CB"} \u7684\u623F\u95F4`, VW / 2, y + 32, { size: 16, align: "center" });
-      fillText(`\u623F\u95F4\u7801 ${sess.roomId} \xB7 \u6807\u51C6\u6218\u5F79`, VW / 2, y + 60, { size: 11, color: C.sub, align: "center", weight: "normal" });
+      const me = sess.members.find((m) => m.slot === sess.player);
+      const myReady = me ? me.ready : true;
+      if (sess.members.length) {
+        btn({
+          x: px,
+          y,
+          w: pw,
+          h: 52,
+          label: myReady ? "\u2713 \u5DF2\u5C31\u7EEA \xB7 \u70B9\u51FB\u53D6\u6D88" : "\u25B6 \u5C31\u7EEA",
+          color: myReady ? C.sub : C.green,
+          primary: !myReady,
+          disabled: !sess.roomId || sess.connecting,
+          cb: () => {
+            sess.conn?.send({ t: "ready", ready: !myReady });
+            buzz("light");
+          }
+        });
+        y += 66;
+      }
       const dots = ".".repeat(1 + Math.floor(Date.now() / 500) % 3);
-      fillText(sess.connecting ? "\u8FDE\u63A5\u670D\u52A1\u5668\u4E2D\u2026" : `\u7B49\u5F85\u4E3B\u673A\u5F00\u59CB\u6218\u6597${dots}`, VW / 2, y + 90, { size: 12, color: C.gold, align: "center", weight: "normal" });
-      y += 140;
+      fillText(
+        sess.connecting ? "\u8FDE\u63A5\u670D\u52A1\u5668\u4E2D\u2026" : `\u7B49\u5F85\u4E3B\u673A\u5F00\u59CB\u6218\u6597${dots}`,
+        VW / 2,
+        y + 8,
+        { size: 12, color: C.gold, align: "center", weight: "normal" }
+      );
+      y += 24;
     }
-    if (sess.peerLost) {
-      fillText("\u26A0 \u5BF9\u624B\u65AD\u7EBF\uFF0C\u7B49\u5F85\u91CD\u8FDE\uFF0860s \u5185\uFF09\u2026", VW / 2, y + 10, { size: 12, color: C.red, align: "center" });
+    if (sess.player !== 0 && sess.lostSlots.includes(0)) {
+      fillText("\u26A0 \u4E3B\u673A\u65AD\u7EBF\uFF0C\u7B49\u5F85\u91CD\u8FDE\uFF0860s \u5185\uFF09\u2026", VW / 2, y + 10, { size: 12, color: C.red, align: "center" });
     }
   }
   function drawTechWaiting() {
@@ -12321,6 +13620,50 @@
     fillText("\u6218\u672F\u6A21\u5757\u6574\u5907\u4E2D", VW / 2, py2 + 34, { size: 16, align: "center" });
     const dots = ".".repeat(1 + Math.floor(Date.now() / 500) % 3);
     fillText(`\u7B49\u5F85\u4E3B\u673A\u9009\u62E9\u6218\u672F\u6A21\u5757${dots}`, VW / 2, py2 + 66, { size: 12, color: C.sub, align: "center", weight: "normal" });
+  }
+  function drawCoopStatusBar(st) {
+    const sess = online;
+    if (!sess?.started) return;
+    const n = sess.startPlayers?.length ?? enginePlayers(st);
+    if (n < 2) return;
+    const bx = 12;
+    const bw = Math.min(VW - 12, CAP_LEFT - 8 - GAME_CENTER_PAD) - bx;
+    const by = TOP_SAFE + 34 + 4;
+    const bh = 22;
+    panel(bx, by, bw, bh, C.panelLine, 8);
+    const sw = bw / n;
+    const midY = by + bh / 2;
+    for (let i = 0; i < n; i++) {
+      const cx0 = bx + i * sw;
+      const isSelf = i === sess.player;
+      const lost = !isSelf && sess.lostSlots.includes(i);
+      if (i > 0) {
+        ctx.save();
+        ctx.strokeStyle = ac(0.15);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(cx0 + 0.5, by + 5);
+        ctx.lineTo(cx0 + 0.5, by + bh - 5);
+        ctx.stroke();
+        ctx.restore();
+      }
+      if (lost) {
+        fillText(`${slotNick(sess, i).slice(0, 4)} \xB7 \u91CD\u8FDE\u4E2D\u2026`, cx0 + sw / 2, midY, { size: 9, color: C.dim, align: "center", weight: "normal" });
+        continue;
+      }
+      if (isSelf) {
+        ctx.save();
+        rr(cx0 + 1.5, by + 1.5, sw - 3, bh - 3, 6);
+        ctx.fillStyle = `${C.gold}1F`;
+        ctx.fill();
+        ctx.restore();
+      }
+      const col = SLOT_COLORS[i % SLOT_COLORS.length];
+      const gold = st.golds?.[i] ?? (i === 0 ? st.gold : 0);
+      const kills = st.killsBy?.[i] ?? 0;
+      fillText(slotNick(sess, i).slice(0, 4), cx0 + 7, midY, { size: 9, color: isSelf ? col : C.sub });
+      fillText(`\u25C8${gold} \u2694${kills}`, cx0 + sw - 7, midY, { size: 9, color: isSelf ? C.gold : C.sub, align: "right", weight: "normal", font: RES_FONT() });
+    }
   }
   function drawInviteBanner() {
     const bx = MARGIN;
@@ -12354,6 +13697,7 @@
     const st = engine.state;
     drawBattleScene();
     const bm = SKIN_MODULES[skin.id];
+    const coopBarH = online?.started && st.coop ? 26 : 0;
     if (bm?.drawBattleHUD) {
       bm.drawBattleHUD(env, engine);
     } else {
@@ -12385,7 +13729,7 @@
         }]
       ];
       segBtns.forEach(([label, color, cb], i) => {
-        fillText(label, btnX0 + i * segW + segW / 2, midY, { size: 12, color, align: "center", font: RES_FONT() });
+        fillText(label, btnX0 + i * segW + segW / 2, midY, { size: F.sm, color, align: "center", font: RES_FONT() });
         if (i > 0) vDiv(btnX0 + i * segW, 10);
         hitBox({ x: btnX0 + i * segW, y: hudY, w: segW, h: hudH, label: "", cb });
       });
@@ -12394,23 +13738,23 @@
       const goldTxt = `\u25C8 ${st.gold}`;
       const waveTxt = `${st.wave}/${st.totalWaves}`;
       ctx.save();
-      ctx.font = `bold 12px ${RES_FONT()}`;
+      ctx.font = `bold ${F.sm}px ${RES_FONT()}`;
       const livesW = ctx.measureText(livesTxt).width;
       const goldW = ctx.measureText(goldTxt).width;
       const waveW = ctx.measureText(waveTxt).width;
       ctx.restore();
       const blinkOff = st.lives <= 5 && Math.floor(Date.now() / 400) % 2 === 1;
       let cx = hudX + 12;
-      fillText(livesTxt, cx, midY, { size: 12, color: blinkOff ? "rgba(255,61,90,0.35)" : C.red, font: RES_FONT() });
+      fillText(livesTxt, cx, midY, { size: F.sm, color: blinkOff ? "rgba(255,61,90,0.35)" : C.red, font: RES_FONT() });
       cx += livesW + 8;
       vDiv(cx);
       cx += 8;
-      fillText(goldTxt, cx, midY, { size: 12, color: C.gold, font: RES_FONT() });
+      fillText(goldTxt, cx, midY, { size: F.sm, color: C.gold, font: RES_FONT() });
       cx += goldW + 8;
       vDiv(cx);
       cx += 8;
       const waveCx = Math.min(cx + (btnX0 - 16 - cx) / 2, btnX0 - 16 - waveW / 2);
-      fillText(waveTxt, waveCx, midY - 2, { size: 12, color: C.cyan, align: "center", font: RES_FONT() });
+      fillText(waveTxt, waveCx, midY - 2, { size: F.sm, color: C.cyan, align: "center", font: RES_FONT() });
       const progW = waveW + 10;
       const progX = waveCx - progW / 2;
       const progY = hudY + hudH - 5;
@@ -12421,23 +13765,24 @@
       ctx.fillRect(progX, progY, progW * Math.min(1, st.wave / st.totalWaves), 2);
       ctx.restore();
       if (st.phase === "prep") {
-        const by2 = hudY + hudH + 8;
+        const by2 = hudY + hudH + coopBarH + 8;
         panel(VW / 2 - 118, by2, 236, 56, C.panelLine, 19);
-        fillText(`\u7B2C ${st.wave} \u6CE2 \xB7 ${Math.max(0, Math.ceil(st.prepT))}s \u540E\u6765\u88AD`, VW / 2, by2 + 15, { size: 13, align: "center", font: RES_FONT() });
+        fillText(`\u7B2C ${st.wave} \u6CE2 \xB7 ${Math.max(0, Math.ceil(st.prepT))}s \u540E\u6765\u88AD`, VW / 2, by2 + 15, { size: F.md, align: "center", font: RES_FONT() });
         const groups = engine.level.waves[st.wave - 1]?.groups ?? [];
         const isBossWave = engine.level.waves[st.wave - 1]?.isBoss ?? false;
         const summary = [...new Set(groups.map((g) => `${ENEMIES[g.type].name}\xD7${g.count}`))].join(" ");
         const cCol = isBossWave ? C.pink : "#FF9F43";
-        fillText(`${isBossWave ? "\u26A0 BOSS \u6CE2 \xB7 " : ""}${summary}`, VW / 2, by2 + 34, { size: 9, color: isBossWave ? C.pink : "#FF9F43", align: "center", weight: "normal" });
+        fillText(`${isBossWave ? "\u26A0 BOSS \u6CE2 \xB7 " : ""}${summary}`, VW / 2, by2 + 34, { size: F.xs, color: isBossWave ? C.pink : "#FF9F43", align: "center", weight: "normal" });
         fillText(
           isBossWave ? "\u5EFA\u8BAE\u7559\u597D\u91D1\u5E01\u4E0E\u7A7F\u7532\u706B\u529B" : "\u636E\u6B64\u63D0\u524D\u8C03\u6574\u5E03\u9632",
           VW / 2,
           by2 + 47,
-          { size: 9, color: C.sub, align: "center", weight: "normal" }
+          { size: F.xs, color: C.sub, align: "center", weight: "normal" }
         );
         btn({ x: VW / 2 - 62, y: by2 + 66, w: 124, h: 36, label: "\u25B6 \u7ACB\u5373\u5F00\u6218", color: C.gold, primary: true, cb: () => engineCmd({ type: "SKIP_PREP" }) });
       }
     }
+    if (coopBarH) drawCoopStatusBar(st);
     const mechaUi = app.selectedMecha != null || app.movingMecha != null || app.placing === "mecha";
     if (mechaUi) drawBottomBar4(st);
     else if (bm?.drawBottomBar) bm.drawBottomBar(env, engine);
@@ -12457,6 +13802,18 @@
       fillText("\u5DF2\u6682\u505C", VW / 2, py2 + 32, { size: 16, color: C.gold, align: "center" });
       fillText("\u70B9\u51FB \u25B6 \u7EE7\u7EED\u6218\u6597", VW / 2, py2 + 58, { size: 12, color: C.sub, align: "center", weight: "normal" });
     }
+    if (commMsg) {
+      const ct = (Date.now() - commMsg.at) / 1e3;
+      if (ct > 4) commMsg = null;
+      else {
+        ctx.save();
+        ctx.globalAlpha = ct < 0.2 ? ct / 0.2 : ct > 3.4 ? (4 - ct) / 0.6 : 1;
+        panel(40, VH * 0.12, VW - 80, 40, "rgba(34,224,255,0.4)");
+        fillText(commMsg.text, VW / 2, VH * 0.12 + 20, { size: 12, color: C.cyan, align: "center", weight: "normal" });
+        ctx.restore();
+      }
+    }
+    if (tutStep >= 0 && app.levelId === TUTORIAL_LEVEL.id) drawTutorialHints(!!bm?.drawBattleHUD);
     const lt = (Date.now() - leakFlashAt) / 550;
     if (lt < 1) {
       ctx.save();
@@ -12470,17 +13827,69 @@
     }
     if (st.phase === "tech" && st.techChoices) {
       if (!techShownAt) techShownAt = Date.now();
-      if (online?.started && online.player === 1) drawTechWaiting();
+      if (online?.started && online.player !== 0) drawTechWaiting();
       else if (bm?.drawTechOverlay) bm.drawTechOverlay(env, engine);
       else drawTechOverlay4(st);
     } else {
       techShownAt = 0;
     }
-    if (online?.peerLost) {
+    if (online && online.player !== 0 && online.lostSlots.includes(0)) {
       panel(40, VH * 0.16, VW - 80, 40, "rgba(255,90,90,0.5)");
-      fillText("\u26A0 \u5BF9\u624B\u65AD\u7EBF\uFF0C\u7B49\u5F85\u91CD\u8FDE\uFF0860s \u5185\uFF09\u2026", VW / 2, VH * 0.16 + 20, { size: 12, color: C.red, align: "center" });
+      fillText("\u26A0 \u4E3B\u673A\u65AD\u7EBF\uFF0C\u7B49\u5F85\u91CD\u8FDE\uFF0860s \u5185\uFF09\u2026", VW / 2, VH * 0.16 + 20, { size: 12, color: C.red, align: "center" });
     }
     if (showSettings) drawSettingsOverlay();
+  }
+  function tutBubble(text, cy) {
+    ctx.save();
+    ctx.font = "bold 12px sans-serif";
+    const w = ctx.measureText(text).width + 28;
+    panel(VW / 2 - w / 2, cy - 15, w, 30, "rgba(255,201,77,0.5)");
+    fillText(text, VW / 2, cy + 0.5, { size: 12, color: C.gold, align: "center" });
+    ctx.restore();
+  }
+  function tutHighlight(x, y, w, h) {
+    const pulse = 0.45 + 0.45 * Math.sin(Date.now() / 220);
+    ctx.save();
+    rr(x - 3, y - 3, w + 6, h + 6, 14);
+    ctx.strokeStyle = `rgba(255,201,77,${pulse.toFixed(3)})`;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+  function drawTutorialHints(skinHud) {
+    const engine = app.engine;
+    if (!engine) return;
+    const st = engine.state;
+    if (st.phase === "tech") return;
+    if (st.phase !== "prep") {
+      if (tutStep >= 0) {
+        track("guide_step", { step: 5 });
+        tutStep = -1;
+      }
+      return;
+    }
+    if (tutStep === 0 && app.placing && app.placing !== "mecha") {
+      tutStep = 1;
+      track("guide_step", { step: 3 });
+    }
+    if (tutStep === 1 && st.towers.length > 0) {
+      tutStep = 2;
+      track("guide_step", { step: 4 });
+    }
+    if (tutStep === 0) {
+      const i0 = Math.max(0, TOWER_ORDER.findIndex((t) => towerUnlocked(t)));
+      tutHighlight(MARGIN + i0 * (SLOT_W + SLOT_GAP) - barScroll, VH - BAR_H + 12, SLOT_W, BAR_H - 24);
+      tutBubble("\u{1F446} \u70B9\u8FD9\u91CC\u9009\u62E9\u70AE\u5854", VH - BAR_H - 34);
+    } else if (tutStep === 1) {
+      tutBubble("\u{1F446} \u518D\u70B9\u51FB\u5730\u56FE\u4E0A\u7684\u7EFF\u8272\u683C\uFF0C\u653E\u4E0B\u70AE\u5854", VH * 0.42);
+    } else if (tutStep === 2) {
+      if (!skinHud) {
+        tutHighlight(VW / 2 - 62, TOP_SAFE + 34 + 8 + 66, 124, 36);
+        tutBubble("\u70AE\u5854\u5C31\u4F4D\u2014\u2014\u70B9\u51FB\u5F00\u6218\uFF01", TOP_SAFE + 34 + 8 + 66 + 56);
+      } else {
+        tutBubble("\u70AE\u5854\u5C31\u4F4D\u2014\u2014\u70B9\u51FB\u300C\u25B6 \u7ACB\u5373\u5F00\u6218\u300D", TOP_SAFE + 130);
+      }
+    }
   }
   function drawDragGhost3(st, type, p) {
     const engine = app.engine;
@@ -12747,9 +14156,9 @@
   function drawTechOverlay4(st) {
     ctx.fillStyle = "rgba(7,11,24,0.92)";
     ctx.fillRect(0, 0, VW, VH);
-    fillText("TACTICAL MODULE", VW / 2, TOP_SAFE + 12, { size: 11, color: C.cyan, align: "center", weight: "600" });
-    fillText(`\u7B2C ${st.wave} \u6CE2\u524D \xB7 \u9009\u62E9\u6218\u672F\u6A21\u5757`, VW / 2, TOP_SAFE + 42, { size: 19, align: "center" });
-    fillText(`\u4E09\u9009\u4E00 \xB7 \u540C\u540D\u53EF\u53E0\u52A0 \xB7 \u5DF2\u88C5 ${st.techs.length}`, VW / 2, TOP_SAFE + 66, { size: 11, color: C.sub, align: "center", weight: "normal" });
+    fillText("TACTICAL MODULE", VW / 2, TOP_SAFE + 12, { size: F.sm, color: C.cyan, align: "center", weight: "600", spacing: 2.5 });
+    fillText(`\u7B2C ${st.wave} \u6CE2\u524D \xB7 \u9009\u62E9\u6218\u672F\u6A21\u5757`, VW / 2, TOP_SAFE + 42, { size: F.xl, align: "center" });
+    fillText(`\u4E09\u9009\u4E00 \xB7 \u540C\u540D\u53EF\u53E0\u52A0 \xB7 \u5DF2\u88C5 ${st.techs.length}`, VW / 2, TOP_SAFE + 66, { size: F.sm, color: C.sub, align: "center", weight: "normal" });
     const taken = {};
     for (const t of st.techs) taken[t] = (taken[t] ?? 0) + 1;
     const cardH = 128;
@@ -12775,12 +14184,12 @@
       fillText(def.glyph, MARGIN + 48, y + cardH / 2, { size: 30, color: def.color, align: "center" });
       const tx = MARGIN + 96;
       const textW = VW - MARGIN * 2 - 96 - 16;
-      const descLines = wrapCount(def.desc, textW, 12);
-      const blockH = 24 + descLines * 12 * 1.65;
+      const descLines = wrapCount(def.desc, textW, F.sm);
+      const blockH = 24 + descLines * F.sm * 1.65;
       const ty0 = y + cardH / 2 - blockH / 2;
-      fillText(def.name, tx, ty0 + 10, { size: 16, color: def.color });
+      fillText(def.name, tx, ty0 + 10, { size: F.lg, color: def.color });
       if (taken[id]) chip(MARGIN + (VW - MARGIN * 2) - 12, y + 22, `\u5DF2\u88C5\xD7${taken[id]}`, def.color);
-      wrapBlock(def.desc, tx, ty0 + 34, textW, { color: "rgba(141,160,198,1)", size: 12 });
+      wrapBlock(def.desc, tx, ty0 + 34, textW, { color: "rgba(141,160,198,1)", size: F.sm });
       ctx.restore();
       hitBox({ x: MARGIN, y, w: VW - MARGIN * 2, h: cardH, label: "", cb: () => {
         if (engineCmd({ type: "PICK_TECH", id })) sfx.play("tech");
@@ -12841,7 +14250,7 @@
     fillText(won ? "\u2605 \u9632\u7EBF\u5B88\u4F4F\u4E86" : "\u2715 \u9632\u7EBF\u5931\u5B88", 0, 0, { size: 26, color: won ? C.green : C.pink, align: "center" });
     ctx.restore();
     fillText(
-      won ? oi ? "\u5728\u7EBF\u534F\u540C \xB7 \u53CC\u5B50\u661F\u95E8" : `\u7B2C ${app.levelId} \u7AE0 \xB7 ${LEVELS.find((l) => l.id === app.levelId)?.name ?? ""}` : `\u6491\u5230\u4E86\u7B2C ${st.wave} / ${st.totalWaves} \u6CE2`,
+      won ? oi ? "\u5728\u7EBF\u534F\u540C \xB7 \u53CC\u5B50\u661F\u95E8" : app.levelId < 1 ? `\u6559\u5B66\u5173 \xB7 ${getLevel(app.levelId).name}` : `\u7B2C ${app.levelId} \u7AE0 \xB7 ${getLevel(app.levelId).name}` : `\u6491\u5230\u4E86\u7B2C ${st.wave} / ${st.totalWaves} \u6CE2`,
       VW / 2,
       y0 + 32,
       { size: 13, color: C.sub, align: "center", weight: "normal" }
@@ -12856,7 +14265,6 @@
       ["\u6218\u672F\u6A21\u5757", String(st.techs.length), st.techs.length],
       ["\u79EF\u5206", `+${gained}`, gained, C.gold, true]
     ];
-    if (oi) rows.splice(1, 0, ["\u5728\u7EBF\u534F\u540C", `\u961F\u53CB ${oi.peerNick || "\u2014"}`, null, C.cyan]);
     const px = 24;
     const pw = VW - 48;
     const py = y0 + 58;
@@ -12877,10 +14285,46 @@
         ctx.restore();
       }
     });
+    let boardH = 0;
+    if (oi) {
+      const nMul = coopScoreMul(Math.max(2, oi.players?.length ?? 2));
+      const board = (oi.players?.length ? oi.players : [{ slot: oi.player, nick: displayNick() }, { slot: oi.player === 0 ? 1 : 0, nick: oi.peerNick || "\u961F\u53CB" }]).map((p) => ({
+        slot: p.slot,
+        nick: p.nick || `P${p.slot + 1}`,
+        kills: st.killsBy?.[p.slot] ?? 0,
+        gold: st.golds?.[p.slot] ?? 0
+      })).sort((a, b) => b.kills - a.kills);
+      const by2 = py + rows.length * rowH + 32;
+      boardH = 34 + board.length * 26 + 14;
+      panel(px, by2, pw, boardH, C.panelLine);
+      fillText(`\u5168\u5458\u6218\u7EE9 \xB7 \u534F\u540C\u52A0\u6210 \xD7${nMul}`, px + 22, by2 + 24, { size: 13, color: C.cyan });
+      board.forEach((row, ri) => {
+        const ry = by2 + 50 + ri * 26;
+        const col = SLOT_COLORS[row.slot % SLOT_COLORS.length];
+        const isSelf = row.slot === oi.player;
+        if (isSelf) {
+          ctx.save();
+          rr(px + 10, ry - 11, pw - 20, 22, 8);
+          ctx.fillStyle = `${C.gold}14`;
+          ctx.fill();
+          ctx.restore();
+        }
+        fillText(`${ri + 1}`, px + 24, ry, { size: 13, color: col, font: RES_FONT() });
+        fillText(
+          `${row.nick}${isSelf ? "\uFF08\u6211\uFF09" : ""}${row.slot === 0 ? " \xB7 \u4E3B\u673A" : ""}`,
+          px + 46,
+          ry,
+          { size: 12, color: isSelf ? C.text : C.sub, weight: isSelf ? "bold" : "normal" }
+        );
+        fillText(`\u5B88\u7B2C${row.slot + 1}\u8DEF`, px + pw - 170, ry, { size: 10, color: C.dim, weight: "normal" });
+        fillText(`\u51FB\u6740 ${row.kills}`, px + pw - 108, ry, { size: 11, color: C.sub, weight: "normal", font: RES_FONT() });
+        fillText(`\u25C8 ${row.gold}`, px + pw - 22, ry, { size: 11, color: C.gold, align: "right", weight: "normal", font: RES_FONT() });
+      });
+    }
     const grade = battleGrade(st, won);
     const gradeColor = grade === "S" ? C.gold : grade === "A" ? C.green : grade === "B" ? C.cyan : C.pink;
     const gx = px + 40;
-    const gy3 = py + rows.length * rowH + 40;
+    const gy3 = py + rows.length * rowH + boardH + 40;
     ctx.save();
     ctx.globalAlpha = Math.min(1, Math.max(0, (t - 0.9) / 0.35));
     ctx.strokeStyle = gradeColor;
@@ -12890,7 +14334,7 @@
     ctx.stroke();
     fillText(grade, gx, gy3 + 8, { size: 30, color: gradeColor, align: "center", font: RES_FONT() });
     fillText(["\u5B8C\u7F8E\u9632\u7EBF", "\u9632\u5B88\u597D\u624B", "\u5B88\u4F4F\u9632\u7EBF", "\u9632\u7EBF\u5931\u5B88"][["S", "A", "B", "D"].indexOf(grade)], gx + 44, gy3 - 4, { size: 15, color: gradeColor });
-    fillText(won ? oi ? "\u534F\u540C\u52A0\u6210 \xD71.2 \u5DF2\u5165\u8D26" : "\u4E0B\u4E00\u7AE0\u89E3\u9501\u5DF2\u8BB0\u5F55" : "\u518D\u6311\u6218\u4E00\u6B21\u5C31\u80FD\u901A\u8FC7", gx + 44, gy3 + 18, { size: 10, color: C.sub, align: "center", weight: "normal" });
+    fillText(won ? oi ? `\u534F\u540C\u52A0\u6210 \xD7${coopScoreMul(Math.max(2, oi.players?.length ?? 2))} \u5DF2\u5165\u8D26` : app.levelId < 1 ? "\u6559\u5B66\u6F14\u7EC3\u5B8C\u6210 \xB7 \u6218\u5F79\u7B2C 1 \u7AE0\u5DF2\u5C31\u7EEA" : "\u4E0B\u4E00\u7AE0\u89E3\u9501\u5DF2\u8BB0\u5F55" : "\u518D\u6311\u6218\u4E00\u6B21\u5C31\u80FD\u901A\u8FC7", gx + 44, gy3 + 18, { size: 10, color: C.sub, align: "center", weight: "normal" });
     const rp = rankProgress();
     fillText(
       rp.next === null ? `${rp.name} \xB7 \u5DF2\u8FBE\u6700\u9AD8\u519B\u8854` : `${rp.name} \xB7 \u8DDD\u300C${rp.nextName}\u300D\u8FD8\u5DEE ${(rp.next - rp.points).toLocaleString("en-US")} \u5206`,
@@ -12899,10 +14343,10 @@
       { size: 10, color: C.gold, align: "center", weight: "normal" }
     );
     ctx.restore();
-    let y = py + rows.length * rowH + 40;
-    const nextId = app.levelId + 1;
+    let y = py + rows.length * rowH + boardH + 40;
+    const nextId = app.levelId < 1 ? 1 : app.levelId + 1;
     const hasNext = !oi && LEVELS.some((l) => l.id === nextId);
-    if (won) {
+    if (won && !oi) {
       btn({ x: px, y, w: pw, h: 50, label: "\u25C8 \u53CC\u500D\u6218\u5229 \xB7 \u89C2\u770B\u89C6\u9891", color: C.gold, cb: () => {
         showToast("\u5E7F\u544A\u6A21\u5757\u5F00\u53D1\u4E2D");
       } });
@@ -12923,7 +14367,7 @@
         track("share_click", { channel: "result", result: won ? "win" : "lose", wave: st.wave });
         try {
           wx.shareAppMessage?.({
-            title: won ? `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u5B88\u4F4F\u4E86\u7B2C ${app.levelId} \u5173 \xB7 \u5168 ${st.totalWaves} \u6CE2\uFF0C\u6F0F\u602A ${st.leaked}\uFF01` : `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u7B2C ${app.levelId} \u5173\u6491\u5230\u4E86\u7B2C ${st.wave} \u6CE2\uFF0C\u6C42\u652F\u63F4\uFF01`,
+            title: won ? app.levelId < 1 ? `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u5B8C\u6210\u4E86\u6559\u5B66\u6F14\u7EC3 \xB7 \u5168 ${st.totalWaves} \u6CE2\uFF0C\u6F0F\u602A ${st.leaked}\uFF01` : `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u5B88\u4F4F\u4E86\u7B2C ${app.levelId} \u5173 \xB7 \u5168 ${st.totalWaves} \u6CE2\uFF0C\u6F0F\u602A ${st.leaked}\uFF01` : `\u6211\u5728\u300A\u9AD8\u5854\u9632\u7EBF\u300B\u7B2C ${app.levelId} \u5173\u6491\u5230\u4E86\u7B2C ${st.wave} \u6CE2\uFF0C\u6C42\u652F\u63F4\uFF01`,
             imageUrl: assetUrl("assets/share-cover.jpg")
           });
         } catch {
@@ -12957,7 +14401,9 @@
     ctx.save();
     ctx.translate(mapOX + shakeX * mapScale, mapOY + mapPan + shakeY * mapScale);
     ctx.scale(mapScale, mapScale);
-    drawMapBackground(ctx, W, H, nebulaBg.img);
+    if (staticMap && !staticMap.withNebula && nebulaBg.img) bakeStaticMap();
+    if (staticMap) ctx.drawImage(staticMap.cvs, 0, 0, W, H);
+    else drawStaticMapContent(ctx, engine);
     drawStarfield(ctx, W, H, time);
     drawVignette(ctx, W, H);
     for (const ex of engine.map.exits) drawBaseGlow(ctx, ex.centerX, ex.centerY, time);
@@ -12974,29 +14420,32 @@
     }
     ctx.restore();
     ctx.globalAlpha = 1;
-    ctx.save();
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    for (const pts of engine.level.paths) {
-      ctx.beginPath();
-      pts.forEach(([c, r], i) => {
-        const x = (c + 0.5) * CELL;
-        const y = (r + 0.5) * CELL;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+    drawPath(ctx, pathPixels, time);
+    const guardSess = online;
+    if (st.coop && guardSess?.started) {
+      const nGuard = guardSess.startPlayers?.length ?? enginePlayers(st);
+      engine.map.paths.forEach((p, pi) => {
+        const slot = pi % nGuard;
+        const col = SLOT_COLORS[slot % SLOT_COLORS.length];
+        const nick = slotNick(guardSess, slot).slice(0, 5);
+        const [ex, ey] = p.pixels[0];
+        const [nx, ny] = p.pixels[1] ?? p.pixels[0];
+        const dl = Math.hypot(nx - ex, ny - ey) || 1;
+        const lx = ex + (nx - ex) / dl * CELL * 0.55;
+        const ly = ey + (ny - ey) / dl * CELL * 0.55;
+        const lw2 = nick.length * 11 + 16;
+        ctx.save();
+        ctx.globalAlpha = 0.9;
+        rr(lx - lw2 / 2, ly - 10, lw2, 20, 10);
+        ctx.fillStyle = "rgba(7,11,24,0.82)";
+        ctx.fill();
+        ctx.strokeStyle = `${col}88`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
+        fillText(nick, lx, ly, { size: 11, color: col, align: "center" });
       });
-      ctx.strokeStyle = "rgba(34,224,255,0.10)";
-      ctx.lineWidth = CELL * 0.92;
-      ctx.stroke();
-      ctx.strokeStyle = "rgba(34,224,255,0.4)";
-      ctx.lineWidth = 2;
-      ctx.setLineDash([14, 12]);
-      ctx.lineDashOffset = -time * 30;
-      ctx.stroke();
-      ctx.setLineDash([]);
     }
-    ctx.restore();
-    drawPath(ctx, engine.level.paths, time);
     fx?.drawScorches(ctx);
     for (const ex of engine.map.exits) drawBase(ctx, time, st.lives / st.maxLives, ex.centerX, ex.centerY);
     if (app.placing || app.movingMecha != null) {
@@ -13024,11 +14473,13 @@
       ctx.save();
       ctx.translate(p.x, p.y);
       const ahead = engine.map.posAt(e.path, e.dist + 10);
-      ctx.rotate(Math.atan2(ahead.y - p.y, ahead.x - p.x));
+      const moveAngle = Math.atan2(ahead.y - p.y, ahead.x - p.x);
+      if (!enemySheet3D(e.type)) ctx.rotate(moveAngle);
       drawEnemy(ctx, e.type, ENEMIES[e.type].size, time, {
         alpha: invisible ? 0.12 : 1,
         enraged: e.enraged,
-        slowed: st.clock < e.slowUntil
+        slowed: st.clock < e.slowUntil,
+        angle: moveAngle
       });
       ctx.restore();
       if (!invisible && e.hp > 0 && e.hp < e.maxHp) {
@@ -13040,6 +14491,12 @@
         ctx.fillRect(p.x - bw / 2, p.y - ENEMIES[e.type].size - 12, bw * ratio, 5);
       }
     }
+    for (const sp of st.splits) {
+      ctx.save();
+      ctx.translate(sp.x, sp.y);
+      drawSplitFx(ctx, sp, ENEMIES.splitter.size);
+      ctx.restore();
+    }
     for (const t of st.towers) {
       const c = { x: (t.col + 0.5) * CELL, y: (t.row + 0.5) * CELL };
       const def = TOWERS[t.type];
@@ -13049,6 +14506,20 @@
         ctx.strokeStyle = `${def.color}55`;
         ctx.beginPath();
         ctx.arc(c.x, c.y, lv.range * CELL, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+      if (st.clock < t.buffUntil) {
+        ctx.save();
+        ctx.globalAlpha = 0.55 + 0.25 * Math.sin(time * 6);
+        ctx.strokeStyle = "#FFC94D";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, CELL * 0.52, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 0.2;
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, CELL * 0.64, 0, Math.PI * 2);
         ctx.stroke();
         ctx.restore();
       }
@@ -13106,14 +14577,18 @@
     }
     fx?.drawTrails(ctx);
     for (const pr of st.projectiles) {
-      ctx.save();
-      ctx.fillStyle = pr.kind === "plasma" ? "#FF6B3D" : "#FF9F43";
-      ctx.shadowColor = ctx.fillStyle;
-      ctx.shadowBlur = 8;
-      ctx.beginPath();
-      ctx.arc(pr.x, pr.y, pr.kind === "plasma" ? 5 : 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
+      const gr2 = pr.kind === "plasma" ? 11 : 9;
+      ctx.drawImage(glowSprite(pr.kind === "plasma" ? "#FF6B3D" : pr.kind === "frost" ? "#3DF08C" : "#FF9F43"), pr.x - gr2, pr.y - gr2, gr2 * 2, gr2 * 2);
+      if (pr.kind === "frost") {
+        ctx.fillStyle = "#3DF08C";
+        ctx.beginPath();
+        ctx.arc(pr.x, pr.y, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#D6FFE9";
+        ctx.beginPath();
+        ctx.arc(pr.x - 1, pr.y - 1, 1.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     for (const b of st.beams) {
       const a = Math.max(0, b.ttl / b.maxTtl);
@@ -13121,52 +14596,33 @@
       const isLaser = b.color.startsWith("#22E0FF");
       const jx = (Math.random() - 0.5) * 2;
       const jy = (Math.random() - 0.5) * 2;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.beginPath();
+      ctx.moveTo(b.x1 + jx, b.y1 + jy);
+      ctx.lineTo(b.x2 + jx, b.y2 + jy);
       if (isRail) {
-        ctx.save();
         ctx.globalAlpha = a * 0.35;
         ctx.strokeStyle = b.color;
         ctx.lineWidth = b.width * 2.4;
-        ctx.shadowColor = b.color;
-        ctx.shadowBlur = 18;
-        ctx.beginPath();
-        ctx.moveTo(b.x1 + jx, b.y1 + jy);
-        ctx.lineTo(b.x2 + jx, b.y2 + jy);
         ctx.stroke();
-        ctx.restore();
-        ctx.save();
         ctx.globalAlpha = a;
         ctx.strokeStyle = "#F4F0FF";
         ctx.lineWidth = Math.max(1.5, b.width * 0.4);
-        ctx.beginPath();
-        ctx.moveTo(b.x1 + jx, b.y1 + jy);
-        ctx.lineTo(b.x2 + jx, b.y2 + jy);
         ctx.stroke();
-        ctx.restore();
       } else {
-        ctx.save();
+        ctx.globalAlpha = a * 0.3;
+        ctx.strokeStyle = b.color;
+        ctx.lineWidth = b.width * (0.5 + a * 0.5) * 2.8;
+        ctx.stroke();
         ctx.globalAlpha = a;
         ctx.strokeStyle = b.color;
         ctx.lineWidth = b.width * (0.5 + a * 0.5);
-        ctx.shadowColor = b.color;
-        ctx.shadowBlur = 12;
-        ctx.beginPath();
-        ctx.moveTo(b.x1 + jx, b.y1 + jy);
-        ctx.lineTo(b.x2 + jx, b.y2 + jy);
         ctx.stroke();
-        ctx.restore();
       }
-      ctx.save();
-      ctx.globalCompositeOperation = "lighter";
       ctx.globalAlpha = a * 0.9;
       const gr = (8 + b.width * 1.5) * (isRail ? 1.9 : 1);
-      const bg = ctx.createRadialGradient(b.x2, b.y2, 0, b.x2, b.y2, gr);
-      bg.addColorStop(0, "#FFFFFF");
-      bg.addColorStop(0.35, b.color);
-      bg.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = bg;
-      ctx.beginPath();
-      ctx.arc(b.x2, b.y2, gr, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.drawImage(glowSprite(b.color), b.x2 - gr, b.y2 - gr, gr * 2, gr * 2);
       ctx.restore();
       if (isLaser) fx?.spawnSparks(b.x2, b.y2, "#BDF3FF", SPARKS_PER_HIT);
     }
@@ -13182,14 +14638,11 @@
       ctx.restore();
     }
     for (const pt of st.particles) {
-      ctx.save();
       ctx.globalAlpha = pt.ttl / pt.maxTtl;
       ctx.fillStyle = pt.color;
-      ctx.beginPath();
-      ctx.arc(pt.x, pt.y, pt.size * 0.6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
+      ctx.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
     }
+    ctx.globalAlpha = 1;
     fx?.drawRings(ctx);
     fx?.drawDebris(ctx);
     fx?.drawSparks(ctx);
@@ -13430,7 +14883,11 @@
           else if (ev.type === "bossDown") {
             sfx.play("boss");
             buzz("heavy");
-          } else if (ev.type === "sfx") sfx.play(ev.name);
+          } else if (ev.type === "miniBossDown") {
+            sfx.play("boss");
+            buzz("medium");
+          } else if (ev.type === "comm") commMsg = { text: ev.text, at: Date.now() };
+          else if (ev.type === "sfx") sfx.play(ev.name);
           else if (ev.type === "gameOver") {
             if (app.result) continue;
             sfx.play(ev.won ? "victory" : "defeat");
@@ -13464,7 +14921,8 @@
               leaks: st0.leaked,
               score: gained,
               grade,
-              coop: 0
+              coop: 0,
+              tutorial: levelId === TUTORIAL_LEVEL.id ? 1 : 0
             });
             if (ev.won) recordLevelClear(levelId);
             const rankAfter = commanderRank();
@@ -13560,6 +15018,7 @@
       return skin;
     },
     ac,
+    F,
     // 绘制助手
     fillText,
     rr,
@@ -13583,6 +15042,8 @@
     drawEnemy,
     drawMecha,
     drawMechaBarSlot,
+    drawTutorialCard,
+    tutCardSlot,
     // 状态访问
     app,
     codex,
@@ -13595,6 +15056,7 @@
     setShowSettings: (v) => {
       showSettings = v;
     },
+    guideActive: () => guideStep != null,
     getPressedBtn: () => pressedBtn,
     getTechShownAt: () => techShownAt,
     setTechShownAt: (v) => {
@@ -13622,6 +15084,7 @@
     CODEX_TABS,
     ENEMY_CATEGORY,
     MECHA,
+    TUTORIAL_LEVEL,
     SLOT_W,
     SLOT_GAP,
     stripMaxScroll,
@@ -13644,6 +15107,7 @@
     openFeedback,
     setMode,
     getOnlineInfo,
+    getLevel,
     // 主动拉起分享（判空包装 wx.shareAppMessage；assets/ 路径统一转 CDN URL）
     shareAppMessage: (o) => {
       try {
@@ -13677,6 +15141,8 @@
       setWxQualityHigh(v);
       qualityHigh = v;
     },
+    unitTheme: () => unitTheme,
+    setUnitTheme: applyUnitTheme,
     // 触摸接管
     consumeTap: () => {
       tapConsumed = true;
@@ -13698,7 +15164,7 @@
         break;
       }
     }
-    if (showSettings || showProfile) return;
+    if (showSettings || showProfile || guideStep != null) return;
     if (app.screen === "home" || app.screen === "codex") {
       app.dragY = p.y;
       app.dragAcc = 0;

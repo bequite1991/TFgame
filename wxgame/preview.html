@@ -26,8 +26,14 @@ const mem = {
   'srd.settings': { quality: 'high' },
   'srd.progress': { cleared: [1, 2, 3, 4, 5, 6, 7, 8] }, // 解锁全部炮塔
   'srd.musicMuted': '1', 'srd.narrationMuted': '1', 'srd.vibrateMuted': '1',
+  'srd.guideDone': '1', // 默认跳过首次引导（老玩家画像），?guide=1 时删除以预览引导
 };
 let firstCanvas = true;
+// ?assetbase=http://localhost:8931/assets 可把 CDN 资源基址指到本地，验证未上传的新素材
+if (Q.get('assetbase')) mem['srd.assetBase'] = Q.get('assetbase');
+// ?unitTheme=horror 预置怪物/炮塔美术主题（srd.unitTheme），验证启动按存储主题加载
+if (Q.get('unitTheme')) mem['srd.unitTheme'] = Q.get('unitTheme');
+if (Q.get('guide') === '1') delete mem['srd.guideDone'];
 window.wx = {
   createCanvas() {
     const c = document.createElement('canvas');

@@ -24,9 +24,13 @@ export function createGhostEngine(
   difficulty: Difficulty,
   levelId: number,
   sendCmd: (cmd: Command) => void,
+  /** 本机槽位（0=主机 / 1..3=客机）：金币视角重映射用，缺省 1 保持旧双人语义 */
+  viewSlot: number = 1,
+  /** 本局实际人数：3–4 人房需按人数选四路图（getCoopLevel），缺省按 2 保持旧双人语义 */
+  players?: number,
 ): GhostEngine {
   // 借一个真实协作引擎拿到同形初始 state / map / level（永不跑模拟，首个快照到达即整体覆盖）
-  const base = createEngine(difficulty, levelId, { coop: true });
+  const base = createEngine(difficulty, levelId, { coop: true, players });
   const state: GameState = base.state;
 
   /** 快照外层事件缓冲（waveStart/waveClear/leak/bossDown/gameOver 等） */
@@ -48,15 +52,12 @@ export function createGhostEngine(
     const prevMecha = new Map<number, { x: number; y: number }>();
     for (const m of state.mechas) prevMecha.set(m.id, { x: m.x, y: m.y });
     const localClock = state.clock;
-    // 装饰数组保持本地空数组（快照本就不含；显式保留引用防意外覆盖）
-    const { particles, beams, rings, floaters } = state;
+    // 粒子保持本地空数组（快照不含，客机爆炸粒子由 fx.ts 击杀 diff 兜底）；beams/rings/floaters/splits 随快照覆盖
+    const { particles } = state;
     Object.assign(state, net);
     state.particles = particles;
-    state.beams = beams;
-    state.rings = rings;
-    state.floaters = floaters;
-    // 客机视角重映射：UI 统一读 state.gold → 显示自己的金币池（golds[1]）
-    if (state.golds) state.gold = state.golds[1];
+    // 客机视角重映射：UI 统一读 state.gold → 显示自己槽位的金币池
+    if (state.golds) state.gold = state.golds[viewSlot] ?? state.golds[0];
     // 时钟纠偏：本地 tick 已按墙钟连续推进（动画时间源），此处只消积累误差——
     // 小误差（≈网络延迟）软收敛避免动画回跳；大误差（暂停/倍速切换边界/重连）硬同步
     const clockErr = net.clock - localClock;
@@ -118,6 +119,18 @@ export function createGhostEngine(
         pr.x = pr.fromX + (pr.tx - pr.fromX) * pr.t;
         pr.y = pr.fromY + (pr.ty - pr.fromY) * pr.t - Math.sin(pr.t * Math.PI) * arcH;
       }
+      // 快照下发的特效数组按主机同款 ttl 衰减（engine.ts 主循环逻辑），保证插值窗口内动画连续自然消失
+      for (const b of state.beams) b.ttl -= dtSim;
+      state.beams = state.beams.filter((b) => b.ttl > 0);
+      for (const r of state.rings) r.ttl -= dtSim;
+      state.rings = state.rings.filter((r) => r.ttl > 0);
+      for (const f of state.floaters) {
+        f.ttl -= dtSim;
+        f.y -= 44 * dtSim;
+      }
+      state.floaters = state.floaters.filter((f) => f.ttl > 0);
+      for (const s of state.splits) s.ttl -= dtSim;
+      state.splits = state.splits.filter((s) => s.ttl > 0);
     }
     lerpT += dt;
     const f = Math.min(1, lerpT / LERP_DT);
@@ -162,7 +175,7 @@ export function createGhostEngine(
     dispatch(cmd) { sendCmd(cmd); return true; },
     dispatchAs(_player, cmd) { sendCmd(cmd); return true; },
     serializeNet() {
-      const { particles, beams, rings, floaters, spawnQueue, events, ...rest } = state;
+      const { particles, spawnQueue, events, ...rest } = state;
       return rest;
     },
     subscribe() { return () => {}; },

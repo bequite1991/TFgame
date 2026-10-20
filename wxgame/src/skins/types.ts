@@ -9,11 +9,12 @@
 // - 所有坐标为 CSS 像素（主画布已按 DPR 预缩放，直接当普通 2D 画布用）。
 
 import type { Command, Difficulty, GameEngine, TowerType } from '../game/types';
-import type { LEVELS } from '../game/levels';
+import type { LEVELS, LevelDef, TUTORIAL_LEVEL } from '../game/levels';
 import type {
   DIFFICULTIES, ENEMIES, ENEMY_LIST, MECHA, TECHS, TOWERS, TOWER_LIST,
 } from '../game/config';
 import type { drawEnemy, drawMecha, drawTower } from '../game/render';
+import type { UnitTheme } from '../game/enemy3d';
 import type { hash01 } from '../game/fx';
 import type { sfx } from '../audio';
 import type { track } from '../analytics';
@@ -37,7 +38,7 @@ export interface Skin {
   panelTop: string; panelBottom: string;  // 面板渐变两端
   panelSolid: string;                     // 按钮/Toast 的纯色底
   chrome: 'round' | 'chamfer';            // 圆角 / 切角（布局语言差异）
-  pressFx: 'scale' | 'stamp' | 'glitch';  // 按钮按压反馈：缩放 / 盖章 / 故障错位
+  pressFx: 'scale' | 'stamp' | 'glitch';  // 按钮按压风格标识：主文件统一为下沉+变暗，差异由各模块自绘按钮承载
   transition: 'fade' | 'wipe' | 'glitch'; // 页面切换过渡：淡入 / 切角挡板横扫 / 故障色带
 }
 
@@ -109,6 +110,8 @@ export interface Settlement { score: number; grade: 'S' | 'A' | 'B' | 'D' }
 export interface FillTextOpts {
   size?: number; color?: string; align?: CanvasTextAlign;
   weight?: string; baseline?: CanvasTextBaseline; font?: string;
+  /** 字距（px）：canvas 无稳定兼容的 letterSpacing，主文件逐字偏移实现；只给英文小标等短串用 */
+  spacing?: number;
 }
 
 /** 键值存储（wx.setStorageSync 的判空封装，与 H5 版共用键名） */
@@ -143,6 +146,8 @@ export interface SkinEnv {
   C: Palette;                  // 可变调色板（applySkin 会改写其字段）
   readonly skin: Skin;         // 当前皮肤（getter，切换后立即生效）
   ac(a: number): string;       // 当前主题色 + alpha 拼 rgba()
+  /** 字号阶梯（main.ts 的 F；排版统一从这里取） */
+  F: { xs: number; sm: number; md: number; lg: number; xl: number; xxl: number };
 
   // ---- 绘制助手 ----
   fillText(str: string, x: number, y: number, o?: FillTextOpts): void;
@@ -166,6 +171,10 @@ export interface SkinEnv {
   drawTower: typeof drawTower; // 引擎同款炮塔矢量绘制
   drawEnemy: typeof drawEnemy; // 引擎同款敌人矢量绘制
   drawMecha: typeof drawMecha; // 引擎同款机甲矢量绘制
+  /** 教学关入口卡（主页滚动列表顶部槽位，高 CARD_H；皮肤在自家列表第 0 槽调用，色板随当前皮肤） */
+  drawTutorialCard(x: number, y: number, w: number): void;
+  /** 教学关入口卡占用的列表槽位数（单人模式 1，联机模式 0；列表滚动偏移与 totalScrollMax 共用此约定） */
+  tutCardSlot(): number;
   /** 塔栏末位的机甲槽（几何与主文件 barSlotAt 一致；皮肤在自家塔槽 forEach 之后、clip 区域内调用） */
   drawMechaBarSlot(engine: GameEngine): void;
 
@@ -177,6 +186,8 @@ export interface SkinEnv {
   setShowProfile(v: boolean): void;
   showSettings(): boolean;
   setShowSettings(v: boolean): void;
+  /** 首次引导弹层开启中（home 屏；开启时模块应放弃触摸接管，与 showSettings/showProfile 同等处理） */
+  guideActive(): boolean;
   getPressedBtn(): Button | null;   // 当前按下的按钮（按压反馈用）
   getTechShownAt(): number;         // 科技三选一入场动画时间戳（0 = 未展示）
   setTechShownAt(v: number): void;
@@ -185,6 +196,7 @@ export interface SkinEnv {
 
   // ---- 数据（引擎配置，直接引用共享） ----
   LEVELS: typeof LEVELS;
+  TUTORIAL_LEVEL: typeof TUTORIAL_LEVEL;
   DIFFICULTIES: typeof DIFFICULTIES;
   TOWER_LIST: typeof TOWER_LIST;
   ENEMY_LIST: typeof ENEMY_LIST;
@@ -211,6 +223,8 @@ export interface SkinEnv {
   // ---- 动作 ----
   goto(s: Screen): void;
   gotoBriefing(levelId: number): void;
+  /** 按 id 取关卡（教学关 -2 / 联机图 0、-1 不在 LEVELS 主列表，经此特判） */
+  getLevel(id: number): LevelDef;
   stopNarration(): void;            // 停止简报旁白（简报页返回选关前必须调用，与默认实现一致）
   startBattle(): void;
   engineCmd(cmd: Command): boolean;
@@ -253,6 +267,8 @@ export interface SkinEnv {
   toggleVibrateMuted(): void;
   readQualityHigh(): boolean;       // 读存储中的画质开关
   setQualityHigh(v: boolean): void; // 同时更新存储与内存 qualityHigh
+  unitTheme(): UnitTheme;           // 怪物/炮塔美术主题（srd.unitTheme）
+  setUnitTheme(t: UnitTheme): void; // 切换美术主题（持久化 + 精灵表按新前缀重载）
 
   // ---- 触摸接管 ----
   /** 在 handleTouch('end') 里调用后，主循环当次不再执行内置 hooks 点击派发（用后自动清零） */

@@ -1,6 +1,9 @@
 // Canvas 绘制原语 —— 塔/敌人/地图造型，GameCanvas 与图鉴图标共用
 import { CELL, COLS, ROWS, TOWERS, ENEMIES } from './config';
-import type { EnemyType, TowerType } from './types';
+import type { EnemyType, SplitFxState, TowerType } from './types';
+import { glowSprite } from './fx';
+import { turretSheet3D, TURRET3D_DIRS, TURRET3D_PHASES, TURRET3D_FRAME } from './turret3d';
+import { enemySheet3D, splitterSplitSheet, ENEMY3D_DIRS, ENEMY3D_PHASES, ENEMY3D_FRAME, ENEMY3D_SPLIT_PHASES } from './enemy3d';
 
 function hexPath(ctx: CanvasRenderingContext2D, r: number) {
   ctx.beginPath();
@@ -43,6 +46,66 @@ export function drawTower(
   const def = TOWERS[type];
   const r = size / 2;
   const lite = tint(def.color, 0.45);
+
+  // Blender 预渲染 3D 精灵表（tools/gen-towers-3d.py）：就绪时替代程序化绘制，未就绪回退下方程序化版本
+  const sheet = turretSheet3D(type);
+  if (sheet) {
+    // 落地阴影
+    ctx.save();
+    ctx.globalAlpha = 0.32;
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.ellipse(0, r * 0.5, r * 0.76, r * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Lv3 外光环（金色虚线流动）
+    if (level >= 2) {
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.87, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,201,77,0.45)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([10, 8]);
+      ctx.lineDashOffset = -time * 14;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // 朝向选行（frost/tesla 中心对称不随瞄准转向，固定第 0 行）、待机相位选列
+    const AIMING: TowerType[] = ['laser', 'missile', 'railgun', 'plasma'];
+    const step = (Math.PI * 2) / TURRET3D_DIRS;
+    const dir = AIMING.includes(type)
+      ? ((Math.round(aimAngle / step) % TURRET3D_DIRS) + TURRET3D_DIRS) % TURRET3D_DIRS
+      : 0;
+    const phase = Math.floor(time * 2.5) % TURRET3D_PHASES;
+    // 帧内底座直径约占帧宽 0.645，放大使底座与程序化底座（r*0.82）等大；略上移对齐格心
+    const ds = size * 1.28;
+    ctx.drawImage(
+      sheet.img as unknown as CanvasImageSource,
+      phase * TURRET3D_FRAME, dir * TURRET3D_FRAME, TURRET3D_FRAME, TURRET3D_FRAME,
+      -ds / 2, -ds / 2 - size * 0.05, ds, ds,
+    );
+
+    // 电磁炮蓄能辉光（叠加在精灵之上，随 charge 增强）
+    if (type === 'railgun' && charge > 0) {
+      ctx.globalAlpha = 0.3 + 0.5 * charge;
+      ctx.strokeStyle = '#C4B0FF';
+      ctx.lineWidth = 1.5 + 2 * charge;
+      ctx.beginPath();
+      ctx.arc(0, 0, r * (0.5 + 0.3 * charge), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // 等级点
+    for (let i = 0; i <= level; i++) {
+      ctx.beginPath();
+      ctx.arc(-r * 0.4 + i * r * 0.4, r * 0.62, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = level >= 2 ? '#FFC94D' : def.color;
+      ctx.fill();
+    }
+    return;
+  }
 
   // 落地阴影
   ctx.save();
@@ -409,11 +472,77 @@ export function drawTower(
   }
 }
 
-/** 在 (0,0) 绘制敌人（已 translate，朝 +X 为前进方向），alpha 用于隐身 */
-export function drawEnemy(ctx: CanvasRenderingContext2D, type: EnemyType, size: number, time: number, opts: { alpha?: number; enraged?: boolean; slowed?: boolean; burning?: boolean } = {}) {
+/** 分裂体死亡分裂动画（Blender 分裂精灵表 split.png：6 相位 × 16 朝向）。
+ *  在 (0,0) 绘制（已 translate）；表未加载时静默跳过——死亡爆炸/冲击环已兜底 */
+export function drawSplitFx(ctx: CanvasRenderingContext2D, s: SplitFxState, size: number) {
+  const sheet = splitterSplitSheet();
+  if (!sheet) return;
+  const progress = 1 - s.ttl / s.maxTtl;
+  const phase = Math.min(ENEMY3D_SPLIT_PHASES - 1, Math.floor(progress * ENEMY3D_SPLIT_PHASES));
+  const step = (Math.PI * 2) / ENEMY3D_DIRS;
+  const dir = ((Math.round(s.angle / step) % ENEMY3D_DIRS) + ENEMY3D_DIRS) % ENEMY3D_DIRS;
+  const fade = Math.min(1, s.ttl / (s.maxTtl * 0.35));
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, fade);
+  const ds = size * 2.9;
+  ctx.drawImage(
+    sheet.img as unknown as CanvasImageSource,
+    phase * ENEMY3D_FRAME, dir * ENEMY3D_FRAME, ENEMY3D_FRAME, ENEMY3D_FRAME,
+    -ds / 2, -ds / 2, ds, ds,
+  );
+  ctx.restore();
+}
+
+/** 在 (0,0) 绘制敌人（已 translate，朝 +X 为前进方向），alpha 用于隐身；
+ *  opts.angle 为 canvas 朝向角（0=+X，顺时针），供 3D 精灵选帧；传入后调用方无需再 ctx.rotate */export function drawEnemy(ctx: CanvasRenderingContext2D, type: EnemyType, size: number, time: number, opts: { alpha?: number; enraged?: boolean; slowed?: boolean; burning?: boolean; angle?: number } = {}) {
   const def = ENEMIES[type];
   const r = size;
   const alpha = opts.alpha ?? 1;
+
+  // Blender 预渲染 3D 行走精灵表（tools/gen-enemies-3d.py）：就绪时替代程序化绘制，未就绪回退下方程序化版本
+  const sheet = enemySheet3D(type);
+  if (sheet) {
+    // 朝向选行（0=+X 顺时针）、步态相位选列（步频随移速，快慢腿速有区分）
+    const WALK_HZ: Record<EnemyType, number> = { crawler: 7, speeder: 12, tanker: 4, splitter: 6, lurker: 8, miniboss: 5, boss: 3.5 };
+    const step = (Math.PI * 2) / ENEMY3D_DIRS;
+    const dir = ((Math.round((opts.angle ?? 0) / step) % ENEMY3D_DIRS) + ENEMY3D_DIRS) % ENEMY3D_DIRS;
+    const phase = Math.floor(time * WALK_HZ[type]) % ENEMY3D_PHASES;
+    ctx.save();
+    // 落地阴影
+    ctx.globalAlpha = alpha * 0.3;
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.ellipse(0, r * 0.45, r * 0.7, r * 0.32, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // 狂暴红晕（精灵之下）
+    if (opts.enraged) {
+      ctx.globalAlpha = alpha * (0.4 + 0.2 * Math.sin(time * 6));
+      ctx.fillStyle = '#FF3D81';
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 1.15, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // 精灵表帧：帧内主体约占 0.77 帧宽，放大使体宽与程序化版（~2.2r）一致
+    ctx.globalAlpha = alpha;
+    const ds = r * 2.9;
+    ctx.drawImage(
+      sheet.img as unknown as CanvasImageSource,
+      phase * ENEMY3D_FRAME, dir * ENEMY3D_FRAME, ENEMY3D_FRAME, ENEMY3D_FRAME,
+      -ds / 2, -ds / 2, ds, ds,
+    );
+    // 减速冰环（精灵之上）
+    if (opts.slowed) {
+      ctx.globalAlpha = alpha * 0.65;
+      ctx.strokeStyle = '#BDF3FF';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 1.05, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
   ctx.save();
   ctx.globalAlpha = alpha;
   const body = opts.enraged ? '#FF3D81' : def.color;
@@ -725,6 +854,69 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, type: EnemyType, size: 
     ctx.beginPath();
     ctx.ellipse(r * 0.42, 0, r * 0.14, r * 0.06, 0, 0, Math.PI * 2);
     ctx.fill();
+  } else if (type === 'miniboss') {
+    // 掠晶兽：boss 画法的缩小变色版——晶刺冠冕 + 六边甲壳 + 旋转能量环 + 脉动晶核
+    const pulse = 0.7 + 0.3 * Math.sin(time * 5);
+    // 晶刺冠冕（6 根，随呼吸微摆）
+    ctx.fillStyle = deep;
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 1.2;
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI * 2 * i) / 6 + Math.PI / 6;
+      const len = r * (1.05 + 0.1 * Math.sin(time * 4 + i * 1.9));
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a - 0.17) * r * 0.7, Math.sin(a - 0.17) * r * 0.7);
+      ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len);
+      ctx.lineTo(Math.cos(a + 0.17) * r * 0.7, Math.sin(a + 0.17) * r * 0.7);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    // 外壳
+    const sg = ctx.createRadialGradient(-r * 0.3, -r * 0.35, r * 0.2, 0, 0, r);
+    sg.addColorStop(0, tint(body, 0.3));
+    sg.addColorStop(0.55, dark);
+    sg.addColorStop(1, deep);
+    hexPath(ctx, r * 0.86);
+    ctx.fillStyle = sg;
+    ctx.fill();
+    ctx.strokeStyle = body;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    // 甲缝
+    hexPath(ctx, r * 0.58);
+    ctx.strokeStyle = tone(body, 0.2);
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+    // 环绕晶核的旋转虚线环
+    ctx.save();
+    ctx.rotate(time * 1.6);
+    ctx.strokeStyle = glow;
+    ctx.globalAlpha = alpha * 0.65;
+    ctx.lineWidth = 1.6;
+    ctx.setLineDash([r * 0.26, r * 0.18]);
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+    ctx.globalAlpha = alpha;
+    // 晶核
+    const cg = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.26);
+    cg.addColorStop(0, '#FFFFFF');
+    cg.addColorStop(0.5, glow);
+    cg.addColorStop(1, tone(glow, 0.6));
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.24 * pulse, 0, Math.PI * 2);
+    ctx.fillStyle = cg;
+    ctx.fill();
+    // 前方感知眼（三只）
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(r * 0.56, 0, r * 0.065, 0, Math.PI * 2);
+    ctx.arc(r * 0.42, -r * 0.27, r * 0.05, 0, Math.PI * 2);
+    ctx.arc(r * 0.42, r * 0.27, r * 0.05, 0, Math.PI * 2);
+    ctx.fill();
   } else {
     // boss 湮灭巨兽：骨刺冠冕 + 重甲壳 + 旋转能量环 + 脉动核心
     const pulse = 0.7 + 0.3 * Math.sin(time * 4);
@@ -863,12 +1055,14 @@ export function drawMapBackground(ctx: CanvasRenderingContext2D, w: number, h: n
   ctx.stroke();
 }
 
-/** 路径：暗色路面 + 发光青色虚线流动。多路径时按线段去重，共享段不重复叠加 */
-export function drawPath(ctx: CanvasRenderingContext2D, paths: ReadonlyArray<ReadonlyArray<readonly [number, number]>>, time: number) {
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
+/** 路径线段去重缓存：按 paths 引用记忆（引擎/地图生命周期内不变），多路径共享段不重复叠加 */
+type PathSegs = [number, number, number, number][] | null;
+let pathSegsCache: { paths: ReadonlyArray<ReadonlyArray<readonly [number, number]>>; segs: PathSegs } | null = null;
+
+function pathSegs(paths: ReadonlyArray<ReadonlyArray<readonly [number, number]>>): PathSegs {
+  if (pathSegsCache?.paths === paths) return pathSegsCache.segs;
   // 单路径保持整条连续折线（虚线相位与旧版完全一致）；多路径展开为线段并按方向无关去重，共享段不重复叠加
-  let segs: [number, number, number, number][] | null = null;
+  let segs: PathSegs = null;
   if (paths.length > 1) {
     const seen = new Set<string>();
     segs = [];
@@ -885,19 +1079,29 @@ export function drawPath(ctx: CanvasRenderingContext2D, paths: ReadonlyArray<Rea
       }
     }
   }
-  const trace = () => {
-    ctx.beginPath();
-    if (segs === null) {
-      paths[0].forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
-      return;
-    }
-    for (const [x1, y1, x2, y2] of segs) {
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-    }
-  };
+  pathSegsCache = { paths, segs };
+  return segs;
+}
+
+function tracePath(ctx: CanvasRenderingContext2D, paths: ReadonlyArray<ReadonlyArray<readonly [number, number]>>) {
+  const segs = pathSegs(paths);
+  ctx.beginPath();
+  if (segs === null) {
+    paths[0].forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+    return;
+  }
+  for (const [x1, y1, x2, y2] of segs) {
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+  }
+}
+
+/** 路径路基（静态部分：暗色路面 + 青色点刻）：烘进离屏缓存层，每帧不再重画 */
+export function drawPathBase(ctx: CanvasRenderingContext2D, paths: ReadonlyArray<ReadonlyArray<readonly [number, number]>>) {
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
   // 路面
-  trace();
+  tracePath(ctx, paths);
   ctx.strokeStyle = '#141B32';
   ctx.lineWidth = CELL * 0.72;
   ctx.stroke();
@@ -906,17 +1110,19 @@ export function drawPath(ctx: CanvasRenderingContext2D, paths: ReadonlyArray<Rea
   ctx.setLineDash([2, CELL * 0.72 - 2]);
   ctx.stroke();
   ctx.setLineDash([]);
-  // 流动能量线
-  trace();
+}
+
+/** 路径流动能量线（每帧动画；发光由 Bloom 辉光层承担，不再用 shadowBlur） */
+export function drawPath(ctx: CanvasRenderingContext2D, paths: ReadonlyArray<ReadonlyArray<readonly [number, number]>>, time: number) {
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  tracePath(ctx, paths);
   ctx.strokeStyle = 'rgba(34,224,255,0.55)';
   ctx.lineWidth = 2;
   ctx.setLineDash([10, 18]);
   ctx.lineDashOffset = -time * 60;
-  ctx.shadowColor = '#22E0FF';
-  ctx.shadowBlur = 6;
   ctx.stroke();
   ctx.setLineDash([]);
-  ctx.shadowBlur = 0;
 }
 
 /** 基地：护盾中枢 + 呼吸弧光（baseX/baseY 为基地中心像素坐标） */
@@ -924,15 +1130,17 @@ export function drawBase(ctx: CanvasRenderingContext2D, time: number, livesRatio
   const x = baseX;
   const y = baseY;
   const breathe = 1 + Math.sin(time * 2) * 0.05;
-  // 护罩弧光
+  // 护罩弧光（双层描边模拟辉光，替代 shadowBlur 软件模糊）
+  ctx.beginPath();
+  ctx.arc(x, y, 52 * breathe, Math.PI, 0);
+  ctx.strokeStyle = livesRatio > 0.3 ? 'rgba(34,224,255,0.2)' : 'rgba(255,90,90,0.24)';
+  ctx.lineWidth = 9;
+  ctx.stroke();
   ctx.beginPath();
   ctx.arc(x, y, 52 * breathe, Math.PI, 0);
   ctx.strokeStyle = livesRatio > 0.3 ? 'rgba(34,224,255,0.7)' : 'rgba(255,90,90,0.8)';
   ctx.lineWidth = 3;
-  ctx.shadowColor = livesRatio > 0.3 ? '#22E0FF' : '#FF5A5A';
-  ctx.shadowBlur = 16;
   ctx.stroke();
-  ctx.shadowBlur = 0;
   // 环形底座
   ctx.beginPath();
   ctx.arc(x, y, 34, 0, Math.PI * 2);
@@ -946,13 +1154,12 @@ export function drawBase(ctx: CanvasRenderingContext2D, time: number, livesRatio
   ctx.arc(x, y, 20, Math.PI, 0);
   ctx.fillStyle = 'rgba(34,224,255,0.35)';
   ctx.fill();
+  // 核心：预渲染光斑贴图 + 实芯（替代 shadowBlur）
+  ctx.drawImage(glowSprite('#22E0FF'), x - 14, y - 14, 28, 28);
   ctx.beginPath();
   ctx.arc(x, y, 7, 0, Math.PI * 2);
   ctx.fillStyle = '#BDF3FF';
-  ctx.shadowColor = '#22E0FF';
-  ctx.shadowBlur = 12;
   ctx.fill();
-  ctx.shadowBlur = 0;
 }
 
 

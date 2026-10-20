@@ -239,6 +239,13 @@ function chargeButton(env: SkinEnv, x: number, y: number, w: number, h: number, 
   env.rr(x, y, w, h, 12);
   ctx.fillStyle = env.skin.panelSolid;
   ctx.fill();
+  // 顶部 1px 内亮线（与面板/按钮的受光语言对齐）
+  ctx.save();
+  env.rr(x, y, w, h, 12);
+  ctx.clip();
+  ctx.fillStyle = env.ac(0.22);
+  ctx.fillRect(x, y, w, 1);
+  ctx.restore();
   if (prog > 0) {
     ctx.save();
     env.rr(x, y, w, h, 12);
@@ -501,7 +508,6 @@ function drawHome(env: SkinEnv, time: number) {
   }
 
   env.fillText('◀ 左右滑动切换章节 ▶', VW / 2, VH - 30, { size: 9, color: env.C.dim, align: 'center', weight: 'normal' });
-  env.fillText('微信小游戏 · 试运营包', VW / 2, VH - 12, { size: 10, color: 'rgba(110,92,142,0.7)', align: 'center' });
 
   drawOverlays(env);
 }
@@ -515,7 +521,7 @@ function briefLines(env: SkinEnv, lv: SkinEnv['LEVELS'][number], textW: number, 
   const per = Math.max(6, Math.floor(textW / size));
   const body = 'rgba(164,143,200,0.95)';
   const lines: [string, string][] = [
-    [`> OPERATION BRIEFING // CH-${String(lv.id).padStart(2, '0')}`, env.C.cyan],
+    [`> OPERATION BRIEFING // ${lv.id < 1 ? 'TRAINING' : `CH-${String(lv.id).padStart(2, '0')}`}`, env.C.cyan],
     [`> 目标区域：${lv.name} · ${lv.sub}`, env.C.text],
     ['', body],
   ];
@@ -525,7 +531,7 @@ function briefLines(env: SkinEnv, lv: SkinEnv['LEVELS'][number], textW: number, 
   }
   const bossTxt = lv.waves.filter((w) => w.isBoss).map((w) => `W${w.wave}`).join(' ');
   lines.push([`> 波次 ${lv.waves.length} · BOSS ${bossTxt || '—'}`, '#FF9F43']);
-  lines.push([`> 标准战役 · 威胁等级 ${'★'.repeat(threatStars(lv.id))}`, env.C.gold]);
+  lines.push([lv.id < 1 ? '> 教学演练 · 数值宽松' : `> 标准战役 · 威胁等级 ${'★'.repeat(threatStars(lv.id))}`, env.C.gold]);
   briefCache = { key, lines };
   return lines;
 }
@@ -533,7 +539,7 @@ function briefLines(env: SkinEnv, lv: SkinEnv['LEVELS'][number], textW: number, 
 function drawBriefing(env: SkinEnv, time: number) {
   const { ctx, VW, VH, MARGIN, TOP_SAFE } = env;
   matrixBg(env, time);
-  const lv = env.LEVELS.find((l) => l.id === env.app.levelId) ?? env.LEVELS[0];
+  const lv = env.getLevel(env.app.levelId); // 教学关（id=-2）不在 LEVELS 主列表，经 getLevel 特判
   drawMxHeader(env, '任务简报', () => { env.stopNarration(); env.goto('home'); });
 
   // 顶部宣传横幅（霓虹描边 + 横幅内扫描线）
@@ -564,7 +570,7 @@ function drawBriefing(env: SkinEnv, time: number) {
   ctx.fillStyle = tg;
   ctx.fillRect(bx, by, bw, bannerH);
   ctx.restore();
-  env.fillText(`CH-${String(lv.id).padStart(2, '0')}`, bx + 14, by + bannerH - 34, { size: 10, color: env.C.cyan, weight: '600' });
+  env.fillText(lv.id < 1 ? 'TRAINING' : `CH-${String(lv.id).padStart(2, '0')}`, bx + 14, by + bannerH - 34, { size: 10, color: env.C.cyan, weight: '600' });
   env.fillText(lv.name, bx + 14, by + bannerH - 14, { size: 17 });
   // 旁白开关（与默认实现同一状态/动作）
   env.btn({
@@ -647,7 +653,7 @@ function drawBattleHUD(env: SkinEnv, engine: GameEngine) {
   const cy = hudY + barH / 2;
   const measure = (s: string) => {
     ctx.save();
-    ctx.font = `bold 12px ${numFont}`;
+    ctx.font = `bold ${env.F.sm}px ${numFont}`;
     const w = ctx.measureText(s).width;
     ctx.restore();
     return w;
@@ -662,18 +668,18 @@ function drawBattleHUD(env: SkinEnv, engine: GameEngine) {
   const lifeTxt = `❤ ${st.lives}`;
   ctx.save();
   if (st.lives <= 5) ctx.globalAlpha = 0.45 + 0.55 * Math.abs(Math.sin(Date.now() / 180));
-  env.fillText(lifeTxt, tx, cy, { size: 12, color: env.C.red, font: numFont });
+  env.fillText(lifeTxt, tx, cy, { size: env.F.sm, color: env.C.red, font: numFont });
   ctx.restore();
   tx += measure(lifeTxt) + 10;
   hairline(tx);
   tx += 10;
   const goldTxt = `◈ ${st.gold}`;
-  env.fillText(goldTxt, tx, cy, { size: 12, color: env.C.gold, font: numFont });
+  env.fillText(goldTxt, tx, cy, { size: env.F.sm, color: env.C.gold, font: numFont });
   tx += measure(goldTxt) + 10;
   hairline(tx);
   tx += 10;
   const waveTxt = `${st.wave}/${st.totalWaves}`;
-  env.fillText(waveTxt, tx, cy - 2, { size: 12, color: env.C.cyan, font: numFont });
+  env.fillText(waveTxt, tx, cy - 2, { size: env.F.sm, color: env.C.cyan, font: numFont });
   const waveW = Math.max(measure(waveTxt), 26);
   ctx.fillStyle = env.ac(0.25);
   ctx.fillRect(tx, hudY + barH - 8, waveW, 2);
@@ -703,7 +709,7 @@ function drawBattleHUD(env: SkinEnv, engine: GameEngine) {
       ctx.fillRect(bx, hudY + 2, btnW, barH - 4);
     }
     env.fillText(label, bx + btnW / 2, cy, {
-      size: 12, color: active ? env.C.cyan : env.C.text, align: 'center', font: numFont,
+      size: env.F.sm, color: active ? env.C.cyan : env.C.text, align: 'center', font: numFont,
     });
     env.hitBox({ x: bx, y: hudY, w: btnW, h: barH, label: `hud-${label}`, cb });
   });
@@ -712,17 +718,17 @@ function drawBattleHUD(env: SkinEnv, engine: GameEngine) {
   if (st.phase === 'prep') {
     const py = hudY + barH + 8;
     neonPanel(env, VW / 2 - 128, py, 256, 74, 14);
-    env.fillText(`第 ${st.wave} 波 · ${Math.max(0, Math.ceil(st.prepT))}s 后来袭`, VW / 2, py + 17, { size: 13, align: 'center', font: env.RES_FONT() });
+    env.fillText(`第 ${st.wave} 波 · ${Math.max(0, Math.ceil(st.prepT))}s 后来袭`, VW / 2, py + 17, { size: env.F.md, align: 'center', font: env.RES_FONT() });
     const wave = engine.level.waves[st.wave - 1];
     const groups = wave?.groups ?? [];
     const isBossWave = wave?.isBoss ?? false;
     const summary = [...new Set(groups.map((g) => `${env.ENEMIES[g.type].name}×${g.count}`))].join(' ');
     env.fillText(`${isBossWave ? '⚠ BOSS 波 · ' : ''}${summary}`, VW / 2, py + 38, {
-      size: 9, color: isBossWave ? env.C.pink : '#FF9F43', align: 'center', weight: 'normal',
+      size: env.F.xs, color: isBossWave ? env.C.pink : '#FF9F43', align: 'center', weight: 'normal',
     });
     env.fillText(
       isBossWave ? '建议留好金币与穿甲火力' : '据此提前调整布防',
-      VW / 2, py + 54, { size: 9, color: env.C.sub, align: 'center', weight: 'normal' },
+      VW / 2, py + 54, { size: env.F.xs, color: env.C.sub, align: 'center', weight: 'normal' },
     );
     chargeButton(env, VW / 2 - 85, py + 84, 170, 42, '▶ 长按开战', () => env.engineCmd({ type: 'SKIP_PREP' }));
   }
@@ -859,9 +865,9 @@ function drawTechOverlay(env: SkinEnv, engine: GameEngine) {
   const st = engine.state;
   ctx.fillStyle = 'rgba(8,4,16,0.94)';
   ctx.fillRect(0, 0, VW, VH);
-  env.fillText('TACTICAL MODULE', VW / 2, TOP_SAFE + 12, { size: 11, color: env.C.cyan, align: 'center', weight: '600' });
-  env.fillText(`第 ${st.wave} 波前 · 选择战术模块`, VW / 2, TOP_SAFE + 42, { size: 19, align: 'center' });
-  env.fillText(`三选一 · 同名可叠加 · 已装 ${st.techs.length}`, VW / 2, TOP_SAFE + 66, { size: 11, color: env.C.sub, align: 'center', weight: 'normal' });
+  env.fillText('TACTICAL MODULE', VW / 2, TOP_SAFE + 12, { size: env.F.sm, color: env.C.cyan, align: 'center', weight: '600', spacing: 2.5 });
+  env.fillText(`第 ${st.wave} 波前 · 选择战术模块`, VW / 2, TOP_SAFE + 42, { size: env.F.xl, align: 'center' });
+  env.fillText(`三选一 · 同名可叠加 · 已装 ${st.techs.length}`, VW / 2, TOP_SAFE + 66, { size: env.F.sm, color: env.C.sub, align: 'center', weight: 'normal' });
 
   const taken: Record<string, number> = {};
   for (const t of st.techs) taken[t] = (taken[t] ?? 0) + 1;
@@ -894,17 +900,17 @@ function drawTechOverlay(env: SkinEnv, engine: GameEngine) {
     // 文字块
     const tx = MARGIN + 96;
     const textW = VW - MARGIN * 2 - 96 - 16;
-    const descLines = env.wrapCount(def.desc, textW, 12);
-    const blockH = 24 + descLines * 12 * 1.65;
+    const descLines = env.wrapCount(def.desc, textW, env.F.sm);
+    const blockH = 24 + descLines * env.F.sm * 1.65;
     const ty0 = y + cardH / 2 - blockH / 2;
     if (k < 0.7) {
       // 色散残影：粉/紫各偏 2px 压在主标题下
-      env.fillText(def.name, tx - 2, ty0 + 10, { size: 16, color: 'rgba(255,61,129,0.55)' });
-      env.fillText(def.name, tx + 2, ty0 + 10, { size: 16, color: env.ac(0.55) });
+      env.fillText(def.name, tx - 2, ty0 + 10, { size: env.F.lg, color: 'rgba(255,61,129,0.55)' });
+      env.fillText(def.name, tx + 2, ty0 + 10, { size: env.F.lg, color: env.ac(0.55) });
     }
-    env.fillText(def.name, tx, ty0 + 10, { size: 16, color: def.color });
+    env.fillText(def.name, tx, ty0 + 10, { size: env.F.lg, color: def.color });
     if (taken[id]) env.chip(MARGIN + (VW - MARGIN * 2) - 12, y + 22, `已装×${taken[id]}`, def.color);
-    env.wrapBlock(def.desc, tx, ty0 + 34, textW, { color: 'rgba(164,143,200,1)', size: 12 });
+    env.wrapBlock(def.desc, tx, ty0 + 34, textW, { color: 'rgba(164,143,200,1)', size: env.F.sm });
     ctx.restore();
     env.hitBox({ x: MARGIN, y, w: VW - MARGIN * 2, h: cardH, label: `tech-${id}`, cb: () => { if (env.engineCmd({ type: 'PICK_TECH', id })) env.sfx.play('tech'); } });
   });
@@ -924,10 +930,11 @@ function drawResult(env: SkinEnv, time: number) {
   drawMxHeader(env, oi ? '协同作战结算 // CO-OP' : '战斗结算', () => env.goto('home'));
 
   // 终端战绩面板：逐行打印，数字滚动递增
-  const lvName = env.LEVELS.find((l) => l.id === env.app.levelId)?.name ?? '';
+  const lvName = env.getLevel(env.app.levelId).name; // 教学关（id=-2）经 getLevel 特判
+  const missionTag = env.app.levelId < 1 ? 'TRAINING' : String(env.app.levelId);
   const head: [string, string][] = won
-    ? [[`> MISSION ${oi ? 'CO-OP' : env.app.levelId} // ${oi ? '双子星门' : lvName}`, env.C.cyan], ['> STATUS: 防线守住了 ✓', env.C.green]]
-    : [[`> MISSION ${oi ? 'CO-OP' : env.app.levelId} // ${oi ? '双子星门' : lvName}`, env.C.cyan], [`> STATUS: 防线失守 · 撑到第 ${st.wave}/${st.totalWaves} 波`, env.C.pink]];
+    ? [[`> MISSION ${oi ? 'CO-OP' : missionTag} // ${oi ? '双子星门' : lvName}`, env.C.cyan], ['> STATUS: 防线守住了 ✓', env.C.green]]
+    : [[`> MISSION ${oi ? 'CO-OP' : missionTag} // ${oi ? '双子星门' : lvName}`, env.C.cyan], [`> STATUS: 防线失守 · 撑到第 ${st.wave}/${st.totalWaves} 波`, env.C.pink]];
   // 在线局：击杀数按个人击杀分账显示
   const myKills = oi ? (st.killsBy?.[oi.player] ?? st.kills) : st.kills;
   const stats: [label: string, num: number, color?: string, plus?: boolean][] = [
@@ -1003,7 +1010,7 @@ function drawResult(env: SkinEnv, time: number) {
     ctx.stroke();
     ctx.restore();
     env.fillText(['完美防线', '防守好手', '守住防线', '防线失守'][['S', 'A', 'B', 'D'].indexOf(grade)], gx + 52, gy - 8, { size: 15, color: gradeColor });
-    env.fillText(won ? (oi ? '协同加成 ×1.2 已入账' : '下一章解锁已记录') : '再挑战一次就能通过', gx + 52, gy + 14, { size: 10, color: env.C.sub, weight: 'normal' });
+    env.fillText(won ? (oi ? '协同加成 ×1.2 已入账' : env.app.levelId < 1 ? '教学演练完成 · 战役第 1 章已就绪' : '下一章解锁已记录') : '再挑战一次就能通过', gx + 52, gy + 14, { size: 10, color: env.C.sub, weight: 'normal' });
     // 军衔进度副文案（终端风格前缀；满级显示已达最高军衔）
     const rprog = env.getRankProgress();
     env.fillText(
@@ -1016,7 +1023,7 @@ function drawResult(env: SkinEnv, time: number) {
 
   // 动作按钮（语义与默认一致）
   let y = py + panelH + 108;
-  const nextId = env.app.levelId + 1;
+  const nextId = env.app.levelId < 1 ? 1 : env.app.levelId + 1; // 教学关通关后直达战役第 1 章
   const hasNext = !oi && env.LEVELS.some((l) => l.id === nextId); // 联机协作图不是战役关，无「进入下一章」
   if (won) {
     env.btn({ x: px, y, w: pw, h: 48, label: '◈ 双倍战利 · 观看视频', color: env.C.gold, cb: () => env.showToast('广告模块开发中') });
@@ -1032,7 +1039,9 @@ function drawResult(env: SkinEnv, time: number) {
       env.track('share_click', { channel: 'result', result: won ? 'win' : 'lose', wave: st.wave });
       env.shareAppMessage({
         title: won
-          ? `我在《高塔防线》守住了第 ${env.app.levelId} 关 · 全 ${st.totalWaves} 波，漏怪 ${st.leaked}！`
+          ? env.app.levelId < 1
+            ? `我在《高塔防线》完成了教学演练 · 全 ${st.totalWaves} 波，漏怪 ${st.leaked}！`
+            : `我在《高塔防线》守住了第 ${env.app.levelId} 关 · 全 ${st.totalWaves} 波，漏怪 ${st.leaked}！`
           : `我在《高塔防线》第 ${env.app.levelId} 关撑到了第 ${st.wave} 波，求支援！`,
         imageUrl: env.assetUrl('assets/share-cover.jpg'),
       });
@@ -1064,16 +1073,17 @@ function drawSettings(env: SkinEnv) {
     ['✨', '高画质', 'Bloom 辉光特效，低端机建议关闭', env.readQualityHigh(), () => env.setQualityHigh(!env.readQualityHigh())],
   ];
   const skinH = 74;
-  const ph = 72 + rows.length * rowH + skinH + 68;
+  const unitH = 74; // 怪物炮塔风格切换区高度
+  const ph = 72 + rows.length * rowH + skinH + unitH + 68;
   const py = VH / 2 - ph / 2;
   neonPanel(env, px, py, pw, ph, 16);
-  env.fillText('SETTINGS', VW / 2, py + 24, { size: 9, color: env.ac(0.7), weight: '600', align: 'center' });
-  env.fillText('设置中心', VW / 2, py + 46, { size: 17, align: 'center' });
+  env.fillText('SETTINGS', VW / 2, py + 24, { size: env.F.xs, color: env.ac(0.7), weight: '600', align: 'center', spacing: 2.5 });
+  env.fillText('设置中心', VW / 2, py + 46, { size: env.F.xl, align: 'center' });
   rows.forEach(([icon, label, desc, on, cb], i) => {
     const y = py + 66 + i * rowH;
     if (i > 0) {
       ctx.save();
-      ctx.strokeStyle = env.ac(0.12);
+      ctx.strokeStyle = env.ac(0.1);
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(px + 20, y + 0.5);
@@ -1081,17 +1091,17 @@ function drawSettings(env: SkinEnv) {
       ctx.stroke();
       ctx.restore();
     }
-    env.fillText(icon, px + 34, y + rowH / 2, { size: 16, align: 'center' });
-    env.fillText(label, px + 56, y + 19, { size: 14 });
-    env.fillText(desc, px + 56, y + 39, { size: 10, color: env.C.sub, weight: 'normal' });
+    env.fillText(icon, px + 34, y + rowH / 2, { size: env.F.lg, align: 'center' });
+    env.fillText(label, px + 56, y + 19, { size: env.F.md });
+    env.fillText(desc, px + 56, y + 39, { size: env.F.sm, color: env.C.sub, weight: 'normal' });
     env.drawSwitch(px + pw - 20 - 46, y + rowH / 2 - 13, on);
     env.hitBox({ x: px + 16, y, w: pw - 32, h: rowH, label: `set-${label}`, cb: () => { cb(); env.buzz('light'); } });
   });
   // —— 界面皮肤：色卡点选即换并持久化 ——
   const skY = py + 66 + rows.length * rowH;
-  env.fillText('🎨', px + 34, skY + 15, { size: 16, align: 'center' });
-  env.fillText('界面皮肤', px + 56, skY + 10, { size: 14 });
-  env.fillText(env.skin.ref, px + 56, skY + 30, { size: 10, color: env.C.sub, weight: 'normal' });
+  env.fillText('🎨', px + 34, skY + 15, { size: env.F.lg, align: 'center' });
+  env.fillText('界面皮肤', px + 56, skY + 10, { size: env.F.md });
+  env.fillText(env.skin.ref, px + 56, skY + 30, { size: env.F.sm, color: env.C.sub, weight: 'normal' });
   const chipW = (pw - 40 - 12) / env.SKINS.length;
   env.SKINS.forEach((s, i) => {
     const cx0 = px + 20 + i * (chipW + 6);
@@ -1110,13 +1120,24 @@ function drawSettings(env: SkinEnv) {
     ctx.arc(cx0 + 13, cy0 + 15, 4, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
-    env.fillText(s.name, cx0 + 23, cy0 + 15, { size: 11, color: on ? env.C.text : env.C.sub });
+    env.fillText(s.name, cx0 + 23, cy0 + 15, { size: env.F.sm, color: on ? env.C.text : env.C.sub });
     env.hitBox({
       x: cx0, y: cy0, w: chipW, h: 30, label: `skin-${s.id}`,
       cb: () => { env.applySkin(s.id); env.buzz('light'); env.showToast(`已切换「${s.name}」`); },
     });
   });
-  env.btn({ x: px + 24, y: py + 66 + rows.length * rowH + skinH + 12, w: pw - 48, h: 40, label: '关闭', cb: () => env.setShowSettings(false) });
+  // —— 怪物炮塔风格：原版 / 恐怖版分段控件，切换即时重载精灵表 ——
+  const utY = skY + skinH;
+  env.fillText('👾', px + 34, utY + 15, { size: env.F.lg, align: 'center' });
+  env.fillText('怪物炮塔风格', px + 56, utY + 10, { size: env.F.md });
+  env.fillText('恐怖版为全新怪物炮塔美术，缺素材自动回退原版', px + 56, utY + 30, { size: env.F.sm, color: env.C.sub, weight: 'normal' });
+  env.segControl(px + 20, utY + 38, pw - 40, ['原版', '恐怖版'], env.unitTheme() === 'horror' ? 1 : 0, 'unit-theme', (i) => {
+    const t = i === 1 ? 'horror' as const : 'classic' as const;
+    env.setUnitTheme(t);
+    env.track('unit_theme', { theme: t });
+    env.showToast(`已切换「${i === 1 ? '恐怖版' : '原版'}」美术`);
+  });
+  env.btn({ x: px + 24, y: py + 66 + rows.length * rowH + skinH + unitH + 12, w: pw - 48, h: 40, label: '关闭', cb: () => env.setShowSettings(false) });
 }
 
 // ---------------- 指挥官档案（霓虹卡片） ----------------
@@ -1413,7 +1434,7 @@ function handleTouch(env: SkinEnv, phase: 'start' | 'move' | 'end', p: TouchPoin
   if (screen !== 'home') homeDrag = null;
   if (screen !== 'codex') codexDrag = null;
   // 弹层打开时不接管：触摸全部交还主文件（hooks 派发弹层按钮）
-  if (env.showSettings() || env.showProfile()) return false;
+  if (env.showSettings() || env.showProfile() || env.guideActive()) return false;
 
   if (screen === 'home') {
     if (phase === 'start') {

@@ -4,21 +4,24 @@ import {
   CELL, COLS, ROWS, W, H, TOWERS, ENEMIES, DIFFICULTIES, SELL_RATE, TECHS, TOWER_LIST, ENEMY_LIST,
   MECHA, threatStars,
 } from './game/config';
-import { LEVELS } from './game/levels';
+import { LEVELS, getCoopLevel, getLevel, TUTORIAL_LEVEL } from './game/levels';
 import { createEngine } from './game/engine';
 import {
-  drawTower, drawEnemy, drawMapBackground, drawPath, drawBase, drawMecha,
+  drawTower, drawEnemy, drawMapBackground, drawPath, drawPathBase, drawBase, drawMecha, drawSplitFx,
 } from './game/render';
 import {
   BloomLayer, FxLayer, NebulaBg, setFxPlatform,
-  drawBaseGlow, drawStarfield, drawVignette, hash01, readQualityHigh, SPARKS_PER_HIT,
+  drawBaseGlow, drawStarfield, drawVignette, glowSprite, hash01, readQualityHigh, SPARKS_PER_HIT,
 } from './game/fx';
+import { initTurret3D, setUnitTheme as setTurretUnitTheme } from './game/turret3d';
+import { initEnemy3D, enemySheet3D, setUnitTheme as setEnemyUnitTheme } from './game/enemy3d';
+import type { UnitTheme } from './game/enemy3d';
 import type { Command, Difficulty, GameEngine, GameEvent, GameState, TowerType } from './game/types';
 import type { TechId } from './game/types';
 import { sfx } from './audio';
 import { track, configureAnalytics } from './analytics';
 import { connectCoop, wsUrlFromApiBase } from './net';
-import type { CoopCallbacks, CoopConn } from './net';
+import type { CoopCallbacks, CoopConn, MemberInfo } from './net';
 import { createGhostEngine } from './ghost';
 import type { GhostEngine } from './ghost';
 import { SKIN_MODULES } from './skins';
@@ -197,6 +200,8 @@ function loadProgress(): ProgressData {
   return { cleared: Array.isArray(raw?.cleared) ? raw!.cleared : [] };
 }
 function recordLevelClear(levelId: number) {
+  // 教学关/联机图（id < 1）不记战役通关：不进解锁链、不计战役进度
+  if (levelId < 1) return;
   const p = loadProgress();
   if (p.cleared.includes(levelId)) return;
   p.cleared.push(levelId);
@@ -221,6 +226,20 @@ setFxPlatform({
   hardwareConcurrency: () => null, // 微信无核数 API：不硬关 Bloom，交由画质开关控制（默认低画质=关）
   nebulaUrl: () => assetUrl('assets/nebula-texture.jpg'),
 });
+
+// 怪物/炮塔美术主题（srd.unitTheme）：classic 原版 / horror 恐怖版，缺省 classic
+let unitTheme: UnitTheme = String(store.get('srd.unitTheme') || 'classic') === 'horror' ? 'horror' : 'classic';
+function applyUnitTheme(t: UnitTheme) {
+  unitTheme = t;
+  store.set('srd.unitTheme', t);
+  setEnemyUnitTheme(t);
+  setTurretUnitTheme(t);
+}
+
+// 预加载 Blender 3D 炮塔精灵表（加载完成前 drawTower 自动回退程序化绘制）
+initTurret3D(() => wx.createImage(), assetUrl, unitTheme);
+// 预加载 Blender 3D 怪物精灵帧（加载完成前 drawEnemy 自动回退程序化绘制）
+initEnemy3D(() => wx.createImage(), assetUrl, unitTheme);
 
 // ---------------- 用户体系 + 积分体系（MVP，design/multiplayer.md §2/§3） ----------------
 
@@ -555,6 +574,8 @@ const C = {
 };
 const MARGIN = 16;
 const RADIUS = 14;
+/** 字号阶梯：排版统一从这里取，不再散落硬编码字号 */
+const F = { xs: 9, sm: 11, md: 13, lg: 16, xl: 19, xxl: 26 };
 
 // ---------------- 界面皮肤（参考市面塔防/科幻游戏的视觉语言；只换 UI 外观，不动战斗地图配色） ----------------
 
@@ -567,7 +588,7 @@ interface Skin {
   panelTop: string; panelBottom: string;  // 面板渐变两端
   panelSolid: string;                     // 按钮/Toast 的纯色底
   chrome: 'round' | 'chamfer';            // 圆角 / 切角（布局语言差异）
-  pressFx: 'scale' | 'stamp' | 'glitch';  // 按钮按压反馈：缩放 / 盖章 / 故障错位
+  pressFx: 'scale' | 'stamp' | 'glitch';  // 按钮按压风格标识：主文件统一为下沉+变暗，差异由各模块自绘按钮承载
   transition: 'fade' | 'wipe' | 'glitch'; // 页面切换过渡：淡入 / 切角挡板横扫 / 故障色带
 }
 const SKINS: Skin[] = [
@@ -661,14 +682,29 @@ const touchPoint = (t: TouchLike): TouchPoint => ({ x: t.clientX, y: t.clientY }
 const hit = (p: TouchPoint, r: Button) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
 
 function fillText(str: string, x: number, y: number, o: {
-  size?: number; color?: string; align?: CanvasTextAlign; weight?: string; baseline?: CanvasTextBaseline; font?: string;
+  size?: number; color?: string; align?: CanvasTextAlign; weight?: string; baseline?: CanvasTextBaseline; font?: string; spacing?: number;
 } = {}) {
   ctx.save();
   ctx.fillStyle = o.color ?? C.text;
   ctx.textAlign = o.align ?? 'left';
   ctx.textBaseline = o.baseline ?? 'middle';
   ctx.font = `${o.weight ?? 'bold'} ${o.size ?? 14}px ${o.font ?? 'sans-serif'}`;
-  ctx.fillText(str, x, y);
+  if (o.spacing && str.length > 1) {
+    // 字距：canvas 无稳定兼容的 letterSpacing 属性，逐字偏移绘制（只给英文小标等短串用）
+    const chars = [...str];
+    const widths = chars.map((ch) => ctx.measureText(ch).width);
+    const total = widths.reduce((a, b) => a + b, 0) + o.spacing * (chars.length - 1);
+    let cx = x;
+    if (ctx.textAlign === 'center') cx = x - total / 2;
+    else if (ctx.textAlign === 'right' || ctx.textAlign === 'end') cx = x - total;
+    ctx.textAlign = 'left';
+    chars.forEach((ch, i) => {
+      ctx.fillText(ch, cx, y);
+      cx += widths[i] + o.spacing!;
+    });
+  } else {
+    ctx.fillText(str, x, y);
+  }
   ctx.restore();
 }
 
@@ -718,6 +754,21 @@ function panel(x: number, y: number, w: number, h: number, stroke = C.panelLine,
   rr(x, y, w, h, r);
   ctx.fillStyle = g;
   ctx.fill();
+  // 内部受光/阴影分层（裁剪进面板内，不新增渐变/发光，纯 fillRect）
+  ctx.save();
+  rr(x, y, w, h, r);
+  ctx.clip();
+  ctx.fillStyle = ac(0.14); // 顶部 1px 内亮线（玻璃受光面）
+  ctx.fillRect(x, y, w, 1);
+  ctx.fillStyle = 'rgba(0,0,0,0.16)'; // 底部内阴影分层
+  ctx.fillRect(x, y + h - 3, w, 3);
+  ctx.restore();
+  // 双层描边：外暗垫底（±1px 外扩）+ 内亮
+  rr(x, y, w, h, r);
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  rr(x, y, w, h, r);
   ctx.strokeStyle = stroke;
   ctx.lineWidth = 1.2;
   ctx.stroke();
@@ -730,26 +781,13 @@ function drawButton(b: Button) {
   const pressed = pressedBtn !== null
     && pressedBtn.x === b.x && pressedBtn.y === b.y && pressedBtn.w === b.w && pressedBtn.label === b.label;
   if (pressed) {
-    // 按压反馈随皮肤：scale 缩放 / stamp 盖章下移变暗 / glitch 故障抖动（错位残影在标签绘制处叠加）
+    // 按压反馈统一为下沉 1px + 变暗（皮肤差异化的按压表现由各模块自绘按钮承载）
     ctx.save();
-    if (skin.pressFx === 'stamp') {
-      // 琥珀工业 · 盖章：整体下移 2px + 压暗
-      ctx.translate(0, 2);
-      ctx.globalAlpha = 0.72;
-    } else if (skin.pressFx === 'glitch') {
-      // 紫晶矩阵 · 故障：轻微水平抖动（量化时间 + hash01，帧间确定性）
-      ctx.translate((hash01(Math.floor(Date.now() / 60)) - 0.5) * 4, 0);
-      ctx.globalAlpha = 0.9;
-    } else {
-      // 深空全息 · 缩放
-      ctx.translate(b.x + b.w / 2, b.y + b.h / 2);
-      ctx.scale(0.93, 0.93);
-      ctx.translate(-(b.x + b.w / 2), -(b.y + b.h / 2));
-      ctx.globalAlpha = 0.82;
-    }
+    ctx.translate(0, 1);
+    ctx.globalAlpha = 0.85;
   }
   ctx.save();
-  ctx.globalAlpha = b.disabled ? 0.38 : 1;
+  ctx.globalAlpha *= b.disabled ? 0.38 : 1;
   rr(b.x, b.y, b.w, b.h, r);
   if (b.primary && !b.disabled) {
     const g = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
@@ -757,9 +795,23 @@ function drawButton(b: Button) {
     g.addColorStop(1, shade(c));
     ctx.fillStyle = g;
     ctx.fill();
+    // 顶部高光带：上半 40% 白色低透明度 + 1px 顶线（分层 fillRect，不新增渐变）
+    ctx.save();
+    rr(b.x, b.y, b.w, b.h, r);
+    ctx.clip();
+    ctx.fillStyle = 'rgba(255,255,255,0.10)';
+    ctx.fillRect(b.x, b.y, b.w, b.h * 0.4);
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
+    ctx.fillRect(b.x, b.y, b.w, 1);
+    ctx.restore();
   } else {
     ctx.fillStyle = b.active ? `${c}30` : skin.panelSolid;
     ctx.fill();
+    if (pressed && !b.active) {
+      // 幽灵按钮按压态：底色微亮
+      ctx.fillStyle = `${c}14`;
+      ctx.fill();
+    }
     ctx.strokeStyle = b.active ? c : `${c}77`;
     ctx.lineWidth = 1.2;
     ctx.stroke();
@@ -768,11 +820,6 @@ function drawButton(b: Button) {
   if (b.label) {
     const labelColor = b.primary && !b.disabled ? '#081226' : b.active ? c : b.disabled ? '#9AA7C2' : C.text;
     const labelY = b.y + (b.sub ? b.h / 2 - 9 : b.h / 2);
-    if (pressed && skin.pressFx === 'glitch') {
-      // 故障错位残影：红/青各偏 2px，压在主标签之下
-      fillText(b.label, b.x + b.w / 2 - 2, labelY, { size: 14, color: 'rgba(255,61,129,0.7)', align: 'center' });
-      fillText(b.label, b.x + b.w / 2 + 2, labelY, { size: 14, color: ac(0.7), align: 'center' });
-    }
     fillText(b.label, b.x + b.w / 2, labelY, {
       size: 14, color: labelColor, align: 'center',
     });
@@ -791,7 +838,7 @@ function shade(hex: string): string {
 /** 分段控件：高亮块随切换平滑滑动，带轻震动 */
 const segAnim: Record<string, number> = {};
 function segControl(x: number, y: number, w: number, items: string[], activeIdx: number, key: string, onPick: (i: number) => void) {
-  panel(x, y, w, 34, 'rgba(255,201,77,0.25)', 17);
+  panel(x, y, w, 34, ac(0.3), 17);
   const sw = w / items.length;
   const cur = segAnim[key] ?? activeIdx;
   const next = cur + (activeIdx - cur) * 0.28;
@@ -803,9 +850,14 @@ function segControl(x: number, y: number, w: number, items: string[], activeIdx:
   g.addColorStop(1, shade(C.gold));
   ctx.fillStyle = g;
   ctx.fill();
+  // 高亮块顶部 1px 受光线（与主按钮高光带同一语言）
+  rr(x + segAnim[key] * sw + 3, y + 3, sw - 6, 28, 14);
+  ctx.clip();
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.fillRect(x + segAnim[key] * sw + 3, y + 3, sw - 6, 1);
   ctx.restore();
   items.forEach((label, i) => {
-    fillText(label, x + i * sw + sw / 2, y + 17, { size: 13, color: i === activeIdx ? '#081226' : C.sub, align: 'center' });
+    fillText(label, x + i * sw + sw / 2, y + 17, { size: F.md, color: i === activeIdx ? '#081226' : C.sub, align: 'center' });
     hitBox({ x: x + i * sw, y, w: sw, h: 34, label: '', cb: () => { if (i !== activeIdx) { onPick(i); buzz('light'); } } });
   });
 }
@@ -818,7 +870,7 @@ function chip(x: number, y: number, text: string, color: string) {
   rr(x - w, y - 9, w, 18, 9);
   ctx.fillStyle = `${color}22`;
   ctx.fill();
-  ctx.strokeStyle = `${color}88`;
+  ctx.strokeStyle = `${color}77`;
   ctx.lineWidth = 1;
   ctx.stroke();
   ctx.restore();
@@ -829,6 +881,65 @@ function chip(x: number, y: number, text: string, color: string) {
 
 let showProfile = false;
 let showSettings = false;
+
+// ---------------- 首次引导（home 屏弹层，srd.guideDone 键缺失即首次） ----------------
+
+/** 首次引导步骤：0=欢迎气泡 1=教学关推荐气泡；null=未开启/已完成 */
+let guideStep: number | null = null;
+
+/** 结束首次引导：写 srd.guideDone（此后进 home 不再弹）；startTutorial 时跳转教学关简报 */
+function finishGuide(startTutorial: boolean) {
+  guideStep = null;
+  store.set('srd.guideDone', '1');
+  track(startTutorial ? 'guide_done' : 'guide_skip');
+  if (startTutorial) {
+    if (app.mode !== 'single') setMode('single'); // 联机模式下 gotoBriefing 会被拦截进大厅，先切回单人
+    gotoBriefing(TUTORIAL_LEVEL.id);
+  }
+}
+
+/** 首次引导弹层（画在主页之上，皮肤无关：居中气泡不依赖具体皮肤坐标） */
+function drawGuideOverlay() {
+  ctx.fillStyle = 'rgba(7,11,24,0.78)';
+  ctx.fillRect(0, 0, VW, VH);
+  // 全屏透明热区：吞掉面板外的点击，避免穿透到底层页面
+  hitBox({ x: 0, y: 0, w: VW, h: VH, label: '', cb: () => {} });
+  const pw = VW - 72;
+  const px = 36;
+  if (guideStep === 0) {
+    const ph = 250;
+    const py = VH / 2 - ph / 2;
+    panel(px, py, pw, ph, C.panelLine);
+    fillText('WELCOME, COMMANDER', VW / 2, py + 26, { size: 9, color: ac(0.7), weight: '600', align: 'center' });
+    fillText('欢迎，指挥官', VW / 2, py + 50, { size: 18, align: 'center' });
+    wrapBlock(
+      '湮灭虫群正扑向星环殖民地。在路径两侧建造炮塔、升级火力、调度机甲，守住全部进攻波次——十三章战役，从你开始。',
+      px + 20, py + 82, pw - 40, { size: 12, color: C.sub },
+    );
+    btn({
+      x: VW / 2 - 90, y: py + ph - 62, w: 180, h: 46, label: '下一步', primary: true,
+      cb: () => { guideStep = 1; track('guide_step', { step: 2 }); buzz('light'); },
+    });
+  } else if (guideStep === 1) {
+    const ph = 280;
+    const py = VH / 2 - ph / 2;
+    panel(px, py, pw, ph, 'rgba(255,201,77,0.45)');
+    fillText('TRAINING GROUND', VW / 2, py + 26, { size: 9, color: ac(0.7), weight: '600', align: 'center' });
+    fillText('先来一局热身？', VW / 2, py + 50, { size: 18, align: 'center' });
+    wrapBlock(
+      '教学关「训练哨站」：5 波轻量演练，带你熟悉建塔、升级、出售与机甲。也可以跳过，直接开始战役。',
+      px + 20, py + 82, pw - 40, { size: 12, color: C.sub },
+    );
+    btn({
+      x: VW / 2 - 90, y: py + ph - 116, w: 180, h: 46, label: '🎓 开始教学', color: C.gold, primary: true,
+      cb: () => finishGuide(true),
+    });
+    btn({
+      x: VW / 2 - 90, y: py + ph - 58, w: 180, h: 40, label: '跳过，直接战役', color: C.sub,
+      cb: () => finishGuide(false),
+    });
+  }
+}
 
 function drawHeader(title: string, opts: { back?: () => void } = {}) {
   const btnS = 36;
@@ -971,18 +1082,36 @@ function drawProfileOverlay() {
 
 // ---------------- 设置中心（音效/音乐/旁白/震动/画质，欢迎页菜单「⚙ 设置」进入） ----------------
 
-/** 开关控件：46×26 胶囊滑块，(x,y) 为左上角 */
+/** 开关控件：46×26 胶囊滑块，(x,y) 为左上角；滑块位移动画复用 segAnim 的趋近模式 */
+const switchAnim: Record<string, number> = {};
 function drawSwitch(x: number, y: number, on: boolean) {
+  // 同一设置页内开关坐标固定，用坐标做动画 key
+  const key = `${x},${y}`;
+  const target = on ? 1 : 0;
+  const cur = switchAnim[key] ?? target;
+  const next = cur + (target - cur) * 0.28;
+  switchAnim[key] = Math.abs(target - next) < 0.01 ? target : next;
+  const t = switchAnim[key];
   ctx.save();
   rr(x, y, 46, 26, 13);
-  ctx.fillStyle = on ? ac(0.85) : 'rgba(90,107,140,0.45)';
+  ctx.fillStyle = 'rgba(90,107,140,0.45)';
   ctx.fill();
-  ctx.strokeStyle = on ? C.cyan : 'rgba(124,141,176,0.4)';
+  if (t > 0) {
+    // 底色随滑动进度渐亮（路径仍在，直接复用再填一次）
+    ctx.fillStyle = ac(0.85 * t);
+    ctx.fill();
+  }
+  ctx.strokeStyle = t > 0.5 ? C.cyan : 'rgba(124,141,176,0.45)';
   ctx.lineWidth = 1.2;
   ctx.stroke();
   ctx.beginPath();
-  ctx.arc(x + (on ? 32 : 14), y + 13, 9.5, 0, Math.PI * 2);
-  ctx.fillStyle = on ? '#081226' : '#C7D2EA';
+  ctx.arc(x + 14 + 18 * t, y + 13, 9.5, 0, Math.PI * 2);
+  ctx.fillStyle = t > 0.5 ? '#081226' : '#C7D2EA';
+  ctx.fill();
+  // 滑块顶部高光点
+  ctx.beginPath();
+  ctx.arc(x + 14 + 18 * t - 2.5, y + 10.5, 2.2, 0, Math.PI * 2);
+  ctx.fillStyle = t > 0.5 ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.5)';
   ctx.fill();
   ctx.restore();
 }
@@ -1010,11 +1139,12 @@ function drawSettingsOverlay() {
     }],
   ];
   const skinH = 74; // 皮肤切换区高度
-  const ph = 72 + rows.length * rowH + skinH + 68;
+  const unitH = 74; // 怪物炮塔风格切换区高度
+  const ph = 72 + rows.length * rowH + skinH + unitH + 68;
   const py = VH / 2 - ph / 2;
   panel(px, py, pw, ph, C.panelLine);
-  fillText('SETTINGS', VW / 2, py + 24, { size: 9, color: ac(0.7), weight: '600', align: 'center' });
-  fillText('设置中心', VW / 2, py + 46, { size: 17, align: 'center' });
+  fillText('SETTINGS', VW / 2, py + 24, { size: F.xs, color: ac(0.7), weight: '600', align: 'center', spacing: 2.5 });
+  fillText('设置中心', VW / 2, py + 46, { size: F.xl, align: 'center' });
   rows.forEach(([icon, label, desc, on, cb], i) => {
     const y = py + 66 + i * rowH;
     if (i > 0) {
@@ -1027,17 +1157,17 @@ function drawSettingsOverlay() {
       ctx.stroke();
       ctx.restore();
     }
-    fillText(icon, px + 34, y + rowH / 2, { size: 16, align: 'center' });
-    fillText(label, px + 56, y + 19, { size: 14 });
-    fillText(desc, px + 56, y + 39, { size: 10, color: C.sub, weight: 'normal' });
+    fillText(icon, px + 34, y + rowH / 2, { size: F.lg, align: 'center' });
+    fillText(label, px + 56, y + 19, { size: F.md });
+    fillText(desc, px + 56, y + 39, { size: F.sm, color: C.sub, weight: 'normal' });
     drawSwitch(px + pw - 20 - 46, y + rowH / 2 - 13, on);
     hitBox({ x: px + 16, y, w: pw - 32, h: rowH, label: '', cb: () => { cb(); buzz('light'); } });
   });
   // —— 界面皮肤：三套主题色卡，点选即换并持久化 ——
   const skY = py + 66 + rows.length * rowH;
-  fillText('🎨', px + 34, skY + 15, { size: 16, align: 'center' });
-  fillText('界面皮肤', px + 56, skY + 10, { size: 14 });
-  fillText(SKINS.find((s) => s.id === skin.id)?.ref ?? '', px + 56, skY + 30, { size: 10, color: C.sub, weight: 'normal' });
+  fillText('🎨', px + 34, skY + 15, { size: F.lg, align: 'center' });
+  fillText('界面皮肤', px + 56, skY + 10, { size: F.md });
+  fillText(SKINS.find((s) => s.id === skin.id)?.ref ?? '', px + 56, skY + 30, { size: F.sm, color: C.sub, weight: 'normal' });
   const chipW = (pw - 40 - 12) / SKINS.length;
   SKINS.forEach((s, i) => {
     const cx0 = px + 20 + i * (chipW + 6);
@@ -1055,10 +1185,21 @@ function drawSettingsOverlay() {
     ctx.arc(cx0 + 13, cy0 + 15, 4, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
-    fillText(s.name, cx0 + 23, cy0 + 15, { size: 11, color: on ? C.text : C.sub });
+    fillText(s.name, cx0 + 23, cy0 + 15, { size: F.sm, color: on ? C.text : C.sub });
     hitBox({ x: cx0, y: cy0, w: chipW, h: 30, label: '', cb: () => { applySkin(s.id); buzz('light'); showToast(`已切换「${s.name}」`); } });
   });
-  btn({ x: px + 24, y: py + 66 + rows.length * rowH + skinH + 12, w: pw - 48, h: 40, label: '关闭', cb: () => { showSettings = false; } });
+  // —— 怪物炮塔风格：原版 / 恐怖版分段控件，切换即时重载精灵表 ——
+  const utY = skY + skinH;
+  fillText('👾', px + 34, utY + 15, { size: F.lg, align: 'center' });
+  fillText('怪物炮塔风格', px + 56, utY + 10, { size: F.md });
+  fillText('恐怖版为全新怪物炮塔美术，缺素材自动回退原版', px + 56, utY + 30, { size: F.sm, color: C.sub, weight: 'normal' });
+  segControl(px + 20, utY + 38, pw - 40, ['原版', '恐怖版'], unitTheme === 'horror' ? 1 : 0, 'unit-theme', (i) => {
+    const t: UnitTheme = i === 1 ? 'horror' : 'classic';
+    applyUnitTheme(t);
+    track('unit_theme', { theme: t });
+    showToast(`已切换「${i === 1 ? '恐怖版' : '原版'}」美术`);
+  });
+  btn({ x: px + 24, y: py + 66 + rows.length * rowH + skinH + unitH + 12, w: pw - 48, h: 40, label: '关闭', cb: () => { showSettings = false; } });
 }
 
 // ---------------- 章节宣传图（CDN 远程加载；失败时 drawCardArt 回退程序化绘制） ----------------
@@ -1177,8 +1318,8 @@ const CHAPTER_THEME: ChapterTheme[] = [
 
 /** 关卡宣传图：优先本地图片，失败时程序化绘制兜底 */
 function drawCardArt(x: number, y: number, w: number, h: number, chapter: number, time: number, r = 10) {
-  const art = artwork(chapter);
-  if (art.ok) {
+  const art = chapter >= 1 ? artwork(chapter) : null; // 教学关（id<1）无宣传图素材，直接程序化兜底
+  if (art?.ok) {
     // cover-crop 居中 + Ken Burns 缓慢推镜
     const iw = art.img.width > 0 ? art.img.width : 512;
     const ih = art.img.height > 0 ? art.img.height : 768;
@@ -1202,7 +1343,8 @@ function drawCardArt(x: number, y: number, w: number, h: number, chapter: number
 }
 
 function drawCardArtProcedural(x: number, y: number, w: number, h: number, chapter: number, time: number, r = 10) {
-  const th = CHAPTER_THEME[(chapter - 1) % CHAPTER_THEME.length];
+  // 教学关等 id<1 的章号取模可能为负，先归一化到主题表内
+  const th = CHAPTER_THEME[((chapter - 1) % CHAPTER_THEME.length + CHAPTER_THEME.length) % CHAPTER_THEME.length];
   ctx.save();
   rr(x, y, w, h, r);
   ctx.clip();
@@ -1300,6 +1442,11 @@ function goto(s: Screen) {
   if (app.screen === 'result' && s !== 'result') onlineResultInfo = null;
   app.screen = s;
   screenAt = Date.now();
+  // 首次进 home（srd.guideDone 缺失）开启新手引导弹层；完成/跳过后不再触发
+  if (s === 'home' && guideStep == null && !store.get('srd.guideDone')) {
+    guideStep = 0;
+    track('guide_show');
+  }
 }
 
 const TOWER_ORDER: TowerType[] = TOWER_LIST.map((t) => t.type);
@@ -1343,7 +1490,12 @@ let battleMoved = 0;
 /** 科技三选一入场动画时间戳 */
 let techShownAt = 0;
 /** 漏怪红闪时间戳 */
+/** 漏怪红色边缘闪光的时间戳 */
 let leakFlashAt = -9999;
+/** 战地通讯提示条（波次 comm 事件，显示数秒后淡出） */
+let commMsg: { text: string; at: number } | null = null;
+/** 教学关局内引导步骤：0=点选塔槽 1=点绿色格建造 2=点击开战；-1=关闭（非教学关/引导已退隐） */
+let tutStep = -1;
 
 // 塔栏槽位几何
 const SLOT_W = 64;
@@ -1467,6 +1619,7 @@ function stopNarration() {
 function startNarration(levelId: number) {
   stopNarration();
   if (narrationMuted || narration) return;
+  if (levelId < 1) return; // 教学关无旁白素材（lv-2.mp3 不存在）
   try {
     const ac = wx.createInnerAudioContext();
     // 顺序敏感：先设 autoplay / 事件，最后设 src（设 src 即开始加载）
@@ -1837,13 +1990,54 @@ const CARD_H = 116;
 const CARD_GAP = 12;
 const homeTop = TOP_SAFE + 48;
 const homeBottom = VH - 26;
-const totalScrollMax = () => Math.max(0, LEVELS.length * (CARD_H + CARD_GAP) - (homeBottom - homeTop) + 8);
+/** 单人模式时列表顶部多一张教学关入口卡（联机模式 gotoBriefing 会被拦截进大厅，不展示） */
+const tutCardSlot = () => (app.mode === 'single' ? 1 : 0);
+const totalScrollMax = () => Math.max(0, (LEVELS.length + tutCardSlot()) * (CARD_H + CARD_GAP) - (homeBottom - homeTop) + 8);
+
+/** 教学关入口卡（列表顶部槽位；未完成首次引导时带「推荐」角标）。几何与关卡卡一致，三处滚动列表（内置/abyss/ember）同款 */
+function drawTutorialCard(x: number, y: number, w: number) {
+  const h = CARD_H;
+  panel(x, y, w, h, 'rgba(255,201,77,0.45)');
+  // 左侧图标位：毕业帽 + 金色描边
+  const artX = x + 8;
+  const artY = y + 8;
+  const artW = 82;
+  const artH = h - 16;
+  ctx.save();
+  rr(artX, artY, artW, artH, 10);
+  ctx.fillStyle = 'rgba(255,201,77,0.10)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,201,77,0.4)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+  fillText('🎓', artX + artW / 2, artY + artH / 2, { size: 30, align: 'center' });
+
+  const tx = artX + artW + 12;
+  fillText('TRAINING // 新兵演练', tx, y + 20, { size: 10, color: C.gold, weight: '600' });
+  fillText(TUTORIAL_LEVEL.name, tx, y + 44, { size: 17 });
+  fillText(TUTORIAL_LEVEL.sub, tx, y + 66, { size: 11, color: C.sub, weight: 'normal' });
+  fillText(`${TUTORIAL_LEVEL.waves.length} 波 · 学会建塔 / 升级 / 机甲`, tx, y + 88, { size: 10, color: C.dim, weight: 'normal' });
+
+  if (!store.get('srd.guideDone')) chip(x + w - 12, y + 18, '推荐', C.gold);
+  btn({
+    x: x + w - 92, y: y + h - 50, w: 80, h: 38,
+    label: '开始', color: C.gold, primary: true,
+    cb: () => gotoBriefing(TUTORIAL_LEVEL.id),
+  });
+  // 整卡可点（CTA 之后注册以让整卡兜底）
+  hitBox({ x, y, w: w - 104, h, label: '', cb: () => gotoBriefing(TUTORIAL_LEVEL.id) });
+}
 
 function drawHome(time: number) {
   hooks = [];
-  // 皮肤模块可插拔：整屏接管（模块自绘背景与页头）
+  // 皮肤模块可插拔：整屏接管（模块自绘背景与页头）；首次引导弹层皮肤无关，统一由主文件叠画
   const m = SKIN_MODULES[skin.id];
-  if (m?.drawHome) { m.drawHome(env, time); return; }
+  if (m?.drawHome) {
+    m.drawHome(env, time);
+    if (guideStep != null) drawGuideOverlay();
+    return;
+  }
   drawSpaceBg(time);
 
   drawHeader('高塔防线 · 战役选择', { back: () => goto('splash') });
@@ -1861,10 +2055,16 @@ function drawHome(time: number) {
   const cleared = loadProgress().cleared;
   const cardX = MARGIN;
   const cardW = VW - MARGIN * 2;
+  const tutShift = tutCardSlot();
+  // 教学关入口卡（列表顶部，单人模式常驻小卡）
+  if (tutShift) {
+    const ty = homeTop + 8 - app.scroll;
+    if (ty + CARD_H >= homeTop && ty <= homeBottom) drawTutorialCard(cardX, ty, cardW);
+  }
   LEVELS.forEach((lv, i) => {
     const unlock = i === 0 || cleared.includes(LEVELS[i - 1].id);
     const done = cleared.includes(lv.id);
-    const y = homeTop + 8 + i * (CARD_H + CARD_GAP) - app.scroll;
+    const y = homeTop + 8 + (i + tutShift) * (CARD_H + CARD_GAP) - app.scroll;
     if (y + CARD_H < homeTop || y > homeBottom) return;
 
     // 卡底
@@ -1954,10 +2154,9 @@ function drawHome(time: number) {
     ctx.restore();
   }
 
-  fillText('微信小游戏 · 试运营包', VW / 2, VH - 12, { size: 10, color: 'rgba(124,141,176,0.7)', align: 'center' });
-
   if (showProfile) drawProfileOverlay();
   if (showSettings) drawSettingsOverlay();
+  if (guideStep != null) drawGuideOverlay();
 }
 
 
@@ -1969,7 +2168,7 @@ function drawBriefing(time: number) {
   const m = SKIN_MODULES[skin.id];
   if (m?.drawBriefing) { m.drawBriefing(env, time); return; }
   drawSpaceBg(time);
-  const lv = LEVELS.find((l) => l.id === app.levelId) ?? LEVELS[0];
+  const lv = getLevel(app.levelId); // 教学关（id=-2）/ 联机图不在 LEVELS 主列表，经 getLevel 特判
 
   drawHeader('任务简报', { back: () => { stopNarration(); goto('home'); } });
 
@@ -1993,7 +2192,7 @@ function drawBriefing(time: number) {
   ctx.fillStyle = g;
   ctx.fillRect(bx, by, bw, bannerH);
   ctx.restore();
-  fillText(`第 ${lv.id} 章`, bx + 16, by + bannerH - 44, { size: 11, color: C.cyan, weight: '600' });
+  fillText(lv.id < 1 ? '教学关' : `第 ${lv.id} 章`, bx + 16, by + bannerH - 44, { size: 11, color: C.cyan, weight: '600' });
   fillText(lv.name, bx + 16, by + bannerH - 20, { size: 19 });
   fillText(lv.sub, bx + bw - 16, by + bannerH - 20, { size: 11, color: C.sub, align: 'right', weight: 'normal' });
   // 旁白开关（与设置中心共享同一状态）
@@ -2016,8 +2215,8 @@ function drawBriefing(time: number) {
   for (const para of lv.briefing) ty = wrapBlock(para, MARGIN + 16, ty, textW, { size: textSize }) + lineH * 0.6;
 
   const afterY = boxY + boxH + 18;
-  // 战役强度提示（难度阶梯：章节越高威胁星级越高）
-  const diffTxt = `标准战役 · 威胁等级 ${'★'.repeat(threatStars(lv.id))}`;
+  // 战役强度提示（难度阶梯：章节越高威胁星级越高；教学关无难度阶梯）
+  const diffTxt = lv.id < 1 ? '教学演练 · 数值宽松' : `标准战役 · 威胁等级 ${'★'.repeat(threatStars(lv.id))}`;
   ctx.save();
   ctx.font = 'bold 11px sans-serif';
   const dw = ctx.measureText(diffTxt).width + 24;
@@ -2046,6 +2245,48 @@ let bloom: BloomLayer | null = null;
 let pathPixels: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [];
 let qualityHigh = readWxQualityHigh(); // 低频轮询存储，避免每帧读 storage
 let fxFrame = 0;
+
+// 静态地图层：星云底图 + 陨石坑 + 网格 + 进攻走廊宽线 + 路径路基，烘进一张离屏 canvas（地图逻辑尺寸 × 缩放 × DPR），
+// 每帧一次 drawImage 替代从零重绘；动画元素（星野/流动虚线/基地呼吸/暗角）仍每帧画
+let staticMap: { cvs: HTMLCanvasElement; withNebula: boolean } | null = null;
+
+/** 静态地图内容（烘焙与兜底直绘共用）；随地图变换绘制，与动态层同一坐标系 */
+function drawStaticMapContent(c: CanvasRenderingContext2D, engine: GameEngine) {
+  drawMapBackground(c, W, H, nebulaBg.img);
+  // 进攻路线走廊宽半透明底（流动虚线中线仍每帧绘制）
+  c.lineJoin = 'round';
+  c.lineCap = 'round';
+  for (const pts of engine.level.paths) {
+    c.beginPath();
+    pts.forEach(([col, row], i) => {
+      const x = (col + 0.5) * CELL;
+      const y = (row + 0.5) * CELL;
+      if (i === 0) c.moveTo(x, y);
+      else c.lineTo(x, y);
+    });
+    c.strokeStyle = 'rgba(34,224,255,0.10)';
+    c.lineWidth = CELL * 0.92;
+    c.stroke();
+  }
+  drawPathBase(c, pathPixels);
+}
+
+/** 烘焙静态地图层（开战/地图切换时调用；星云贴图晚到时由绘制循环补烘一次） */
+function bakeStaticMap() {
+  const engine = app.engine;
+  if (!engine) {
+    staticMap = null;
+    return;
+  }
+  const s = mapScale * DPR;
+  const cvs = wx.createCanvas();
+  cvs.width = Math.max(1, Math.round(W * s));
+  cvs.height = Math.max(1, Math.round(H * s));
+  const c = cvs.getContext('2d')!;
+  c.scale(s, s);
+  drawStaticMapContent(c, engine);
+  staticMap = { cvs, withNebula: !!nebulaBg.img };
+}
 /** 本局开战时间戳（结算埋点算时长） */
 let battleStartAt = 0;
 /** 最近一局结算积分与评级（gameOver 写入，皮肤结算页经 env.getLastSettlement() 读取） */
@@ -2063,6 +2304,7 @@ function initBattleView() {
   fx = new FxLayer();
   bloom = new BloomLayer(W, H);
   pathPixels = app.engine!.map.paths.map((p) => p.pixels);
+  bakeStaticMap();
   battleStartAt = Date.now();
 }
 
@@ -2070,24 +2312,30 @@ function startBattle() {
   stopNarration();
   app.engine = createEngine(app.difficulty, app.levelId);
   initBattleView();
-  track('game_start', { level_id: app.levelId, difficulty: app.difficulty, coop: 0 });
+  // 教学关开启局内手势引导（prep 阶段三步：选塔 → 建造 → 开战；开战后 comm 横幅接管）
+  tutStep = app.levelId === TUTORIAL_LEVEL.id ? 0 : -1;
+  const tutorial = app.levelId === TUTORIAL_LEVEL.id ? 1 : 0;
+  track('game_start', { level_id: app.levelId, difficulty: app.difficulty, coop: 0, tutorial });
   goto('battle');
 }
 
-// ---------------- 在线联机（C 档 · 主机权威；design/coop-online.md） ----------------
-// 主机：跑唯一真实引擎（createEngine coop:true），200ms 广播裁剪快照，双方指令都进它的 dispatchAs；
+// ---------------- 在线联机（C 档 · 主机权威 · 2–4 人；design/coop-online.md + coop-multi.md） ----------------
+// 主机：跑唯一真实引擎（createEngine coop:true + players:N），200ms 广播裁剪快照，各客机指令按 cmd.player 进它的 dispatchAs；
 // 客机：GhostEngine 渲染快照、指令上网。断线重连/心跳/退房由 net.ts 承载，此处只管会话状态机。
 
 interface OnlineSession {
   conn: CoopConn | null;
-  /** 入口意图：首次 onOpen 时据此发 create / join */
-  intent: { action: 'create' } | { action: 'join'; roomId: string };
+  /** 入口意图：首次 onOpen 时据此发 create（带人数上限） / join */
+  intent: { action: 'create'; maxPlayers: number } | { action: 'join'; roomId: string };
   roomId: string;
-  player: number;          // 0 主机 / 1 客机
-  peerNick: string;
-  peerReady: boolean;      // 客机已加入（主机端「开始战斗」前置条件）
-  peerLost: boolean;       // 对手断线待重连（战斗内持续横幅）
-  started: boolean;        // 已开局（主机点开始 / 客机收到首个快照）
+  player: number;          // 自己槽位（主机恒 0；2–4 人局 0–3）
+  maxPlayers: number;      // 房间人数上限（2–4，旧服缺省 2）
+  members: MemberInfo[];   // 服务器全量名册（members 消息驱动；旧服为空，走 peerReady 兼容路径）
+  startPlayers: { slot: number; nick: string }[] | null; // 开局名单（start 消息 / 主机开局时按名册快照）
+  lostSlots: number[];     // 断线待重连的槽位（peer lost/back/left 与 members 名册共同维护）
+  peerNick: string;        // 兼容字段：最近一个对手的昵称（旧双人服 / toast 用）
+  peerReady: boolean;      // 兼容字段：旧服客机已加入（主机端「开始战斗」前置条件）
+  started: boolean;        // 已开局（主机 start / 客机收到首个快照）
   ended: boolean;          // 结算仲裁已发出/收到（end 已发或游戏已结束）
   connecting: boolean;     // 连接/重连进行中（大厅状态文案）
   snapTimer: ReturnType<typeof setInterval> | null;
@@ -2095,13 +2343,54 @@ interface OnlineSession {
 let online: OnlineSession | null = null;
 /** 快照附带事件的帧间缓冲（主机：frame drainEvents 后推入，200ms 广播时 splice 带走） */
 const snapEvents: GameEvent[] = [];
-/** 结算页展示用的最近一局联机信息（settleOnline 写入，离开 result 时清空） */
-let onlineResultInfo: { peerNick: string; player: number } | null = null;
+/** 结算页展示用的最近一局联机信息（settleOnline 写入，离开 result 时清空）；players 为开局名单 */
+let onlineResultInfo: { peerNick: string; player: number; players: { slot: number; nick: string }[] } | null = null;
 
-/** 在线局信息：联机会话存活时取会话，否则取结算快照（结算页展示队友昵称/分工用） */
-function getOnlineInfo(): { peerNick: string; player: number } | null {
-  if (online) return { peerNick: online.peerNick, player: online.player };
+/** 在线局信息：联机会话存活时取会话，否则取结算快照（结算页展示成绩榜用；players 为开局名单） */
+function getOnlineInfo(): { peerNick: string; player: number; players?: { slot: number; nick: string }[] } | null {
+  if (online) {
+    return {
+      peerNick: online.peerNick,
+      player: online.player,
+      players: online.startPlayers ?? online.members.map((m) => ({ slot: m.slot, nick: m.nick })),
+    };
+  }
   return onlineResultInfo;
+}
+
+/** 引擎实际玩家人数（GameState.players 由引擎并行改造提供，落地前经交叉类型读取；回退：协作 2 / 单人 1） */
+function enginePlayers(st: GameState): number {
+  return (st as GameState & { players?: number }).players ?? (st.coop ? 2 : 1);
+}
+
+/** 协同加成系数：2 人 ×1.2 / 3 人 ×1.3 / 4 人 ×1.4（coop-multi.md §1） */
+const COOP_SCORE_MUL: Record<number, number> = { 2: 1.2, 3: 1.3, 4: 1.4 };
+const coopScoreMul = (n: number) => COOP_SCORE_MUL[n] ?? 1.2;
+
+/** 槽位配色（大厅槽位卡 / HUD 状态条 / 结算榜共用：P1 金 / P2 绿 / P3 青 / P4 粉） */
+const SLOT_COLORS = [C.gold, C.green, C.cyan, C.pink];
+
+/** 会话内槽位昵称：开局名单 > 服务器名册 > 自己 > 兼容字段兜底 */
+function slotNick(sess: OnlineSession, slot: number): string {
+  const p = sess.startPlayers?.find((m) => m.slot === slot);
+  if (p) return p.nick;
+  const m = sess.members.find((mm) => mm.slot === slot);
+  if (m) return m.nick;
+  if (slot === sess.player) return displayNick();
+  return sess.peerNick || `P${slot + 1}`;
+}
+
+/** 本局实际玩家人数（开局名单优先，其次引擎状态，兜底 2） */
+function sessPlayerCount(sess: OnlineSession): number {
+  return sess.startPlayers?.length ?? (app.engine ? enginePlayers(app.engine.state) : 2);
+}
+
+/** 主机「开始」可用条件：≥2 人在线且全部在线客机已就绪（旧服兼容：客机加入即就绪） */
+function hostCanStart(sess: OnlineSession): boolean {
+  if (!sess.roomId || sess.connecting || sess.started) return false;
+  if (!sess.members.length) return sess.peerReady;
+  const on = sess.members.filter((m) => m.online);
+  return on.length >= 2 && on.every((m) => m.slot === sess.player || m.ready);
 }
 
 /** 房间码哈希（埋点脱敏：逐字符累加取模，不上报原码） */
@@ -2124,8 +2413,8 @@ function teardownOnline(sendLeave: boolean) {
   }
 }
 
-/** 联机结算（双方共用入口：gameOver 事件 / end 消息双通道，app.result 防重复）。
- *  各人按个人击杀计分 ×1.2 协同加成；协作图不计战役通关与各关最高 */
+/** 联机结算（全员共用入口：gameOver 事件 / end 消息双通道，app.result 防重复）。
+ *  各人按个人击杀计分 × 协同加成（2 人 ×1.2 / 3 人 ×1.3 / 4 人 ×1.4）；协作图不计战役通关与各关最高 */
 function settleOnline(won: boolean) {
   const sess = online;
   if (app.result || !app.engine || !sess) return;
@@ -2133,10 +2422,16 @@ function settleOnline(won: boolean) {
   // 主机权威：由主机广播结算仲裁（客机等到服务器 end 或快照 gameOver 后本地结算）
   if (sess.player === 0 && !sess.ended) sess.conn?.send({ t: 'end', won });
   sess.ended = true; // 游戏结束意味着 end 已发/将至，离开战斗屏时无需再 leave
-  onlineResultInfo = { peerNick: sess.peerNick, player: sess.player };
   const st0 = app.engine.state;
+  const nPlayers = sessPlayerCount(sess);
+  const mul = coopScoreMul(nPlayers);
+  onlineResultInfo = {
+    peerNick: sess.peerNick,
+    player: sess.player,
+    players: sess.startPlayers ?? sess.members.map((m) => ({ slot: m.slot, nick: m.nick })),
+  };
   const myKills = st0.killsBy?.[sess.player] ?? st0.kills;
-  const gained = Math.round(calcScore({ ...st0, kills: myKills }, 0, won) * 1.2);
+  const gained = Math.round(calcScore({ ...st0, kills: myKills }, 0, won) * mul);
   const grade = battleGrade(st0, won);
   lastSettlement = { score: gained, grade };
   const rankBefore = commanderRank();
@@ -2146,7 +2441,7 @@ function settleOnline(won: boolean) {
   scoreProfile.updatedAt = Date.now();
   saveScore();
   syncScoreToCloud(); // 已登录则同步服务端（静默失败）
-  track('score_gain', { score: gained, grade, level_id: 0, coop: 2 });
+  track('score_gain', { score: gained, grade, level_id: 0, coop: nPlayers });
   track('game_end', {
     level_id: 0,
     difficulty: app.difficulty,
@@ -2157,9 +2452,9 @@ function settleOnline(won: boolean) {
     leaks: st0.leaked,
     score: gained,
     grade,
-    coop: 2,
+    coop: nPlayers,
   });
-  track('room_finish', { room_id: roomHash(sess.roomId), result: won ? 'win' : 'lose', wave: st0.wave });
+  track('room_finish', { room_id: roomHash(sess.roomId), result: won ? 'win' : 'lose', wave: st0.wave, players: nPlayers });
   const rankAfter = commanderRank();
   if (rankAfter !== rankBefore) showToast(`晋升 · ${rankAfter}`);
   goto('result');
@@ -2172,9 +2467,12 @@ function makeNetHandlers(sess: OnlineSession): CoopCallbacks {
       if (online !== sess) return;
       sess.connecting = false;
       if (reconnected) { showToast('已重新连接'); return; }
-      // 首次连接：按入口意图发建房/加房
+      // 首次连接：按入口意图发建房（带人数上限）/加房
       if (sess.intent.action === 'create') {
-        sess.conn?.send({ t: 'create', nick: displayNick(), levelId: 0, difficulty: app.difficulty });
+        sess.conn?.send({
+          t: 'create', nick: displayNick(), levelId: 0, difficulty: app.difficulty,
+          maxPlayers: sess.intent.maxPlayers,
+        });
       } else {
         sess.conn?.send({ t: 'join', roomId: sess.intent.roomId, nick: displayNick() });
       }
@@ -2183,57 +2481,93 @@ function makeNetHandlers(sess: OnlineSession): CoopCallbacks {
       if (online !== sess) return;
       if (sess.roomId) return; // 重连归位确认，忽略
       sess.roomId = info.roomId;
-      sess.conn?.setRejoinInfo({ roomId: info.roomId });
+      sess.player = info.slot;
+      sess.maxPlayers = info.maxPlayers ?? 2; // 旧服缺省双人房
+      sess.members = info.members ?? [];
+      sess.conn?.setRejoinInfo({ roomId: info.roomId, slot: info.slot });
       if (info.role === 'host') {
-        sess.player = 0;
-        track('room_create', { room_id: roomHash(info.roomId) });
+        track('room_create', { room_id: roomHash(info.roomId), max_players: sess.maxPlayers });
       } else {
-        sess.player = 1;
         sess.peerNick = info.hostNick ?? '';
-        sess.peerReady = true;
+        sess.peerReady = true; // 兼容语义：客机加入即缺省就绪
         if (info.difficulty === 'normal') {
           app.difficulty = info.difficulty; // 客机难度以房间为准（当前仅「普通」一档）
         }
-        track('room_join', { room_id: roomHash(info.roomId) });
+        track('room_join', { room_id: roomHash(info.roomId), max_players: sess.maxPlayers });
         showToast(`已加入 ${sess.peerNick || '好友'} 的房间`);
       }
     },
-    onPeer: (nick, status) => {
+    onPeer: (nick, status, slot) => {
       if (online !== sess) return;
       if (status === 'joined') {
-        sess.peerNick = nick;
-        sess.peerReady = true;
-        sess.peerLost = false;
+        if (!sess.peerNick) sess.peerNick = nick; // 客机侧保留 hostNick，不被后续加入的队友覆盖
+        sess.peerReady = true; // 旧服兼容：客机加入即就绪
+        sess.lostSlots = sess.lostSlots.filter((s) => s !== slot);
         showToast(`${nick} 加入了房间`);
         buzz('light');
       } else if (status === 'lost') {
-        sess.peerLost = true;
-        showToast('对手断线，等待重连…');
+        if (!sess.lostSlots.includes(slot)) sess.lostSlots.push(slot);
+        // 客机断线只在状态条置灰（不影响游戏）；主机断线才提示等待
+        if (slot === 0 && sess.player !== 0) showToast('主机断线，等待重连…');
+      } else if (status === 'back') {
+        sess.lostSlots = sess.lostSlots.filter((s) => s !== slot);
+        showToast(slot === 0 && sess.player !== 0 ? '主机已重连' : `${nick || '队友'} 已重连`);
+      } else if (status === 'left') {
+        sess.lostSlots = sess.lostSlots.filter((s) => s !== slot);
+        showToast(`${nick || '队友'} 离开了房间`);
       } else {
-        sess.peerLost = false;
-        showToast('对手已重连');
+        // ready：就绪态以 members 名册为准；旧服无此消息，此处仅兜底置就绪
+        if (!sess.members.length && slot !== sess.player) sess.peerReady = true;
       }
+    },
+    onMembers: (members) => {
+      if (online !== sess) return;
+      sess.members = members;
+      // 名册是在线态权威：online 的槽位移出断线名单，offline 的补入
+      for (const m of members) {
+        if (m.online) sess.lostSlots = sess.lostSlots.filter((s) => s !== m.slot);
+        else if (!sess.lostSlots.includes(m.slot)) sess.lostSlots.push(m.slot);
+      }
+    },
+    onStart: (players) => {
+      if (online !== sess) return;
+      sess.startPlayers = players;
+      // 满员自动开局 / 主机手动开局的服务器广播：主机在此建引擎进战斗（已开局则忽略）
+      // 客机不在此进 battle——幽灵引擎需等首个快照建立（onSnap 路径不变）
+      if (sess.player === 0 && !sess.started) startOnlineBattle();
     },
     onCmd: (player, cmd) => {
       if (online !== sess) return;
-      // 主机收客机指令：以客机身份进引擎（UPGRADE/SELL 越权由引擎拒绝）
+      // 主机收客机指令：以指令自带 player 身份进引擎（UPGRADE/SELL 越权由引擎拒绝）
       if (sess.player === 0 && app.engine && app.screen === 'battle') app.engine.dispatchAs(player, cmd);
     },
     onSnap: (netState, events) => {
-      if (online !== sess || sess.player !== 1) return;
+      if (online !== sess || sess.player === 0) return;
+      // 本局实际人数（开局名单 > 在线名册 > 兜底 2）：3–4 人房客机必须按人数建四路图
+      const nPlayers = sess.startPlayers?.length ?? (sess.members.filter((m) => m.online).length || 2);
       if (!app.engine) {
         // 首个快照 = 主机已开局：客机建幽灵引擎进战斗（渲染层零改动）
         app.levelId = 0;
         const conn = sess.conn;
+        const mySlot = sess.player;
         app.engine = createGhostEngine(app.difficulty, 0, (cmd) => {
-          conn?.send({ t: 'cmd', player: 1, cmd });
-        });
+          conn?.send({ t: 'cmd', player: mySlot, cmd });
+        }, mySlot, nPlayers);
         initBattleView();
         sess.started = true;
-        track('game_start', { level_id: 0, difficulty: app.difficulty, coop: 2 });
+        track('game_start', { level_id: 0, difficulty: app.difficulty, coop: sessPlayerCount(sess) });
         goto('battle');
       }
-      (app.engine as GhostEngine).applySnap(netState, events);
+      const ghost = app.engine as GhostEngine;
+      // 快照 players 为权威：与建图人数不符时（旧服/边界场景）按快照重建 map/level 并重算路径像素
+      if (netState.players >= 2 && ghost.level !== getCoopLevel(netState.players)) {
+        const fixed = createEngine(app.difficulty, 0, { coop: true, players: netState.players });
+        ghost.map = fixed.map;
+        ghost.level = fixed.level;
+        pathPixels = ghost.map.paths.map((p) => p.pixels);
+        bakeStaticMap();
+      }
+      ghost.applySnap(netState, events);
     },
     onEnd: (won, reason) => {
       if (online !== sess) return;
@@ -2244,7 +2578,7 @@ function makeNetHandlers(sess: OnlineSession): CoopCallbacks {
         settleOnline(won);
       } else {
         // 大厅中房间解散
-        showToast(reason === 'peer_left' ? '对手离开了房间' : '房间已解散');
+        showToast(reason === 'peer_left' ? '有队友离开了房间' : '房间已解散');
         teardownOnline(false);
         goto('home');
       }
@@ -2289,7 +2623,9 @@ function openOnlineSession(intent: OnlineSession['intent']): boolean {
   if (online) teardownOnline(false); // 防御：替换旧会话
   const sess: OnlineSession = {
     conn: null, intent, roomId: '', player: intent.action === 'create' ? 0 : 1,
-    peerNick: '', peerReady: false, peerLost: false, started: false, ended: false,
+    maxPlayers: intent.action === 'create' ? intent.maxPlayers : 2,
+    members: [], startPlayers: null, lostSlots: [],
+    peerNick: '', peerReady: false, started: false, ended: false,
     connecting: true, snapTimer: null,
   };
   online = sess;
@@ -2303,8 +2639,11 @@ function openOnlineSession(intent: OnlineSession['intent']): boolean {
   return true;
 }
 
+/** 建房人数上限选择（大厅分段控件；默认 4 人） */
+let lobbyMaxPlayers = 4;
+
 function hostCreateRoom() {
-  openOnlineSession({ action: 'create' }); // room_create 埋点在 onRoom 拿到房号后打
+  openOnlineSession({ action: 'create', maxPlayers: lobbyMaxPlayers }); // room_create 埋点在 onRoom 拿到房号后打
 }
 
 function joinRoom(code: string) {
@@ -2332,27 +2671,76 @@ function shareInvite(roomId: string) {
   showToast('分享后好友点开卡片即可加入');
 }
 
-/** 主机开局：建协作引擎 + 200ms 快照广播 */
-function startOnlineBattle() {
+/** 主机开局：按开局人数建协作引擎 + 200ms 快照广播。
+ *  manual=true 来自「开始战斗」点击（先向服务器发 start 再本地乐观开局，按钮亮起条件与服务器校验一致）；
+ *  manual=false 来自服务器 start 广播（满员自动开局） */
+function startOnlineBattle(manual = false) {
   const sess = online;
-  if (!sess || sess.player !== 0 || !sess.peerReady || sess.started) return;
+  if (!sess || sess.player !== 0 || sess.started) return;
+  if (manual) {
+    if (!hostCanStart(sess)) return;
+    sess.conn?.send({ t: 'start' });
+  }
+  if (!sess.startPlayers) {
+    // 依据当前名册推导开局名单（旧服兼容：主机 + 单一客机）
+    sess.startPlayers = sess.members.length
+      ? sess.members.filter((m) => m.online).map((m) => ({ slot: m.slot, nick: m.nick }))
+      : [{ slot: 0, nick: displayNick() }, { slot: 1, nick: sess.peerNick || '队友' }];
+    if (!sess.startPlayers.some((p) => p.slot === 0)) sess.startPlayers.unshift({ slot: 0, nick: displayNick() });
+  }
+  const nPlayers = Math.max(2, sess.startPlayers.length);
   stopNarration();
   app.levelId = 0; // 协作图「双子星门」
-  app.engine = createEngine(app.difficulty, 0, { coop: true });
+  // players 选项由引擎并行改造提供（缺省按 coop 推导 2）；变量传参绕开落地前的多余属性检查
+  const engineOpts = { coop: true, players: nPlayers };
+  app.engine = createEngine(app.difficulty, 0, engineOpts);
   initBattleView();
   sess.started = true;
   snapEvents.length = 0;
   sess.snapTimer = setInterval(() => {
     const eng = app.engine;
     if (online !== sess || !eng || !sess.conn?.connected) return;
-    // serializeNet 剔除装饰数组；JSON.stringify 同步取值，引用安全
+    // serializeNet 剔除粒子等客机不读字段；JSON.stringify 同步取值，引用安全
     sess.conn.send({ t: 'snap', state: eng.serializeNet(), events: snapEvents.splice(0) });
   }, 200);
-  track('game_start', { level_id: 0, difficulty: app.difficulty, coop: 2 });
+  track('game_start', { level_id: 0, difficulty: app.difficulty, coop: nPlayers });
   goto('battle');
 }
 
 // ---------------- 联机大厅（内置兜底渲染，皮肤无接管） ----------------
+
+/** 大厅槽位卡：昵称 / 主机标记 / 就绪态 / 在线态；空槽显示「等待加入…」 */
+function drawLobbySlot(sess: OnlineSession, slot: number, y: number): void {
+  const px = MARGIN;
+  const pw = VW - MARGIN * 2;
+  // 名册兜底：自己恒视为在线成员（room 回包名册未到的瞬间）；旧服客机用 peerNick 合成对手卡
+  const m = sess.members.find((mm) => mm.slot === slot)
+    ?? (slot === sess.player && sess.roomId
+      ? { slot, nick: displayNick(), online: !sess.connecting, ready: true }
+      : slot !== sess.player && sess.peerReady && sess.peerNick
+        ? { slot, nick: sess.peerNick, online: !sess.lostSlots.includes(slot), ready: true }
+        : undefined);
+  if (!m) {
+    panel(px, y, pw, 44, 'rgba(90,107,140,0.18)');
+    const dots = '.'.repeat(1 + (Math.floor(Date.now() / 500) % 3));
+    fillText(`等待加入${dots}`, VW / 2, y + 22, { size: 12, color: C.dim, align: 'center', weight: 'normal' });
+    return;
+  }
+  const isSelf = slot === sess.player;
+  const lost = sess.lostSlots.includes(slot) || !m.online;
+  panel(px, y, pw, 44, isSelf ? `${C.gold}66` : lost ? 'rgba(90,107,140,0.25)' : C.panelLine);
+  const col = SLOT_COLORS[slot % SLOT_COLORS.length];
+  fillText(`P${slot + 1}`, px + 14, y + 22, { size: 12, color: lost ? C.dim : col });
+  fillText(
+    `${m.nick}${isSelf ? '（我）' : ''}`, px + 46, y + 22,
+    { size: 13, color: lost ? C.dim : C.text, weight: isSelf ? 'bold' : 'normal' },
+  );
+  // 右侧状态徽标：主机 / 断线 / 就绪态
+  let cxr = px + pw - 12;
+  if (slot === 0) { chip(cxr, y + 22, '主机', C.gold); cxr -= 58; }
+  if (lost) chip(cxr, y + 22, '断线', C.red);
+  else if (slot !== 0) chip(cxr, y + 22, m.ready ? '就绪' : '未就绪', m.ready ? C.green : C.sub);
+}
 
 function drawLobby() {
   hooks = [];
@@ -2366,12 +2754,12 @@ function drawLobby() {
   // 玩法说明卡
   panel(px, y, pw, 96, C.panelLine);
   fillText('CO-OP ONLINE', px + 16, y + 20, { size: 10, color: C.cyan, weight: '600' });
-  fillText('与好友各守一条防线', px + 16, y + 42, { size: 15 });
-  fillText('共享生命 · 经济独立 · 击杀各计 · 结算 ×1.2', px + 16, y + 66, { size: 11, color: C.sub, weight: 'normal' });
+  fillText('2–4 人协同防守，各守一条防线', px + 16, y + 42, { size: 15 });
+  fillText('共享生命 · 经济独立 · 击杀各计 · 结算加成 ×1.2–1.4', px + 16, y + 66, { size: 11, color: C.sub, weight: 'normal' });
   y += 116;
 
   if (!sess) {
-    // 入口状态：建房 / 加房（加房走邀请卡片直达，无手输房码）
+    // 入口状态：人数上限选择 + 建房 / 加房（加房走邀请卡片直达，无手输房码）
     if (app.pendingRoom) {
       btn({
         x: px, y, w: pw, h: 52, label: `加入好友的房间 ${app.pendingRoom}`, color: C.green, primary: true,
@@ -2379,42 +2767,68 @@ function drawLobby() {
       });
       y += 66;
     }
+    fillText('人数上限', px + 4, y + 10, { size: 11, color: C.sub, weight: 'normal' });
+    y += 22;
+    segControl(px, y, pw, ['2 人', '3 人', '4 人'], lobbyMaxPlayers - 2, 'lobby-max', (i) => { lobbyMaxPlayers = i + 2; });
+    y += 48;
     btn({ x: px, y, w: pw, h: 52, label: '✚ 创建房间', color: C.cyan, primary: !app.pendingRoom, cb: hostCreateRoom });
     y += 66;
     fillText('建房后邀请好友，好友点开分享卡片即可加入', VW / 2, y + 10, { size: 11, color: C.dim, align: 'center', weight: 'normal' });
     return;
   }
 
+  // 房间码卡：房号 + 人数规格 + 连接状态
+  const onlineCount = sess.members.length ? sess.members.filter((m) => m.online).length : (sess.peerReady ? 2 : 1);
+  panel(px, y, pw, 108, C.panelLine);
+  fillText(`房间码 · ${sess.maxPlayers} 人房（已到 ${onlineCount} 人）`, px + 16, y + 22, { size: 11, color: C.sub, weight: 'normal' });
+  fillText(sess.roomId || '······', VW / 2, y + 58, { size: 34, color: C.gold, align: 'center', font: RES_FONT() });
+  if (sess.connecting) {
+    fillText('连接服务器中…', VW / 2, y + 88, { size: 12, color: C.sub, align: 'center', weight: 'normal' });
+  }
+  y += 124;
+
+  // 槽位列表（最多 4 卡）
+  for (let i = 0; i < sess.maxPlayers; i++) {
+    drawLobbySlot(sess, i, y);
+    y += 54;
+  }
+  y += 6;
+
+  btn({ x: px, y, w: pw, h: 46, label: '📣 邀请好友', color: C.pink, disabled: !sess.roomId, cb: () => shareInvite(sess.roomId) });
+  y += 60;
+
   if (sess.player === 0) {
-    // 主机：房间码大字 + 邀请 + 状态 + 开始
-    panel(px, y, pw, 132, C.panelLine);
-    fillText('房间码', px + 16, y + 22, { size: 11, color: C.sub, weight: 'normal' });
-    fillText(sess.roomId || '······', VW / 2, y + 62, { size: 34, color: C.gold, align: 'center', font: RES_FONT() });
-    fillText(
-      sess.connecting ? '连接服务器中…' : sess.peerReady ? `${sess.peerNick} 已就位` : '等待好友加入…',
-      VW / 2, y + 102, { size: 12, color: sess.peerReady ? C.green : C.sub, align: 'center', weight: 'normal' },
-    );
-    y += 150;
-    btn({ x: px, y, w: pw, h: 46, label: '📣 邀请好友', color: C.pink, disabled: !sess.roomId, cb: () => shareInvite(sess.roomId) });
-    y += 60;
+    // 主机：开始按钮（≥2 人在线且全部在线客机就绪才亮）
     btn({
       x: px, y, w: pw, h: 54, label: '▶ 开始战斗', color: C.green, primary: true,
-      disabled: !sess.peerReady || sess.connecting, cb: startOnlineBattle,
+      disabled: !hostCanStart(sess), cb: () => startOnlineBattle(true),
     });
     y += 68;
-    fillText('标准战役 · 双路压力相当（难度随关卡阶梯生效）', VW / 2, y + 8, { size: 11, color: C.dim, align: 'center', weight: 'normal' });
+    fillText('标准战役 · 多路压力相当（人数越多虫群越强）', VW / 2, y + 8, { size: 11, color: C.dim, align: 'center', weight: 'normal' });
   } else {
-    // 客机：已加入，等待主机开始
-    panel(px, y, pw, 120, C.panelLine);
-    fillText(`已加入 ${sess.peerNick || '好友'} 的房间`, VW / 2, y + 32, { size: 16, align: 'center' });
-    fillText(`房间码 ${sess.roomId} · 标准战役`, VW / 2, y + 60, { size: 11, color: C.sub, align: 'center', weight: 'normal' });
-    // 等待动画：三点轮换
+    // 客机：就绪/取消就绪 + 等待主机开始（旧服无 ready 协议：加入即就绪，不渲染按钮）
+    const me = sess.members.find((m) => m.slot === sess.player);
+    const myReady = me ? me.ready : true; // 旧服兼容：加入即就绪
+    if (sess.members.length) {
+      btn({
+        x: px, y, w: pw, h: 52,
+        label: myReady ? '✓ 已就绪 · 点击取消' : '▶ 就绪',
+        color: myReady ? C.sub : C.green, primary: !myReady,
+        disabled: !sess.roomId || sess.connecting,
+        cb: () => { sess.conn?.send({ t: 'ready', ready: !myReady }); buzz('light'); },
+      });
+      y += 66;
+    }
     const dots = '.'.repeat(1 + (Math.floor(Date.now() / 500) % 3));
-    fillText(sess.connecting ? '连接服务器中…' : `等待主机开始战斗${dots}`, VW / 2, y + 90, { size: 12, color: C.gold, align: 'center', weight: 'normal' });
-    y += 140;
+    fillText(
+      sess.connecting ? '连接服务器中…' : `等待主机开始战斗${dots}`,
+      VW / 2, y + 8, { size: 12, color: C.gold, align: 'center', weight: 'normal' },
+    );
+    y += 24;
   }
-  if (sess.peerLost) {
-    fillText('⚠ 对手断线，等待重连（60s 内）…', VW / 2, y + 10, { size: 12, color: C.red, align: 'center' });
+  // 主机断线告警（客机断线仅在槽位卡置灰，不额外提示）
+  if (sess.player !== 0 && sess.lostSlots.includes(0)) {
+    fillText('⚠ 主机断线，等待重连（60s 内）…', VW / 2, y + 10, { size: 12, color: C.red, align: 'center' });
   }
 }
 
@@ -2429,6 +2843,53 @@ function drawTechWaiting() {
   fillText('战术模块整备中', VW / 2, py2 + 34, { size: 16, align: 'center' });
   const dots = '.'.repeat(1 + (Math.floor(Date.now() / 500) % 3));
   fillText(`等待主机选择战术模块${dots}`, VW / 2, py2 + 66, { size: 12, color: C.sub, align: 'center', weight: 'normal' });
+}
+
+/** 联机多人状态条（顶部 HUD 之下）：各玩家昵称 + 金币 + 击杀，自己高亮；断线者置灰「重连中…」。
+ *  金币/击杀数据：主机端读真实引擎 golds/killsBy，客机端读快照覆盖后的同一字段 */
+function drawCoopStatusBar(st: GameState) {
+  const sess = online;
+  if (!sess?.started) return;
+  const n = sess.startPlayers?.length ?? enginePlayers(st);
+  if (n < 2) return;
+  const bx = 12;
+  const bw = Math.min(VW - 12, CAP_LEFT - 8 - GAME_CENTER_PAD) - bx;
+  const by = TOP_SAFE + 34 + 4;
+  const bh = 22;
+  panel(bx, by, bw, bh, C.panelLine, 8);
+  const sw = bw / n;
+  const midY = by + bh / 2;
+  for (let i = 0; i < n; i++) {
+    const cx0 = bx + i * sw;
+    const isSelf = i === sess.player;
+    const lost = !isSelf && sess.lostSlots.includes(i);
+    if (i > 0) {
+      ctx.save();
+      ctx.strokeStyle = ac(0.15);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(cx0 + 0.5, by + 5);
+      ctx.lineTo(cx0 + 0.5, by + bh - 5);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (lost) {
+      fillText(`${slotNick(sess, i).slice(0, 4)} · 重连中…`, cx0 + sw / 2, midY, { size: 9, color: C.dim, align: 'center', weight: 'normal' });
+      continue;
+    }
+    if (isSelf) {
+      ctx.save();
+      rr(cx0 + 1.5, by + 1.5, sw - 3, bh - 3, 6);
+      ctx.fillStyle = `${C.gold}1F`;
+      ctx.fill();
+      ctx.restore();
+    }
+    const col = SLOT_COLORS[i % SLOT_COLORS.length];
+    const gold = st.golds?.[i] ?? (i === 0 ? st.gold : 0);
+    const kills = st.killsBy?.[i] ?? 0;
+    fillText(slotNick(sess, i).slice(0, 4), cx0 + 7, midY, { size: 9, color: isSelf ? col : C.sub });
+    fillText(`◈${gold} ⚔${kills}`, cx0 + sw - 7, midY, { size: 9, color: isSelf ? C.gold : C.sub, align: 'right', weight: 'normal', font: RES_FONT() });
+  }
 }
 
 /** 邀请进入横幅（分享卡片 query.room 带入；皮肤无关，帧尾绘制盖在当前页之上） */
@@ -2459,6 +2920,9 @@ function drawBattle() {
 
   // 皮肤模块可插拔：HUD+prep / 底部塔栏 / 拖拽幽灵 / 科技三选一 可分别接管
   const bm = SKIN_MODULES[skin.id];
+
+  // 联机多人状态条高度（顶部 HUD 之下；绘制在 HUD 块之后，皮肤接管 HUD 时依然生效）
+  const coopBarH = online?.started && st.coop ? 26 : 0;
 
   // 顶部 HUD（位于胶囊下方安全区）：34px 整体悬浮横条，从左到右 生命 / 金币 / 波次+进度线 / 三个内嵌指令按钮
   if (bm?.drawBattleHUD) {
@@ -2491,7 +2955,7 @@ function drawBattle() {
     ['≡', C.text, () => { app.engine = null; goto('home'); }],
   ];
   segBtns.forEach(([label, color, cb], i) => {
-    fillText(label, btnX0 + i * segW + segW / 2, midY, { size: 12, color, align: 'center', font: RES_FONT() });
+    fillText(label, btnX0 + i * segW + segW / 2, midY, { size: F.sm, color, align: 'center', font: RES_FONT() });
     if (i > 0) vDiv(btnX0 + i * segW, 10);
     hitBox({ x: btnX0 + i * segW, y: hudY, w: segW, h: hudH, label: '', cb });
   });
@@ -2502,23 +2966,23 @@ function drawBattle() {
   const goldTxt = `◈ ${st.gold}`;
   const waveTxt = `${st.wave}/${st.totalWaves}`;
   ctx.save();
-  ctx.font = `bold 12px ${RES_FONT()}`;
+  ctx.font = `bold ${F.sm}px ${RES_FONT()}`;
   const livesW = ctx.measureText(livesTxt).width;
   const goldW = ctx.measureText(goldTxt).width;
   const waveW = ctx.measureText(waveTxt).width;
   ctx.restore();
   const blinkOff = st.lives <= 5 && Math.floor(Date.now() / 400) % 2 === 1;
   let cx = hudX + 12;
-  fillText(livesTxt, cx, midY, { size: 12, color: blinkOff ? 'rgba(255,61,90,0.35)' : C.red, font: RES_FONT() });
+  fillText(livesTxt, cx, midY, { size: F.sm, color: blinkOff ? 'rgba(255,61,90,0.35)' : C.red, font: RES_FONT() });
   cx += livesW + 8;
   vDiv(cx);
   cx += 8;
-  fillText(goldTxt, cx, midY, { size: 12, color: C.gold, font: RES_FONT() });
+  fillText(goldTxt, cx, midY, { size: F.sm, color: C.gold, font: RES_FONT() });
   cx += goldW + 8;
   vDiv(cx);
   cx += 8;
   const waveCx = Math.min(cx + (btnX0 - 16 - cx) / 2, btnX0 - 16 - waveW / 2);
-  fillText(waveTxt, waveCx, midY - 2, { size: 12, color: C.cyan, align: 'center', font: RES_FONT() });
+  fillText(waveTxt, waveCx, midY - 2, { size: F.sm, color: C.cyan, align: 'center', font: RES_FONT() });
   const progW = waveW + 10;
   const progX = waveCx - progW / 2;
   const progY = hudY + hudH - 5;
@@ -2530,23 +2994,26 @@ function drawBattle() {
   ctx.restore();
 
   if (st.phase === 'prep') {
-    // prep 面板尺寸不变，y 按新横条底边重排（34 高 + 8px 缝）
-    const by2 = hudY + hudH + 8;
+    // prep 面板尺寸不变，y 按新横条底边重排（34 高 + 联机状态条 + 8px 缝）
+    const by2 = hudY + hudH + coopBarH + 8;
     panel(VW / 2 - 118, by2, 236, 56, C.panelLine, 19);
-    fillText(`第 ${st.wave} 波 · ${Math.max(0, Math.ceil(st.prepT))}s 后来袭`, VW / 2, by2 + 15, { size: 13, align: 'center', font: RES_FONT() });
+    fillText(`第 ${st.wave} 波 · ${Math.max(0, Math.ceil(st.prepT))}s 后来袭`, VW / 2, by2 + 15, { size: F.md, align: 'center', font: RES_FONT() });
     // 下一波敌情预告（数量统计 + BOSS 警示）
     const groups = engine.level.waves[st.wave - 1]?.groups ?? [];
     const isBossWave = engine.level.waves[st.wave - 1]?.isBoss ?? false;
     const summary = [...new Set(groups.map(g => `${ENEMIES[g.type].name}×${g.count}`))].join(' ');
     const cCol = isBossWave ? C.pink : '#FF9F43';
-    fillText(`${isBossWave ? '⚠ BOSS 波 · ' : ''}${summary}`, VW / 2, by2 + 34, { size: 9, color: isBossWave ? C.pink : '#FF9F43', align: 'center', weight: 'normal' });
+    fillText(`${isBossWave ? '⚠ BOSS 波 · ' : ''}${summary}`, VW / 2, by2 + 34, { size: F.xs, color: isBossWave ? C.pink : '#FF9F43', align: 'center', weight: 'normal' });
     fillText(
       isBossWave ? '建议留好金币与穿甲火力' : '据此提前调整布防',
-      VW / 2, by2 + 47, { size: 9, color: C.sub, align: 'center', weight: 'normal' },
+      VW / 2, by2 + 47, { size: F.xs, color: C.sub, align: 'center', weight: 'normal' },
     );
     btn({ x: VW / 2 - 62, y: by2 + 66, w: 124, h: 36, label: '▶ 立即开战', color: C.gold, primary: true, cb: () => engineCmd({ type: 'SKIP_PREP' }) });
   }
   }
+
+  // 联机多人状态条：各玩家昵称 + 金币 + 击杀（自己高亮，断线置灰「重连中…」）
+  if (coopBarH) drawCoopStatusBar(st);
 
   // 底部塔栏 / 选中升级出售栏（机甲的选中/转移/部署面板走内置栏，皮肤不接管）
   const mechaUi = app.selectedMecha != null || app.movingMecha != null || app.placing === 'mecha';
@@ -2572,6 +3039,22 @@ function drawBattle() {
     fillText('点击 ▶ 继续战斗', VW / 2, py2 + 58, { size: 12, color: C.sub, align: 'center', weight: 'normal' });
   }
 
+  // 战地通讯提示条（波次 comm 事件，顶部横幅显示 4s 后淡出）
+  if (commMsg) {
+    const ct = (Date.now() - commMsg.at) / 1000;
+    if (ct > 4) commMsg = null;
+    else {
+      ctx.save();
+      ctx.globalAlpha = ct < 0.2 ? ct / 0.2 : ct > 3.4 ? (4 - ct) / 0.6 : 1;
+      panel(40, VH * 0.12, VW - 80, 40, 'rgba(34,224,255,0.4)');
+      fillText(commMsg.text, VW / 2, VH * 0.12 + 20, { size: 12, color: C.cyan, align: 'center', weight: 'normal' });
+      ctx.restore();
+    }
+  }
+
+  // 教学关局内引导（prep 阶段手势提示，盖在场景与 HUD 之上、不吞触摸）
+  if (tutStep >= 0 && app.levelId === TUTORIAL_LEVEL.id) drawTutorialHints(!!bm?.drawBattleHUD);
+
   // 漏怪红色边缘闪光
   const lt = (Date.now() - leakFlashAt) / 550;
   if (lt < 1) {
@@ -2587,20 +3070,77 @@ function drawBattle() {
 
   if (st.phase === 'tech' && st.techChoices) {
     if (!techShownAt) techShownAt = Date.now();
-    if (online?.started && online.player === 1) drawTechWaiting(); // 联机客机：科技以主机为准
+    if (online?.started && online.player !== 0) drawTechWaiting(); // 联机客机：科技以主机为准
     else if (bm?.drawTechOverlay) bm.drawTechOverlay(env, engine);
     else drawTechOverlay(st);
   } else {
     techShownAt = 0;
   }
 
-  // 在线联机：对手断线持续横幅（帧尾绘制，盖在所有皮肤 HUD 之上）
-  if (online?.peerLost) {
+  // 在线联机：主机断线持续横幅（帧尾绘制，盖在所有皮肤 HUD 之上；客机断线只在顶部状态条置灰）
+  if (online && online.player !== 0 && online.lostSlots.includes(0)) {
     panel(40, VH * 0.16, VW - 80, 40, 'rgba(255,90,90,0.5)');
-    fillText('⚠ 对手断线，等待重连（60s 内）…', VW / 2, VH * 0.16 + 20, { size: 12, color: C.red, align: 'center' });
+    fillText('⚠ 主机断线，等待重连（60s 内）…', VW / 2, VH * 0.16 + 20, { size: 12, color: C.red, align: 'center' });
   }
 
   if (showSettings) drawSettingsOverlay();
+}
+
+// ---------------- 教学关局内引导（prep 阶段手势提示，非阻塞纯视觉） ----------------
+
+/** 居中提示气泡（金色描边小 pill；cy 为垂直中线） */
+function tutBubble(text: string, cy: number) {
+  ctx.save();
+  ctx.font = 'bold 12px sans-serif';
+  const w = ctx.measureText(text).width + 28;
+  panel(VW / 2 - w / 2, cy - 15, w, 30, 'rgba(255,201,77,0.5)');
+  fillText(text, VW / 2, cy + 0.5, { size: 12, color: C.gold, align: 'center' });
+  ctx.restore();
+}
+
+/** 脉冲描边高亮（呼吸框） */
+function tutHighlight(x: number, y: number, w: number, h: number) {
+  const pulse = 0.45 + 0.45 * Math.sin(Date.now() / 220);
+  ctx.save();
+  rr(x - 3, y - 3, w + 6, h + 6, 14);
+  ctx.strokeStyle = `rgba(255,201,77,${pulse.toFixed(3)})`;
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** 教学关 prep 引导：0 高亮首个可用塔槽 → 1 提示落格建造 → 2 高亮「▶ 立即开战」；开战/离开 prep 即退隐，comm 横幅接管 */
+function drawTutorialHints(skinHud: boolean) {
+  const engine = app.engine;
+  if (!engine) return;
+  const st = engine.state;
+  if (st.phase === 'tech') return; // 科技三选一弹层优先
+  if (st.phase !== 'prep') {
+    // 开战（含跳过建造直接开战）：引导退隐
+    if (tutStep >= 0) { track('guide_step', { step: 5 }); tutStep = -1; }
+    return;
+  }
+  if (tutStep === 0 && app.placing && app.placing !== 'mecha') { tutStep = 1; track('guide_step', { step: 3 }); }
+  if (tutStep === 1 && st.towers.length > 0) { tutStep = 2; track('guide_step', { step: 4 }); }
+
+  if (tutStep === 0) {
+    // 高亮底栏第一个已解锁塔槽（几何与 drawBottomBar/barSlotAt 一致）
+    const i0 = Math.max(0, TOWER_ORDER.findIndex((t) => towerUnlocked(t)));
+    tutHighlight(MARGIN + i0 * (SLOT_W + SLOT_GAP) - barScroll, VH - BAR_H + 12, SLOT_W, BAR_H - 24);
+    tutBubble('👆 点这里选择炮塔', VH - BAR_H - 34);
+  } else if (tutStep === 1) {
+    // 底栏已有「点击地图上绿色格建造」提示条，气泡指到地图区
+    tutBubble('👆 再点击地图上的绿色格，放下炮塔', VH * 0.42);
+  } else if (tutStep === 2) {
+    if (!skinHud) {
+      // 内置 HUD 的「▶ 立即开战」按钮几何（drawBattle prep 面板）
+      tutHighlight(VW / 2 - 62, TOP_SAFE + 34 + 8 + 66, 124, 36);
+      tutBubble('炮塔就位——点击开战！', TOP_SAFE + 34 + 8 + 66 + 56);
+    } else {
+      // 皮肤接管 HUD 时按钮位置各异，只在顶部提示
+      tutBubble('炮塔就位——点击「▶ 立即开战」', TOP_SAFE + 130);
+    }
+  }
 }
 
 // ---------------- 拖拽建塔 ----------------
@@ -2863,9 +3403,9 @@ function drawMechaBarSlot(engine: GameEngine) {
 function drawTechOverlay(st: NonNullable<GameEngine>['state']) {
   ctx.fillStyle = 'rgba(7,11,24,0.92)';
   ctx.fillRect(0, 0, VW, VH);
-  fillText('TACTICAL MODULE', VW / 2, TOP_SAFE + 12, { size: 11, color: C.cyan, align: 'center', weight: '600' });
-  fillText(`第 ${st.wave} 波前 · 选择战术模块`, VW / 2, TOP_SAFE + 42, { size: 19, align: 'center' });
-  fillText(`三选一 · 同名可叠加 · 已装 ${st.techs.length}`, VW / 2, TOP_SAFE + 66, { size: 11, color: C.sub, align: 'center', weight: 'normal' });
+  fillText('TACTICAL MODULE', VW / 2, TOP_SAFE + 12, { size: F.sm, color: C.cyan, align: 'center', weight: '600', spacing: 2.5 });
+  fillText(`第 ${st.wave} 波前 · 选择战术模块`, VW / 2, TOP_SAFE + 42, { size: F.xl, align: 'center' });
+  fillText(`三选一 · 同名可叠加 · 已装 ${st.techs.length}`, VW / 2, TOP_SAFE + 66, { size: F.sm, color: C.sub, align: 'center', weight: 'normal' });
   const taken: Record<string, number> = {};
   for (const t of st.techs) taken[t] = (taken[t] ?? 0) + 1;
   const cardH = 128;
@@ -2894,12 +3434,12 @@ function drawTechOverlay(st: NonNullable<GameEngine>['state']) {
     // 文字块（标题 + 描述）整体与图标垂直居中对齐
     const tx = MARGIN + 96;
     const textW = VW - MARGIN * 2 - 96 - 16;
-    const descLines = wrapCount(def.desc, textW, 12);
-    const blockH = 24 + descLines * 12 * 1.65;
+    const descLines = wrapCount(def.desc, textW, F.sm);
+    const blockH = 24 + descLines * F.sm * 1.65;
     const ty0 = y + cardH / 2 - blockH / 2;
-    fillText(def.name, tx, ty0 + 10, { size: 16, color: def.color });
+    fillText(def.name, tx, ty0 + 10, { size: F.lg, color: def.color });
     if (taken[id]) chip(MARGIN + (VW - MARGIN * 2) - 12, y + 22, `已装×${taken[id]}`, def.color);
-    wrapBlock(def.desc, tx, ty0 + 34, textW, { color: 'rgba(141,160,198,1)', size: 12 });
+    wrapBlock(def.desc, tx, ty0 + 34, textW, { color: 'rgba(141,160,198,1)', size: F.sm });
     ctx.restore();
     hitBox({ x: MARGIN, y, w: VW - MARGIN * 2, h: cardH, label: '', cb: () => { if (engineCmd({ type: 'PICK_TECH', id })) sfx.play('tech'); } });
   });
@@ -2964,11 +3504,13 @@ function drawResult(time: number) {
   fillText(won ? '★ 防线守住了' : '✕ 防线失守', 0, 0, { size: 26, color: won ? C.green : C.pink, align: 'center' });
   ctx.restore();
   fillText(
-    won ? (oi ? '在线协同 · 双子星门' : `第 ${app.levelId} 章 · ${LEVELS.find((l) => l.id === app.levelId)?.name ?? ''}`) : `撑到了第 ${st.wave} / ${st.totalWaves} 波`,
+    won
+      ? (oi ? '在线协同 · 双子星门' : app.levelId < 1 ? `教学关 · ${getLevel(app.levelId).name}` : `第 ${app.levelId} 章 · ${getLevel(app.levelId).name}`)
+      : `撑到了第 ${st.wave} / ${st.totalWaves} 波`,
     VW / 2, y0 + 32, { size: 13, color: C.sub, align: 'center', weight: 'normal' },
   );
 
-  // 本局积分（优先取 gameOver 入账的结算值；联机局为个人击杀 ×1.2，重算公式会失真）
+  // 本局积分（优先取 gameOver 入账的结算值；联机局为个人击杀 × 协同加成，重算公式会失真）
   const gained = lastSettlement ? lastSettlement.score : calcScore(st, app.levelId, won);
   // 在线局：击杀数按个人击杀分账显示
   const myKills = oi ? (st.killsBy?.[oi.player] ?? st.kills) : st.kills;
@@ -2981,7 +3523,6 @@ function drawResult(time: number) {
     ['战术模块', String(st.techs.length), st.techs.length],
     ['积分', `+${gained}`, gained, C.gold, true],
   ];
-  if (oi) rows.splice(1, 0, ['在线协同', `队友 ${oi.peerNick || '—'}`, null, C.cyan]);
   const px = 24;
   const pw = VW - 48;
   const py = y0 + 58;
@@ -3005,11 +3546,49 @@ function drawResult(time: number) {
     }
   });
 
+  // 联机全员成绩榜：按击杀降序，列出各玩家昵称 / 击杀 / 金币 / 守路（自己行高亮）
+  let boardH = 0;
+  if (oi) {
+    const nMul = coopScoreMul(Math.max(2, oi.players?.length ?? 2));
+    const board = (oi.players?.length ? oi.players : [{ slot: oi.player, nick: displayNick() }, { slot: oi.player === 0 ? 1 : 0, nick: oi.peerNick || '队友' }])
+      .map((p) => ({
+        slot: p.slot,
+        nick: p.nick || `P${p.slot + 1}`,
+        kills: st.killsBy?.[p.slot] ?? 0,
+        gold: st.golds?.[p.slot] ?? 0,
+      }))
+      .sort((a, b) => b.kills - a.kills);
+    const by2 = py + rows.length * rowH + 32;
+    boardH = 34 + board.length * 26 + 14;
+    panel(px, by2, pw, boardH, C.panelLine);
+    fillText(`全员战绩 · 协同加成 ×${nMul}`, px + 22, by2 + 24, { size: 13, color: C.cyan });
+    board.forEach((row, ri) => {
+      const ry = by2 + 50 + ri * 26;
+      const col = SLOT_COLORS[row.slot % SLOT_COLORS.length];
+      const isSelf = row.slot === oi.player;
+      if (isSelf) {
+        ctx.save();
+        rr(px + 10, ry - 11, pw - 20, 22, 8);
+        ctx.fillStyle = `${C.gold}14`;
+        ctx.fill();
+        ctx.restore();
+      }
+      fillText(`${ri + 1}`, px + 24, ry, { size: 13, color: col, font: RES_FONT() });
+      fillText(
+        `${row.nick}${isSelf ? '（我）' : ''}${row.slot === 0 ? ' · 主机' : ''}`,
+        px + 46, ry, { size: 12, color: isSelf ? C.text : C.sub, weight: isSelf ? 'bold' : 'normal' },
+      );
+      fillText(`守第${row.slot + 1}路`, px + pw - 170, ry, { size: 10, color: C.dim, weight: 'normal' });
+      fillText(`击杀 ${row.kills}`, px + pw - 108, ry, { size: 11, color: C.sub, weight: 'normal', font: RES_FONT() });
+      fillText(`◈ ${row.gold}`, px + pw - 22, ry, { size: 11, color: C.gold, align: 'right', weight: 'normal', font: RES_FONT() });
+    });
+  }
+
   // 战斗评价：S（零漏怪）A（漏 ≤2）B（其余）D（失败）
   const grade = battleGrade(st, won);
   const gradeColor = grade === 'S' ? C.gold : grade === 'A' ? C.green : grade === 'B' ? C.cyan : C.pink;
   const gx = px + 40;
-  const gy3 = py + rows.length * rowH + 40;
+  const gy3 = py + rows.length * rowH + boardH + 40;
   ctx.save();
   ctx.globalAlpha = Math.min(1, Math.max(0, (t - 0.9) / 0.35));
   ctx.strokeStyle = gradeColor;
@@ -3017,7 +3596,7 @@ function drawResult(time: number) {
   ctx.beginPath(); ctx.arc(gx, gy3 + 10, 26, 0, Math.PI * 2); ctx.stroke();
   fillText(grade, gx, gy3 + 8, { size: 30, color: gradeColor, align: 'center', font: RES_FONT() });
   fillText(['完美防线', '防守好手', '守住防线', '防线失守'][['S','A','B','D'].indexOf(grade)], gx + 44, gy3 - 4, { size: 15, color: gradeColor });
-  fillText(won ? (oi ? '协同加成 ×1.2 已入账' : '下一章解锁已记录') : '再挑战一次就能通过', gx + 44, gy3 + 18, { size: 10, color: C.sub, align: 'center', weight: 'normal' });
+  fillText(won ? (oi ? `协同加成 ×${coopScoreMul(Math.max(2, oi.players?.length ?? 2))} 已入账` : app.levelId < 1 ? '教学演练完成 · 战役第 1 章已就绪' : '下一章解锁已记录') : '再挑战一次就能通过', gx + 44, gy3 + 18, { size: 10, color: C.sub, align: 'center', weight: 'normal' });
   // 军衔进度副文案：当前军衔 · 距下一档差额（满级显示已达最高军衔）
   const rp = rankProgress();
   fillText(
@@ -3028,11 +3607,11 @@ function drawResult(time: number) {
   );
   ctx.restore();
 
-  let y = py + rows.length * rowH + 40;
-  const nextId = app.levelId + 1;
+  let y = py + rows.length * rowH + boardH + 40;
+  const nextId = app.levelId < 1 ? 1 : app.levelId + 1; // 教学关通关后直达战役第 1 章
   const hasNext = !oi && LEVELS.some((l) => l.id === nextId); // 联机协作图不是战役关，无「进入下一章」
-  if (won) {
-    // 激励视频广告位（流量主开通后接入 wx.createRewardedVideoAd 实现真翻倍）
+  if (won && !oi) {
+    // 激励视频广告位（流量主开通后接入 wx.createRewardedVideoAd 实现真翻倍；联机局让位给成绩榜排版）
     btn({ x: px, y, w: pw, h: 50, label: '◈ 双倍战利 · 观看视频', color: C.gold, cb: () => { showToast('广告模块开发中'); } });
     y += 62;
   }
@@ -3048,7 +3627,9 @@ function drawResult(time: number) {
       try {
         wx.shareAppMessage?.({
           title: won
-            ? `我在《高塔防线》守住了第 ${app.levelId} 关 · 全 ${st.totalWaves} 波，漏怪 ${st.leaked}！`
+            ? app.levelId < 1
+              ? `我在《高塔防线》完成了教学演练 · 全 ${st.totalWaves} 波，漏怪 ${st.leaked}！`
+              : `我在《高塔防线》守住了第 ${app.levelId} 关 · 全 ${st.totalWaves} 波，漏怪 ${st.leaked}！`
             : `我在《高塔防线》第 ${app.levelId} 关撑到了第 ${st.wave} 波，求支援！`,
           imageUrl: assetUrl('assets/share-cover.jpg'),
         });
@@ -3091,7 +3672,10 @@ function drawBattleScene() {
   ctx.translate(mapOX + shakeX * mapScale, mapOY + mapPan + shakeY * mapScale);
   ctx.scale(mapScale, mapScale);
 
-  drawMapBackground(ctx, W, H, nebulaBg.img);
+  // 静态地图层（星云底图/网格/走廊宽线/路基已烘焙）；星云贴图晚于开战加载完成时补烘一次
+  if (staticMap && !staticMap.withNebula && nebulaBg.img) bakeStaticMap();
+  if (staticMap) ctx.drawImage(staticMap.cvs, 0, 0, W, H);
+  else drawStaticMapContent(ctx, engine); // 烘焙缺失兜底直绘
   drawStarfield(ctx, W, H, time);
   drawVignette(ctx, W, H);
   for (const ex of engine.map.exits) drawBaseGlow(ctx, ex.centerX, ex.centerY, time);
@@ -3110,30 +3694,35 @@ function drawBattleScene() {
   }
   ctx.restore();
   ctx.globalAlpha = 1;
-  // 进攻路线走廊：宽半透明底 + 青色虚线中线（比 drawPath 更醒目）
-  ctx.save();
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-  for (const pts of engine.level.paths) {
-    ctx.beginPath();
-    pts.forEach(([c, r], i) => {
-      const x = (c + 0.5) * CELL;
-      const y = (r + 0.5) * CELL;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+  // 进攻路线流动能量线（宽底与路基已烘进静态层）
+  drawPath(ctx, pathPixels, time);
+  // 联机协作：每条路入口标注守路玩家昵称（slot = 路径序号 % 玩家人数，与引擎出怪重映射一致）
+  const guardSess = online;
+  if (st.coop && guardSess?.started) {
+    const nGuard = guardSess.startPlayers?.length ?? enginePlayers(st);
+    engine.map.paths.forEach((p, pi) => {
+      const slot = pi % nGuard;
+      const col = SLOT_COLORS[slot % SLOT_COLORS.length];
+      const nick = slotNick(guardSess, slot).slice(0, 5);
+      const [ex, ey] = p.pixels[0];
+      const [nx, ny] = p.pixels[1] ?? p.pixels[0];
+      const dl = Math.hypot(nx - ex, ny - ey) || 1;
+      // 标签放在入口沿路径内侧半格处，避免贴地图边缘被裁掉
+      const lx = ex + ((nx - ex) / dl) * CELL * 0.55;
+      const ly = ey + ((ny - ey) / dl) * CELL * 0.55;
+      const lw2 = nick.length * 11 + 16;
+      ctx.save();
+      ctx.globalAlpha = 0.9;
+      rr(lx - lw2 / 2, ly - 10, lw2, 20, 10);
+      ctx.fillStyle = 'rgba(7,11,24,0.82)';
+      ctx.fill();
+      ctx.strokeStyle = `${col}88`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.restore();
+      fillText(nick, lx, ly, { size: 11, color: col, align: 'center' });
     });
-    ctx.strokeStyle = 'rgba(34,224,255,0.10)';
-    ctx.lineWidth = CELL * 0.92;
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(34,224,255,0.4)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([14, 12]);
-    ctx.lineDashOffset = -time * 30;
-    ctx.stroke();
-    ctx.setLineDash([]);
   }
-  ctx.restore();
-  drawPath(ctx, engine.level.paths, time);
   // 地面灼痕（击杀残留焦痕，贴地、在基地/塔/敌人之下）
   fx?.drawScorches(ctx);
   for (const ex of engine.map.exits) drawBase(ctx, time, st.lives / st.maxLives, ex.centerX, ex.centerY);
@@ -3162,11 +3751,13 @@ function drawBattleScene() {
     const invisible = e.type === 'lurker' && e.stealthT % 4 >= 3;
     ctx.save();
     ctx.translate(p.x, p.y);
-    // 朝向下一个路径点，拐弯时身体跟随转向
+    // 朝向下一个路径点，拐弯时身体跟随转向；3D 精灵帧自带朝向，无需旋转画布
     const ahead = engine.map.posAt(e.path, e.dist + 10);
-    ctx.rotate(Math.atan2(ahead.y - p.y, ahead.x - p.x));
+    const moveAngle = Math.atan2(ahead.y - p.y, ahead.x - p.x);
+    if (!enemySheet3D(e.type)) ctx.rotate(moveAngle);
     drawEnemy(ctx, e.type, ENEMIES[e.type].size, time, {
       alpha: invisible ? 0.12 : 1, enraged: e.enraged, slowed: st.clock < e.slowUntil,
+      angle: moveAngle,
     });
     ctx.restore();
     if (!invisible && e.hp > 0 && e.hp < e.maxHp) {
@@ -3179,6 +3770,14 @@ function drawBattleScene() {
     }
   }
 
+  // 分裂体死亡分裂动画（两瓣分离，幼体从裂口中爬出；叠加在敌人层之上）
+  for (const sp of st.splits) {
+    ctx.save();
+    ctx.translate(sp.x, sp.y);
+    drawSplitFx(ctx, sp, ENEMIES.splitter.size);
+    ctx.restore();
+  }
+
   for (const t of st.towers) {
     const c = { x: (t.col + 0.5) * CELL, y: (t.row + 0.5) * CELL };
     const def = TOWERS[t.type];
@@ -3187,6 +3786,17 @@ function drawBattleScene() {
       ctx.save();
       ctx.strokeStyle = `${def.color}55`;
       ctx.beginPath(); ctx.arc(c.x, c.y, lv.range * CELL, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+    // 掠晶兽增益光圈（脉动金环，引擎时钟与 buffUntil 比较）
+    if (st.clock < t.buffUntil) {
+      ctx.save();
+      ctx.globalAlpha = 0.55 + 0.25 * Math.sin(time * 6);
+      ctx.strokeStyle = '#FFC94D';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(c.x, c.y, CELL * 0.52, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 0.2;
+      ctx.beginPath(); ctx.arc(c.x, c.y, CELL * 0.64, 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
     }
     ctx.save();
@@ -3242,11 +3852,16 @@ function drawBattleScene() {
   fx?.drawTrails(ctx);
 
   for (const pr of st.projectiles) {
-    ctx.save();
-    ctx.fillStyle = pr.kind === 'plasma' ? '#FF6B3D' : '#FF9F43';
-    ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 8;
-    ctx.beginPath(); ctx.arc(pr.x, pr.y, pr.kind === 'plasma' ? 5 : 4, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
+    // 预渲染辉光贴图（按颜色缓存），替代 shadowBlur 软件模糊
+    const gr2 = pr.kind === 'plasma' ? 11 : 9;
+    ctx.drawImage(glowSprite(pr.kind === 'plasma' ? '#FF6B3D' : pr.kind === 'frost' ? '#3DF08C' : '#FF9F43'), pr.x - gr2, pr.y - gr2, gr2 * 2, gr2 * 2);
+    if (pr.kind === 'frost') {
+      // 粘阻弹弹芯：粘液罐
+      ctx.fillStyle = '#3DF08C';
+      ctx.beginPath(); ctx.arc(pr.x, pr.y, 3.2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#D6FFE9';
+      ctx.beginPath(); ctx.arc(pr.x - 1, pr.y - 1, 1.4, 0, Math.PI * 2); ctx.fill();
+    }
   }
 
   // 光束（每帧 1px 随机抖动；电磁炮双层结构；命中点径向光斑；激光命中火花溅射）
@@ -3256,39 +3871,33 @@ function drawBattleScene() {
     const isLaser = b.color.startsWith('#22E0FF');
     const jx = (Math.random() - 0.5) * 2;
     const jy = (Math.random() - 0.5) * 2;
-    if (isRail) {
-      // 电磁炮：外层紫色光晕（粗、半透明）
-      ctx.save();
-      ctx.globalAlpha = a * 0.35;
-      ctx.strokeStyle = b.color; ctx.lineWidth = b.width * 2.4;
-      ctx.shadowColor = b.color; ctx.shadowBlur = 18;
-      ctx.beginPath(); ctx.moveTo(b.x1 + jx, b.y1 + jy); ctx.lineTo(b.x2 + jx, b.y2 + jy); ctx.stroke();
-      ctx.restore();
-      // 内层白芯（细、高亮）
-      ctx.save();
-      ctx.globalAlpha = a;
-      ctx.strokeStyle = '#F4F0FF'; ctx.lineWidth = Math.max(1.5, b.width * 0.4);
-      ctx.beginPath(); ctx.moveTo(b.x1 + jx, b.y1 + jy); ctx.lineTo(b.x2 + jx, b.y2 + jy); ctx.stroke();
-      ctx.restore();
-    } else {
-      ctx.save();
-      ctx.globalAlpha = a;
-      ctx.strokeStyle = b.color; ctx.lineWidth = b.width * (0.5 + a * 0.5);
-      ctx.shadowColor = b.color; ctx.shadowBlur = 12;
-      ctx.beginPath(); ctx.moveTo(b.x1 + jx, b.y1 + jy); ctx.lineTo(b.x2 + jx, b.y2 + jy); ctx.stroke();
-      ctx.restore();
-    }
-    // 命中点径向光斑（beam 端点即命中点；电磁炮加大加亮）
+    // 加色混合 + 粗细两层叠描模拟辉光（替代 shadowBlur 软件模糊）
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
+    ctx.beginPath();
+    ctx.moveTo(b.x1 + jx, b.y1 + jy);
+    ctx.lineTo(b.x2 + jx, b.y2 + jy);
+    if (isRail) {
+      // 电磁炮：外层紫色光晕（粗、半透明）
+      ctx.globalAlpha = a * 0.35;
+      ctx.strokeStyle = b.color; ctx.lineWidth = b.width * 2.4;
+      ctx.stroke();
+      // 内层白芯（细、高亮）
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = '#F4F0FF'; ctx.lineWidth = Math.max(1.5, b.width * 0.4);
+      ctx.stroke();
+    } else {
+      ctx.globalAlpha = a * 0.3;
+      ctx.strokeStyle = b.color; ctx.lineWidth = b.width * (0.5 + a * 0.5) * 2.8;
+      ctx.stroke();
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = b.color; ctx.lineWidth = b.width * (0.5 + a * 0.5);
+      ctx.stroke();
+    }
+    // 命中点光斑：预渲染径向渐变贴图（按颜色缓存；电磁炮加大加亮）
     ctx.globalAlpha = a * 0.9;
     const gr = (8 + b.width * 1.5) * (isRail ? 1.9 : 1);
-    const bg = ctx.createRadialGradient(b.x2, b.y2, 0, b.x2, b.y2, gr);
-    bg.addColorStop(0, '#FFFFFF');
-    bg.addColorStop(0.35, b.color);
-    bg.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = bg;
-    ctx.beginPath(); ctx.arc(b.x2, b.y2, gr, 0, Math.PI * 2); ctx.fill();
+    ctx.drawImage(glowSprite(b.color), b.x2 - gr, b.y2 - gr, gr * 2, gr * 2);
     ctx.restore();
     if (isLaser) fx?.spawnSparks(b.x2, b.y2, '#BDF3FF', SPARKS_PER_HIT);
   }
@@ -3302,13 +3911,13 @@ function drawBattleScene() {
     ctx.restore();
   }
 
+  // 引擎粒子：fillRect 批量绘制（无逐颗 save/restore/arc）
   for (const pt of st.particles) {
-    ctx.save();
     ctx.globalAlpha = pt.ttl / pt.maxTtl;
     ctx.fillStyle = pt.color;
-    ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.size * 0.6, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
+    ctx.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
   }
+  ctx.globalAlpha = 1;
 
   // 渲染层补充特效：BOSS 多层冲击波环 / 死亡碎片 / 火花 / 击杀白闪
   fx?.drawRings(ctx);
@@ -3567,12 +4176,14 @@ function frame() {
       else if (ev.type === 'waveStart') sfx.play('waveStart');
       else if (ev.type === 'waveClear') sfx.play('waveClear');
       else if (ev.type === 'bossDown') { sfx.play('boss'); buzz('heavy'); }
+      else if (ev.type === 'miniBossDown') { sfx.play('boss'); buzz('medium'); }
+      else if (ev.type === 'comm') commMsg = { text: ev.text, at: Date.now() };
       else if (ev.type === 'sfx') sfx.play(ev.name);
       else if (ev.type === 'gameOver') {
         if (app.result) continue; // 联机双通道（end 消息 / 快照事件）防重复结算
         sfx.play(ev.won ? 'victory' : 'defeat');
         buzz(ev.won ? 'medium' : 'heavy');
-        // 在线联机：走联机结算（个人击杀 ×1.2、不计战役进度；主机先发 end 仲裁）
+        // 在线联机：走联机结算（个人击杀 × 协同加成、不计战役进度；主机先发 end 仲裁）
         if (online) { settleOnline(ev.won); continue; }
         app.result = { won: ev.won };
         // 结算埋点（wave_fail 并入：失败时 result=lose + wave_reached 即失败波次，不重复打）
@@ -3602,6 +4213,7 @@ function frame() {
           score: gained,
           grade,
           coop: 0,
+          tutorial: levelId === TUTORIAL_LEVEL.id ? 1 : 0,
         });
         if (ev.won) recordLevelClear(levelId);
         const rankAfter = commanderRank();
@@ -3695,10 +4307,11 @@ const env: SkinEnv = {
   C,
   get skin() { return skin; },
   ac,
+  F,
   // 绘制助手
   fillText, rr, panel, wrapBlock, wrapCount, shade, btn, hitBox, chip, segControl, drawSwitch,
   drawAvatar, drawCardArt, drawSpaceBg, drawStars, RES_FONT, rng, hash01, drawTower, drawEnemy,
-  drawMecha, drawMechaBarSlot,
+  drawMecha, drawMechaBarSlot, drawTutorialCard, tutCardSlot,
   // 状态访问
   app, codex,
   getScreenAt: () => screenAt,
@@ -3706,6 +4319,7 @@ const env: SkinEnv = {
   setShowProfile: (v) => { showProfile = v; },
   showSettings: () => showSettings,
   setShowSettings: (v) => { showSettings = v; },
+  guideActive: () => guideStep != null,
   getPressedBtn: () => pressedBtn,
   getTechShownAt: () => techShownAt,
   setTechShownAt: (v) => { techShownAt = v; },
@@ -3715,13 +4329,13 @@ const env: SkinEnv = {
   // 数据
   LEVELS, DIFFICULTIES, TOWER_LIST, ENEMY_LIST, TOWERS, ENEMIES, TECHS,
   TOWER_ORDER, TOWER_UNLOCK, SELL_RATE, STORY_PARAS, CODEX_TABS, ENEMY_CATEGORY,
-  MECHA,
+  MECHA, TUTORIAL_LEVEL,
   SLOT_W, SLOT_GAP, stripMaxScroll, SKINS, CELL, COLS, ROWS,
   // 进度与解锁
   loadProgress, unlockedChapter, towerUnlocked,
   // 动作
   goto, gotoBriefing, stopNarration, startBattle, engineCmd, applySkin, authUser, openFeedback,
-  setMode, getOnlineInfo,
+  setMode, getOnlineInfo, getLevel,
   // 主动拉起分享（判空包装 wx.shareAppMessage；assets/ 路径统一转 CDN URL）
   shareAppMessage: (o) => { try { wx.shareAppMessage?.({ ...o, imageUrl: o.imageUrl ? assetUrl(o.imageUrl) : o.imageUrl }); } catch { /* ignore */ } },
   assetUrl,
@@ -3742,6 +4356,8 @@ const env: SkinEnv = {
   toggleVibrateMuted,
   readQualityHigh: readWxQualityHigh,
   setQualityHigh: (v) => { setWxQualityHigh(v); qualityHigh = v; },
+  unitTheme: () => unitTheme,
+  setUnitTheme: applyUnitTheme,
   // 触摸接管
   consumeTap: () => { tapConsumed = true; },
 };
@@ -3766,8 +4382,8 @@ wx.onTouchStart((e) => {
     if (!b.disabled && hit(p, b)) { pressedBtn = b; break; }
   }
 
-  // 弹层（设置中心/指挥官档案）打开时，底层页面不响应滑动与战斗手势；面板按钮由 touchend 的 hooks 触发
-  if (showSettings || showProfile) return;
+  // 弹层（设置中心/指挥官档案/首次引导）打开时，底层页面不响应滑动与战斗手势；面板按钮由 touchend 的 hooks 触发
+  if (showSettings || showProfile || guideStep != null) return;
 
   if (app.screen === 'home' || app.screen === 'codex') { app.dragY = p.y; app.dragAcc = 0; return; }
 

@@ -1940,8 +1940,70 @@ LEVELS.push(
 
 export function getLevel(id: number): LevelDef {
   if (id === COOP_LEVEL.id) return COOP_LEVEL;
+  if (id === TUTORIAL_LEVEL.id) return TUTORIAL_LEVEL;
   return LEVELS.find((l) => l.id === id) ?? LEVELS[0];
 }
+
+// ---------------- 教学关卡 ----------------
+
+/**
+ * 教学关「训练哨站」（不进 LEVELS —— 主页选关直接 forEach LEVELS，绝不能污染；
+ * 不参与解锁链：recordLevelClear 对 id < 1 的关跳过记录）。id 取 -2，与
+ * COOP_LEVEL（0）/ COOP_LEVEL4（-1）同一先例：id < 1 时难度阶梯的章节倍率恒为 0。
+ * 单路径短蛇形，5 波轻量兽潮（仅 crawler / speeder），每波一句 comm 分步教学，
+ * 配合主页首次引导与局内手势提示（main.ts tutStep）覆盖建塔 / 升级 / 出售 / 机甲。
+ */
+export const TUTORIAL_LEVEL: LevelDef = {
+  id: -2,
+  name: '训练哨站',
+  sub: '新兵演练 · 教学关',
+  briefing: [
+    '训练哨站——星环防线的新兵演练场。这里没有虫群主力，只有靶机模拟的轻量兽潮，放心大胆地试。',
+    '演练目标：学会建造炮塔、升级与出售，认识机甲。跟着顶部的战地通讯一步步来，5 波小场面，守到底就毕业。',
+    '演练结束后，第 1 章「星环外沿」见。指挥官，开始吧。',
+  ],
+  epilogue: '演练完成！你已经掌握了建塔、升级与机甲部署。真正的虫群在星环外沿等你——第 1 章，出击。',
+  paths: [
+    [[-1, 2], [7, 2], [7, 6], [1, 6], [1, 10], [7, 10], [7, 13], [4, 13], [4, 16]],
+  ],
+  waves: [
+    {
+      wave: 1, groups: [{ type: 'crawler', count: 6, interval: 1.5 }], bonus: 60, isBoss: false,
+      comm: '点底部塔栏选炮塔，再点绿色格建造',
+    },
+    {
+      wave: 2, groups: [{ type: 'crawler', count: 8, interval: 1.3 }], bonus: 70, isBoss: false,
+      comm: '点已建好的炮塔：可升级，也可出售',
+    },
+    {
+      wave: 3,
+      groups: [
+        { type: 'speeder', count: 6, interval: 1.0 },
+        { type: 'crawler', count: 4, interval: 1.2 },
+      ],
+      bonus: 80, isBoss: false,
+      comm: '快速单位逼近——火力尽量铺开',
+    },
+    {
+      wave: 4,
+      groups: [
+        { type: 'crawler', count: 8, interval: 1.0 },
+        { type: 'speeder', count: 6, interval: 0.9 },
+      ],
+      bonus: 100, isBoss: false,
+      comm: '塔栏末位是机甲：可部署到前线支援',
+    },
+    {
+      wave: 5,
+      groups: [
+        { type: 'crawler', count: 12, interval: 0.8 },
+        { type: 'speeder', count: 8, interval: 0.7 },
+      ],
+      bonus: 160, isBoss: false,
+      comm: '最后一波！全力开火，守住出口',
+    },
+  ],
+};
 
 // ---------------- 在线联机协作关卡 ----------------
 
@@ -1951,7 +2013,8 @@ export function getLevel(id: number): LevelDef {
  * 波次 15 波，强度对齐 normal 第 5-6 章；每组显式指定 path 且两路交替，保证双路压力相当。
  * BOSS 波（第 8 / 15 波）双路各出一只，血量取同级单 BOSS 的 60%：
  * 两名玩家各有完整 BOSS 战体验，总血量 1.2 倍与「单路 1.2 倍血」方案压力相当。
- * 由联机层以 createEngine(difficulty, 0, { coop: true }) 创建；难度系数仍经 hpMul/speedMul 生效。
+ * 由联机层以 createEngine(difficulty, 0, { coop: true }) 创建（players 缺省按 2）；
+ * 3–4 人协作局由引擎经 getCoopLevel 自动改选四路图 COOP_LEVEL4；难度系数仍经 hpMul/speedMul 生效。
  */
 export const COOP_LEVEL: LevelDef = {
   id: 0,
@@ -2100,3 +2163,269 @@ export const COOP_LEVEL: LevelDef = {
     },
   ],
 };
+
+/**
+ * 四人协作专用图（不进 LEVELS，理由同 COOP_LEVEL）。id 取 -1：联机层与引擎只经
+ * getCoopLevel 按人数选图，不复用 0（避免 getLevel(0) 与双人图冲突）；
+ * id < 1 时难度阶梯的章节倍率恒为 0，与 COOP_LEVEL 的数值行为一致。
+ * 地图为四条互不接触的蛇形走廊：各据一条纵向带（列 0-1 / 2-3 / 5-6 / 7-8），
+ * 从顶部轨道空降、底部出屏，四条路等长、压力完全对称；中央第 4 列全空，是公共建造纵深。
+ * 波次 15 波，强度以 COOP_LEVEL 为基准按 4 路分摊：每组显式 path 0–3，四路压力相当；
+ * BOSS 波（第 8 / 15 波）四路各出一只，血量取同级单 BOSS 的约 1/3（总血量约 1.3 倍）。
+ * 不满 4 人开局时引擎按活跃路数取模重映射（path % players），空路不出怪。
+ */
+export const COOP_LEVEL4: LevelDef = {
+  id: -1,
+  name: '四象星垒',
+  sub: '协同作战 · 四路联机防线',
+  briefing: [
+    '四象星垒——殖民地轨道防御网的最后支点。虫群主力撕成四股，沿四条垂直空降走廊同时扑向垒底护盾核心。',
+    '指挥部命令：四名指挥官各领一条走廊，独立军费、各自为战——但护盾核心只有一座，任何一路漏掉的虫子都在烧共同的生命。',
+    '守住全部波次。四条走廊等长等压，没有谁的防线更轻松。协同加成已计入战后军功，指挥官，并肩作战。',
+  ],
+  epilogue: '四象星垒在四面火力网中屹立不倒。四条走廊的焦土连成一线——这一战，是四双眼睛一起赢下的。',
+  // 四条纵向蛇形路（各据一条 2 列纵向带，互不接触；中央第 4 列为公共建造带），顶进底出、四路等长
+  paths: [
+    [[0, -1], [0, 1], [1, 1], [1, 3], [0, 3], [0, 5], [1, 5], [1, 7], [0, 7], [0, 9], [1, 9], [1, 11], [0, 11], [0, 13], [1, 13], [1, 16]],
+    [[3, -1], [3, 1], [2, 1], [2, 3], [3, 3], [3, 5], [2, 5], [2, 7], [3, 7], [3, 9], [2, 9], [2, 11], [3, 11], [3, 13], [2, 13], [2, 16]],
+    [[5, -1], [5, 1], [6, 1], [6, 3], [5, 3], [5, 5], [6, 5], [6, 7], [5, 7], [5, 9], [6, 9], [6, 11], [5, 11], [5, 13], [6, 13], [6, 16]],
+    [[8, -1], [8, 1], [7, 1], [7, 3], [8, 3], [8, 5], [7, 5], [7, 7], [8, 7], [8, 9], [7, 9], [7, 11], [8, 11], [8, 13], [7, 13], [7, 16]],
+  ],
+  waves: [
+    {
+      wave: 1,
+      groups: [
+        { type: 'crawler', count: 2, interval: 1.1, path: 0 },
+        { type: 'crawler', count: 2, interval: 1.1, path: 1 },
+        { type: 'crawler', count: 2, interval: 1.1, path: 2 },
+        { type: 'crawler', count: 2, interval: 1.1, path: 3 },
+      ],
+      bonus: 40, isBoss: false,
+      comm: '四象星垒接敌——虫群先锋同时出现在四条空降走廊。各守一路，指挥官！',
+    },
+    {
+      wave: 2,
+      groups: [
+        { type: 'speeder', count: 2, interval: 0.8, path: 0 },
+        { type: 'crawler', count: 3, interval: 1.0, path: 1 },
+        { type: 'crawler', count: 3, interval: 1.0, path: 2 },
+        { type: 'speeder', count: 2, interval: 0.8, path: 3 },
+      ],
+      bonus: 55, isBoss: false,
+      comm: '四路同时遇袭！别让任何一路放空。',
+    },
+    {
+      wave: 3,
+      groups: [
+        { type: 'splitter', count: 2, interval: 0.9, path: 0 },
+        { type: 'lurker', count: 2, interval: 0.9, path: 1 },
+        { type: 'splitter', count: 3, interval: 0.9, path: 2 },
+        { type: 'lurker', count: 2, interval: 0.9, path: 3 },
+      ],
+      bonus: 65, isBoss: false,
+    },
+    {
+      wave: 4,
+      groups: [
+        { type: 'tanker', count: 1, interval: 0.9, path: 0 },
+        { type: 'tanker', count: 1, interval: 0.9, path: 1 },
+        { type: 'tanker', count: 1, interval: 0.9, path: 2 },
+        { type: 'tanker', count: 1, interval: 0.9, path: 3 },
+        { type: 'crawler', count: 2, interval: 0.8, path: 0 },
+        { type: 'crawler', count: 2, interval: 0.8, path: 1 },
+        { type: 'crawler', count: 2, interval: 0.8, path: 2 },
+        { type: 'crawler', count: 2, interval: 0.8, path: 3 },
+      ],
+      bonus: 80, isBoss: false,
+    },
+    {
+      wave: 5,
+      groups: [
+        { type: 'lurker', count: 2, interval: 0.6, path: 0 },
+        { type: 'lurker', count: 2, interval: 0.6, path: 1 },
+        { type: 'lurker', count: 2, interval: 0.6, path: 2 },
+        { type: 'lurker', count: 2, interval: 0.6, path: 3 },
+        { type: 'speeder', count: 3, interval: 0.6, path: 0 },
+        { type: 'speeder', count: 3, interval: 0.6, path: 1 },
+        { type: 'speeder', count: 2, interval: 0.6, path: 2 },
+        { type: 'speeder', count: 2, interval: 0.6, path: 3 },
+      ],
+      bonus: 100, isBoss: false,
+      comm: '隐匿者开始渗透全部走廊——电磁炮可无视隐身。',
+    },
+    {
+      wave: 6,
+      groups: [
+        { type: 'splitter', count: 2, interval: 0.65, path: 0 },
+        { type: 'splitter', count: 2, interval: 0.65, path: 1 },
+        { type: 'splitter', count: 3, interval: 0.65, path: 2 },
+        { type: 'splitter', count: 2, interval: 0.65, path: 3 },
+        { type: 'tanker', count: 1, interval: 0.8, path: 0 },
+        { type: 'tanker', count: 1, interval: 0.8, path: 1 },
+        { type: 'tanker', count: 1, interval: 0.8, path: 2 },
+        { type: 'tanker', count: 1, interval: 0.8, path: 3 },
+      ],
+      bonus: 130, isBoss: false,
+    },
+    {
+      wave: 7,
+      groups: [
+        { type: 'lurker', count: 3, interval: 0.55, path: 0 },
+        { type: 'lurker', count: 2, interval: 0.55, path: 1 },
+        { type: 'lurker', count: 3, interval: 0.55, path: 2 },
+        { type: 'lurker', count: 2, interval: 0.55, path: 3 },
+        { type: 'speeder', count: 3, interval: 0.5, path: 0 },
+        { type: 'speeder', count: 3, interval: 0.5, path: 1 },
+        { type: 'speeder', count: 3, interval: 0.5, path: 2 },
+        { type: 'speeder', count: 3, interval: 0.5, path: 3 },
+      ],
+      bonus: 150, isBoss: false,
+    },
+    {
+      wave: 8,
+      groups: [
+        // 同级单 BOSS 基线约 6667 血（COOP_LEVEL 第 8 波 4000 = 60%）；四路各取约 33%，总血量约 1.32 倍
+        { type: 'boss', count: 1, interval: 1.0, hpOverride: 2200, rewardOverride: 200, path: 0 },
+        { type: 'boss', count: 1, interval: 1.0, hpOverride: 2200, rewardOverride: 200, path: 1 },
+        { type: 'boss', count: 1, interval: 1.0, hpOverride: 2200, rewardOverride: 200, path: 2 },
+        { type: 'boss', count: 1, interval: 1.0, hpOverride: 2200, rewardOverride: 200, path: 3 },
+      ],
+      bonus: 280, isBoss: true,
+      comm: '警告：四路各有一只巨兽压阵！各自集火，别让它碰到护盾核心！',
+    },
+    {
+      wave: 9,
+      groups: [
+        { type: 'tanker', count: 2, interval: 0.6, path: 0 },
+        { type: 'tanker', count: 2, interval: 0.6, path: 1 },
+        { type: 'tanker', count: 1, interval: 0.6, path: 2 },
+        { type: 'tanker', count: 2, interval: 0.6, path: 3 },
+        { type: 'lurker', count: 2, interval: 0.55, path: 0 },
+        { type: 'lurker', count: 2, interval: 0.55, path: 1 },
+        { type: 'lurker', count: 2, interval: 0.55, path: 2 },
+        { type: 'lurker', count: 2, interval: 0.55, path: 3 },
+      ],
+      bonus: 170, isBoss: false,
+    },
+    {
+      wave: 10,
+      groups: [
+        { type: 'splitter', count: 3, interval: 0.55, path: 0 },
+        { type: 'splitter', count: 2, interval: 0.55, path: 1 },
+        { type: 'splitter', count: 3, interval: 0.55, path: 2 },
+        { type: 'splitter', count: 2, interval: 0.55, path: 3 },
+        { type: 'speeder', count: 3, interval: 0.5, path: 0 },
+        { type: 'speeder', count: 2, interval: 0.5, path: 1 },
+        { type: 'speeder', count: 3, interval: 0.5, path: 2 },
+        { type: 'speeder', count: 2, interval: 0.5, path: 3 },
+        { type: 'crawler', count: 3, interval: 0.5, path: 0 },
+        { type: 'crawler', count: 3, interval: 0.5, path: 1 },
+        { type: 'crawler', count: 3, interval: 0.5, path: 2 },
+        { type: 'crawler', count: 3, interval: 0.5, path: 3 },
+      ],
+      bonus: 200, isBoss: false,
+      comm: '兽潮密度还在上升。军费独立——照看好你自己的那一路。',
+    },
+    {
+      wave: 11,
+      groups: [
+        { type: 'lurker', count: 3, interval: 0.5, path: 0 },
+        { type: 'lurker', count: 3, interval: 0.5, path: 1 },
+        { type: 'lurker', count: 3, interval: 0.5, path: 2 },
+        { type: 'lurker', count: 3, interval: 0.5, path: 3 },
+        { type: 'tanker', count: 1, interval: 0.7, path: 0 },
+        { type: 'tanker', count: 1, interval: 0.7, path: 1 },
+        { type: 'tanker', count: 2, interval: 0.7, path: 2 },
+        { type: 'tanker', count: 1, interval: 0.7, path: 3 },
+        { type: 'splitter', count: 2, interval: 0.55, path: 0 },
+        { type: 'splitter', count: 2, interval: 0.55, path: 1 },
+        { type: 'splitter', count: 1, interval: 0.55, path: 2 },
+        { type: 'splitter', count: 2, interval: 0.55, path: 3 },
+      ],
+      bonus: 240, isBoss: false,
+    },
+    {
+      wave: 12,
+      groups: [
+        { type: 'crawler', count: 4, interval: 0.4, path: 0 },
+        { type: 'crawler', count: 3, interval: 0.4, path: 1 },
+        { type: 'crawler', count: 4, interval: 0.4, path: 2 },
+        { type: 'crawler', count: 3, interval: 0.4, path: 3 },
+        { type: 'speeder', count: 3, interval: 0.4, path: 0 },
+        { type: 'speeder', count: 3, interval: 0.4, path: 1 },
+        { type: 'speeder', count: 3, interval: 0.4, path: 2 },
+        { type: 'speeder', count: 3, interval: 0.4, path: 3 },
+        { type: 'tanker', count: 2, interval: 0.6, path: 0 },
+        { type: 'tanker', count: 1, interval: 0.6, path: 1 },
+        { type: 'tanker', count: 2, interval: 0.6, path: 2 },
+        { type: 'tanker', count: 1, interval: 0.6, path: 3 },
+      ],
+      bonus: 280, isBoss: false,
+    },
+    {
+      wave: 13,
+      groups: [
+        { type: 'splitter', count: 3, interval: 0.45, path: 0 },
+        { type: 'splitter', count: 2, interval: 0.45, path: 1 },
+        { type: 'splitter', count: 3, interval: 0.45, path: 2 },
+        { type: 'splitter', count: 2, interval: 0.45, path: 3 },
+        { type: 'lurker', count: 2, interval: 0.45, path: 0 },
+        { type: 'lurker', count: 3, interval: 0.45, path: 1 },
+        { type: 'lurker', count: 2, interval: 0.45, path: 2 },
+        { type: 'lurker', count: 3, interval: 0.45, path: 3 },
+        { type: 'speeder', count: 3, interval: 0.4, path: 0 },
+        { type: 'speeder', count: 3, interval: 0.4, path: 1 },
+        { type: 'speeder', count: 3, interval: 0.4, path: 2 },
+        { type: 'speeder', count: 3, interval: 0.4, path: 3 },
+      ],
+      bonus: 320, isBoss: false,
+    },
+    {
+      wave: 14,
+      groups: [
+        { type: 'tanker', count: 2, interval: 0.5, path: 0 },
+        { type: 'tanker', count: 2, interval: 0.5, path: 1 },
+        { type: 'tanker', count: 2, interval: 0.5, path: 2 },
+        { type: 'tanker', count: 2, interval: 0.5, path: 3 },
+        { type: 'lurker', count: 3, interval: 0.4, path: 0 },
+        { type: 'lurker', count: 2, interval: 0.4, path: 1 },
+        { type: 'lurker', count: 3, interval: 0.4, path: 2 },
+        { type: 'lurker', count: 2, interval: 0.4, path: 3 },
+        { type: 'splitter', count: 2, interval: 0.45, path: 0 },
+        { type: 'splitter', count: 2, interval: 0.45, path: 1 },
+        { type: 'splitter', count: 2, interval: 0.45, path: 2 },
+        { type: 'splitter', count: 2, interval: 0.45, path: 3 },
+      ],
+      bonus: 380, isBoss: false,
+      comm: '星垒护盾能量见底。最后一波总攻要来了——把军费全部花掉！',
+    },
+    {
+      wave: 15,
+      groups: [
+        // 同级单 BOSS 基线约 16000 血（COOP_LEVEL 第 15 波 9600 = 60%）；四路各取约 32.5%，总血量约 1.3 倍
+        { type: 'boss', count: 1, interval: 0.8, hpOverride: 5200, rewardOverride: 450, path: 0 },
+        { type: 'boss', count: 1, interval: 0.8, hpOverride: 5200, rewardOverride: 450, path: 1 },
+        { type: 'boss', count: 1, interval: 0.8, hpOverride: 5200, rewardOverride: 450, path: 2 },
+        { type: 'boss', count: 1, interval: 0.8, hpOverride: 5200, rewardOverride: 450, path: 3 },
+        { type: 'speeder', count: 2, interval: 0.7, path: 0 },
+        { type: 'speeder', count: 2, interval: 0.7, path: 1 },
+        { type: 'speeder', count: 2, interval: 0.7, path: 2 },
+        { type: 'speeder', count: 2, interval: 0.7, path: 3 },
+        { type: 'lurker', count: 2, interval: 0.8, path: 0 },
+        { type: 'lurker', count: 1, interval: 0.8, path: 1 },
+        { type: 'lurker', count: 2, interval: 0.8, path: 2 },
+        { type: 'lurker', count: 1, interval: 0.8, path: 3 },
+      ],
+      bonus: 650, isBoss: true,
+      comm: '最终警告：四路各现身一只湮灭巨兽！这是四象星垒的最后一战——全员开火！',
+    },
+  ],
+};
+
+/**
+ * 协作局按人数选图：2 人走双路「双子星门」（COOP_LEVEL），3–4 人走四路「四象星垒」（COOP_LEVEL4）。
+ * 引擎在协作局（coop = players > 1）改调本函数，levelId 对协作局不再生效。
+ */
+export function getCoopLevel(players: number): LevelDef {
+  return players >= 3 ? COOP_LEVEL4 : COOP_LEVEL;
+}
